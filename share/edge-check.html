@@ -1,0 +1,950 @@
+<title>Edge Check — is your edge real, and would it pass?</title>
+<style>
+/* ------------------------------------------------------------------
+   Edge Check - a companion to Edge Lab.
+
+   MONOCHROME GROUND, COLOUR ONLY WHERE IT MEANS SOMETHING. The neutrals are a
+   true grey with a faint cool cast - picked to sit under the blue, not
+   inherited from a default - and the interface chrome (sliders, focus rings,
+   rules) is plain ink. Nothing is tinted for decoration.
+
+   There is no green on this page at all, including in the verdicts. Green-vs-red
+   is the conventional pass/fail pair here and it measured OKLab dE 2.2 under
+   deuteranopia against this page's own shades - the two most important
+   categories, indistinguishable to roughly one man in twelve, at every green and
+   red tried. So good/bad lives on the blue-yellow axis, which protanopia and
+   deuteranopia both preserve: dE 15.7 light, 17.3 dark, validated not guessed.
+   The chips and the charts now use the SAME encoding, which they did not before.
+
+   The three failure modes in the outcome bar are one hue stepped by lightness -
+   they are degrees of the same thing, so a sequential ramp is the honest form,
+   and lightness ordering survives any colour vision at all.
+
+   A verdict chip may sit closer in hue than a chart mark may, because a chip is
+   never beside another chip and always carries its own words; the adjacent-pair
+   rule is for marks that must be told apart side by side.
+------------------------------------------------------------------- */
+:root{
+  --paper:#F4F5F6; --panel:#FFFFFF; --panel-2:#ECEEF0;
+  --ink:#14161A; --muted:#62666C; --line:#DFE1E5; --line-strong:#B2B7BD;
+  --go:#2C6FA8; --go-soft:#E3EDF6;
+  --caution:#8A6410; --caution-soft:#F5EDD8;
+  --stop:#B04E42; --stop-soft:#F7E4E1;
+  --accent:#14161A;
+  --c-pass:#2C6FA8;
+  --c-f1:#843028;   /* drawdown  - worst, darkest */
+  --c-f2:#B04E42;   /* daily loss */
+  --c-f3:#CE8175;   /* ran out of time - least bad, lightest */
+  --c-grid:#E7E9EC; --c-axis:#B2B7BD;
+  --mono:ui-monospace,"Cascadia Code","SF Mono",Menlo,Consolas,monospace;
+  --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --shadow:rgba(20,22,26,0.10);
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --paper:#0C0D0F; --panel:#141619; --panel-2:#1C1F22;
+    --ink:#E8EAED; --muted:#8A8F96; --line:#25282C; --line-strong:#3A3E44;
+    --go:#4A93D1; --go-soft:#12222F;
+    --caution:#C79A3C; --caution-soft:#2A2312;
+    --stop:#D4685C; --stop-soft:#2E1A17;
+    --accent:#E8EAED;
+    --c-pass:#4A93D1;
+    --c-f1:#B8402F; --c-f2:#D4685C; --c-f3:#E8A79E;
+    --c-grid:#212428; --c-axis:#3A3E44;
+    --shadow:rgba(0,0,0,0.5);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0C0D0F; --panel:#141619; --panel-2:#1C1F22;
+  --ink:#E8EAED; --muted:#8A8F96; --line:#25282C; --line-strong:#3A3E44;
+  --go:#4A93D1; --go-soft:#12222F;
+  --caution:#C79A3C; --caution-soft:#2A2312;
+  --stop:#D4685C; --stop-soft:#2E1A17;
+  --accent:#E8EAED;
+  --c-pass:#4A93D1;
+  --c-f1:#B8402F; --c-f2:#D4685C; --c-f3:#E8A79E;
+  --c-grid:#212428; --c-axis:#3A3E44;
+  --shadow:rgba(0,0,0,0.5);
+}
+:root[data-theme="light"]{
+  --paper:#F4F5F6; --panel:#FFFFFF; --panel-2:#ECEEF0;
+  --ink:#14161A; --muted:#62666C; --line:#DFE1E5; --line-strong:#B2B7BD;
+  --go:#2C6FA8; --go-soft:#E3EDF6;
+  --caution:#8A6410; --caution-soft:#F5EDD8;
+  --stop:#B04E42; --stop-soft:#F7E4E1;
+  --accent:#14161A;
+  --c-pass:#2C6FA8;
+  --c-f1:#843028; --c-f2:#B04E42; --c-f3:#CE8175;
+  --c-grid:#E7E9EC; --c-axis:#B2B7BD;
+  --shadow:rgba(20,22,26,0.10);
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:16px;line-height:1.6;-webkit-font-smoothing:antialiased;}
+.wrap{max-width:1080px;margin:0 auto;padding:32px 20px 72px;}
+
+/* ---- masthead ---- */
+.mast{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px 14px;
+  padding-bottom:14px;border-bottom:2px solid var(--ink);}
+.mast h1{font-family:var(--mono);font-size:26px;font-weight:700;margin:0;letter-spacing:-0.01em;}
+.mast .tag{font-family:var(--mono);font-size:11px;text-transform:uppercase;
+  letter-spacing:0.14em;color:var(--muted);}
+.lede{max-width:64ch;margin:18px 0 0;color:var(--muted);font-size:17px;}
+.lede b{color:var(--ink);font-weight:600;}
+
+/* ---- shared section furniture ---- */
+section{margin-top:38px;}
+.eyebrow{font-family:var(--mono);font-size:11px;text-transform:uppercase;
+  letter-spacing:0.14em;color:var(--muted);display:flex;align-items:center;gap:10px;}
+.eyebrow::after{content:"";flex:1;height:1px;background:var(--line);}
+h2{font-size:22px;margin:8px 0 4px;font-weight:650;text-wrap:balance;}
+.sub{color:var(--muted);margin:0 0 18px;max-width:62ch;}
+
+.card{background:var(--panel);border:1.5px solid var(--line);padding:20px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px;}
+@media (max-width:860px){.grid2{grid-template-columns:1fr;}}
+
+/* ---- controls ---- */
+.ctl{display:grid;grid-template-columns:1fr auto;align-items:baseline;gap:4px 12px;
+  padding:11px 0;border-bottom:1px solid var(--line);}
+.ctl:last-child{border-bottom:none;}
+.ctl label{font-family:var(--mono);font-size:11px;text-transform:uppercase;
+  letter-spacing:0.08em;color:var(--muted);}
+.ctl output{font-family:var(--mono);font-size:17px;font-weight:700;
+  font-variant-numeric:tabular-nums;}
+.ctl input[type=range]{grid-column:1/-1;width:100%;margin:2px 0 0;accent-color:var(--accent);height:22px;}
+.ctl .hint{grid-column:1/-1;font-size:13px;color:var(--muted);margin:0;}
+input[type=range]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;}
+
+/* ---- verdict ---- */
+.verdict{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;}
+.chip{font-family:var(--mono);font-size:12px;font-weight:700;text-transform:uppercase;
+  letter-spacing:0.08em;padding:6px 11px;border:1.5px solid currentColor;}
+.chip.go{color:var(--go);background:var(--go-soft);}
+.chip.caution{color:var(--caution);background:var(--caution-soft);}
+.chip.stop{color:var(--stop);background:var(--stop-soft);}
+.why{margin:0;font-size:15px;color:var(--muted);}
+.why b{color:var(--ink);}
+
+/* ---- readouts ---- */
+.reads{display:grid;grid-template-columns:repeat(2,1fr);gap:1.5px;
+  background:var(--line);border:1.5px solid var(--line);margin-top:16px;}
+.read{background:var(--panel);padding:12px 14px;}
+.read .k{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;
+  letter-spacing:0.09em;color:var(--muted);}
+.read .v{font-family:var(--mono);font-size:20px;font-weight:700;
+  font-variant-numeric:tabular-nums;line-height:1.25;}
+.read .r{font-family:var(--mono);font-size:11.5px;color:var(--muted);
+  font-variant-numeric:tabular-nums;}
+.read .v.go{color:var(--go);} .read .v.stop{color:var(--stop);} .read .v.caution{color:var(--caution);}
+
+/* ---- the outcome ribbon: how 1,000 attempts end ---- */
+/* 2px of surface between segments, not a hairline border: touching fills read as
+   one shape, and the gap is what makes four segments countable at a glance. */
+.ribbon{display:flex;gap:2px;height:34px;margin-top:6px;}
+.ribbon i{display:block;transition:width .32s cubic-bezier(.4,0,.2,1);min-width:0;}
+.ribbon .s-pass{background:var(--c-pass);}
+.ribbon .s-dd{background:var(--c-f1);}
+.ribbon .s-dl{background:var(--c-f2);}
+.ribbon .s-to{background:var(--c-f3);}
+.key{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:10px;
+  font-family:var(--mono);font-size:11.5px;font-variant-numeric:tabular-nums;}
+.key span{display:flex;align-items:center;gap:7px;color:var(--muted);}
+.key b{width:11px;height:11px;display:inline-block;flex:none;}
+.key .n{color:var(--ink);font-weight:700;font-style:normal;}
+@media (prefers-reduced-motion:reduce){.ribbon i{transition:none;}}
+
+/* ---- charts ---- */
+figure{margin:0;}
+.chart{margin-top:18px;}
+.chart figcaption{font-family:var(--mono);font-size:11px;text-transform:uppercase;
+  letter-spacing:0.09em;color:var(--muted);margin-bottom:2px;}
+.chart .cnote{font-size:13.5px;color:var(--muted);margin:8px 0 0;}
+.chart .cnote b{color:var(--ink);}
+.cwrap{position:relative;}
+canvas{display:block;width:100%;height:auto;}
+.tip{position:absolute;pointer-events:none;opacity:0;transition:opacity .12s;
+  background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:11.5px;
+  line-height:1.45;padding:6px 9px;white-space:nowrap;transform:translate(-50%,-100%);
+  font-variant-numeric:tabular-nums;z-index:3;}
+.tip.on{opacity:1;}
+@media (prefers-reduced-motion:reduce){.tip{transition:none;}}
+
+/* ---- guide ---- */
+/* Four short, independent lessons: at desktop width they read better side by
+   side than as one narrow ribbon of text down the left with half the panel
+   empty. The caveat spans both columns because it applies to all of them. */
+.guide{background:var(--panel-2);border:1.5px solid var(--line);padding:24px;
+  display:grid;grid-template-columns:1fr 1fr;gap:0 34px;align-content:start;}
+.guide > .full{grid-column:1/-1;}
+@media (max-width:860px){.guide{grid-template-columns:1fr;gap:0;}}
+.guide h3{font-size:16px;margin:22px 0 6px;font-weight:650;}
+.guide h3:first-of-type{margin-top:0;}
+.guide .lsn > h3:first-child{margin-top:0;}
+.guide .lsn{margin-bottom:20px;}
+.guide p{margin:0 0 10px;}
+.guide ul{margin:0 0 10px;padding-left:20px;}
+.guide li{margin-bottom:5px;}
+.seg{grid-column:1/-1;justify-self:start;display:inline-flex;
+  border:1.5px solid var(--line-strong);margin-top:8px;max-width:100%;flex-wrap:wrap;}
+.seg button{font-family:var(--mono);font-size:11px;font-weight:700;letter-spacing:0.03em;
+  background:var(--panel);color:var(--muted);border:none;
+  border-right:1.5px solid var(--line-strong);padding:6px 11px;cursor:pointer;}
+.seg button:last-child{border-right:none;}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper);}
+.seg button:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.ddwarn{grid-column:1/-1;margin:10px 0 0;padding:9px 11px;font-size:13px;
+  color:var(--caution);background:var(--caution-soft);
+  border-left:3px solid var(--caution);}
+.ddwarn[hidden]{display:none;}
+.ddwarn b{color:var(--ink);}
+.honest{margin:16px 0 0;padding:10px 0 0;border-top:1.5px solid var(--line);
+  font-size:13.5px;color:var(--muted);}
+.honest b{color:var(--ink);}
+.guide code{font-family:var(--mono);font-size:13.5px;background:var(--panel);
+  border:1px solid var(--line);padding:1px 5px;}
+.note{border-left:3px solid var(--caution);background:var(--caution-soft);
+  padding:14px 16px;margin:16px 0 0;}
+.note p{margin:0;max-width:none;}
+.note .h{font-family:var(--mono);font-size:11px;text-transform:uppercase;
+  letter-spacing:0.1em;font-weight:700;margin-bottom:5px;color:var(--caution);}
+footer{margin-top:44px;padding-top:18px;border-top:1.5px solid var(--line);
+  font-size:13.5px;color:var(--muted);max-width:66ch;}
+</style>
+
+<div class="wrap">
+
+  <header class="mast">
+    <h1>Edge&nbsp;Check</h1>
+    <span class="tag">edge in / verdict out</span>
+  </header>
+
+  <p class="lede">Two questions people mix up constantly. <b>Is this edge real, or am I just
+  running hot?</b> And <b>would it survive a prop firm's rules?</b> Set your numbers
+  once and both answers update off them.</p>
+
+  <!-- ---------------- the shared edge ---------------- -->
+  <section>
+    <p class="eyebrow">Step one</p>
+    <h2>Describe your edge</h2>
+    <p class="sub">Three numbers. Everything on the page comes off these.</p>
+    <div class="card">
+      <div class="ctl">
+        <label for="wr">Win rate</label>
+        <output id="wrO">50%</output>
+        <input type="range" id="wr" min="5" max="90" step="1" value="50">
+        <p class="hint">Out of every 100 trades, how many end in profit.</p>
+      </div>
+      <div class="ctl">
+        <label for="rr">Reward : risk</label>
+        <output id="rrO">1.50R</output>
+        <input type="range" id="rr" min="0.2" max="8" step="0.1" value="1.5">
+        <p class="hint">What your average winner pays, in units of what you risked. Risk $100 to make
+        $150, that's 1.5R.</p>
+      </div>
+      <div class="ctl">
+        <label for="n">Trades this is based on</label>
+        <output id="nO">40</output>
+        <input type="range" id="n" min="5" max="500" step="1" value="40">
+        <p class="hint">How many real trades those two came off. Doesn't change your edge, changes
+        how much you should trust it.</p>
+      </div>
+      <p class="honest"><b>Use your real numbers.</b> Nothing here can check them. Round your win
+      rate up a few points and the verdict will flip to &ldquo;statistically real&rdquo; without
+      complaint, and you'll have talked yourself into a strategy you don't have.</p>
+    </div>
+  </section>
+
+  <div class="grid2" style="margin-top:38px">
+
+    <!-- ---------------- validate ---------------- -->
+    <section style="margin-top:0">
+      <p class="eyebrow">Question one</p>
+      <h2>Is the edge real?</h2>
+      <p class="sub">Could a coin have produced a run this good?</p>
+      <div class="card">
+        <div class="verdict">
+          <span class="chip" id="vChip">—</span>
+        </div>
+        <p class="why" id="vWhy"></p>
+        <div class="reads">
+          <div class="read">
+            <div class="k">Expectancy</div>
+            <div class="v" id="rExp">—</div>
+            <div class="r" id="rExpCi"></div>
+          </div>
+          <div class="read">
+            <div class="k">Win rate, true range</div>
+            <div class="v" id="rWr">—</div>
+            <div class="r">95% confidence</div>
+          </div>
+          <div class="read">
+            <div class="k">Profit factor</div>
+            <div class="v" id="rPf">—</div>
+            <div class="r">gross won ÷ gross lost</div>
+          </div>
+          <div class="read">
+            <div class="k">Per 100 trades</div>
+            <div class="v" id="rHun">—</div>
+            <div class="r">expected, in R</div>
+          </div>
+        </div>
+
+        <figure class="chart">
+          <figcaption>Where break-even sits</figcaption>
+          <div class="cwrap"><canvas id="cBe" role="img" aria-label="Break-even map"></canvas></div>
+          <p class="cnote" id="beNote"></p>
+        </figure>
+
+        <figure class="chart">
+          <figcaption>The same edge, 40 times over</figcaption>
+          <div class="cwrap"><canvas id="cFan" role="img" aria-label="Forty simulated runs"></canvas></div>
+          <p class="cnote" id="fanNote"></p>
+        </figure>
+      </div>
+    </section>
+
+    <!-- ---------------- challenge ---------------- -->
+    <section style="margin-top:0">
+      <p class="eyebrow">Question two</p>
+      <h2>Would it pass?</h2>
+      <p class="sub">Same edge, run against the firm's rules a thousand times.</p>
+      <div class="card">
+        <div class="verdict">
+          <span class="chip" id="cChip">—</span>
+        </div>
+        <p class="why" id="cWhy"></p>
+        <div class="ribbon" id="ribbon" role="img" aria-label="How 1,000 attempts end">
+          <i class="s-pass" id="bPass"></i><i class="s-dd" id="bDd"></i>
+          <i class="s-dl" id="bDl"></i><i class="s-to" id="bTo"></i>
+        </div>
+        <div class="key">
+          <span><b style="background:var(--c-pass)"></b>Passed <em class="n" id="kPass">—</em></span>
+          <span><b style="background:var(--c-f1)"></b>Hit the drawdown <em class="n" id="kDd">—</em></span>
+          <span><b style="background:var(--c-f2)"></b>Hit a daily loss <em class="n" id="kDl">—</em></span>
+          <span><b style="background:var(--c-f3)"></b>Ran out of time <em class="n" id="kTo">—</em></span>
+        </div>
+        <div class="reads">
+          <div class="read">
+            <div class="k">Attempts to get funded</div>
+            <div class="v" id="rAtt">—</div>
+            <div class="r">on average, at this pass rate</div>
+          </div>
+          <div class="read">
+            <div class="k">Typical time to pass</div>
+            <div class="v" id="rDays">—</div>
+            <div class="r">trading days, of the ones that passed</div>
+          </div>
+        </div>
+
+        <figure class="chart">
+          <figcaption>Pass rate against risk per trade</figcaption>
+          <div class="cwrap">
+            <canvas id="cRisk" role="img" aria-label="Pass rate against risk per trade"></canvas>
+            <div class="tip" id="riskTip"></div>
+          </div>
+          <p class="cnote" id="riskNote"></p>
+        </figure>
+      </div>
+    </section>
+  </div>
+
+  <!-- ---------------- firm rules ---------------- -->
+  <section>
+    <p class="eyebrow">The firm's rules</p>
+    <h2>What you have to survive</h2>
+    <p class="sub">Defaults are a typical two-step. Change them to match whatever firm you're
+    looking at, the numbers are all on their site.</p>
+    <div class="card">
+      <div class="grid2">
+        <div>
+          <div class="ctl">
+            <label for="p1">Phase 1 profit target</label>
+            <output id="p1O">8%</output>
+            <input type="range" id="p1" min="2" max="20" step="0.5" value="8">
+          </div>
+          <div class="ctl">
+            <label for="p2">Phase 2 target (0 = one phase)</label>
+            <output id="p2O">5%</output>
+            <input type="range" id="p2" min="0" max="20" step="0.5" value="5">
+          </div>
+          <div class="ctl">
+            <label for="dd">Max drawdown</label>
+            <output id="ddO">10%</output>
+            <input type="range" id="dd" min="2" max="20" step="0.5" value="10">
+            <div class="seg" id="ddSeg" role="group" aria-label="How the drawdown floor behaves">
+              <button type="button" data-dd="static" aria-pressed="true">Static</button>
+              <button type="button" data-dd="trailing-eod" aria-pressed="false">Trails daily</button>
+              <button type="button" data-dd="trailing" aria-pressed="false">Trails live</button>
+            </div>
+            <p class="hint" id="ddHint"></p>
+            <p class="ddwarn" id="ddWarn" hidden></p>
+          </div>
+        </div>
+        <div>
+          <div class="ctl">
+            <label for="dl">Daily loss limit (0 = none)</label>
+            <output id="dlO">5%</output>
+            <input type="range" id="dl" min="0" max="12" step="0.5" value="5">
+          </div>
+          <div class="ctl">
+            <label for="risk">Risk per trade</label>
+            <output id="riskO">1.00%</output>
+            <input type="range" id="risk" min="0.1" max="4" step="0.05" value="1">
+            <p class="hint">Drag this one. It moves more than anything else here.</p>
+          </div>
+          <div class="ctl">
+            <label for="tpd">Trades per day</label>
+            <output id="tpdO">3</output>
+            <input type="range" id="tpd" min="1" max="12" step="1" value="3">
+          </div>
+          <div class="ctl">
+            <label for="md">Minimum trading days</label>
+            <output id="mdO">0</output>
+            <input type="range" id="md" min="0" max="30" step="1" value="0">
+          </div>
+          <div class="ctl">
+            <label for="tl">Time limit (0 = none)</label>
+            <output id="tlO">30 days</output>
+            <input type="range" id="tl" min="0" max="180" step="5" value="30">
+            <p class="hint">Without a deadline you'd just risk tiny and grind it out, so this
+            is what turns position size into a real decision.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ---------------- guide ---------------- -->
+  <section>
+    <p class="eyebrow">If this is new to you</p>
+    <h2>How to use this</h2>
+    <div class="guide">
+
+      <div class="lsn">
+        <h3>What R actually means</h3>
+        <p><b>R is one unit of risk:</b> entry to stop. If your stop costs you $100, that's
+        1R. A trade that made $150 made 1.5R.</p>
+        <p>Working in R instead of dollars makes every trade comparable no matter what
+        size you took. A 1.5R win is a 1.5R win on a $5k account or a $200k one.</p>
+      </div>
+
+      <div class="lsn">
+        <h3>Fill in the three numbers at the top</h3>
+        <ul>
+          <li><b>Win rate.</b> Count your last 40 trades, divide winners by total.</li>
+          <li><b>Reward : risk.</b> Average what your winners paid, in R.</li>
+          <li><b>Trades this is based on.</b> Be honest. It's the one that decides whether
+          the other two mean anything.</li>
+        </ul>
+      </div>
+
+      <div class="lsn">
+        <h3>Reading question one</h3>
+        <p>Positive expectancy means you make money <em>on average</em>. The range under it
+        is the part people skip. With few trades it's enormous, and a number sitting in a
+        range that crosses zero isn't evidence of anything yet.</p>
+        <p>That's why the verdict changes at <b>30 trades</b>. Below that you can't tell an
+        edge from a good week. Nothing magic about the number, it's roughly where the
+        range stops being wider than the answer.</p>
+      </div>
+
+      <div class="lsn">
+        <h3>Reading question two</h3>
+        <p>The coloured bar is <b>1,000 attempts at the challenge</b>, each one a simulated
+        run of your edge against those rules. Blue passed. The reds are how it died,
+        darkest first: total drawdown, one bad day, ran out of time.</p>
+        <p>Drag <b>risk per trade</b> up and watch. Profit per trade rises, red grows
+        faster. Bigger size doesn't just win more, it burns through the attempts you had
+        left.</p>
+      </div>
+
+      <div class="note full">
+        <p class="h">Before you trust any of this</p>
+        <p>It's a calculator running <em>your assumptions</em>, not a measurement of your
+        trading. It believes whatever you type. Every trade is treated as independent,
+        identically sized, spread evenly through the day. Real trading isn't any of
+        those. Use it to see how the pieces push against each other, not as a forecast.
+        And it can't verify a single thing you enter, so the numbers you feed it are the
+        whole thing. Optimistic inputs don't give you a slightly optimistic answer, they
+        give you a confident wrong one.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Stripped-down companion to <b>Edge Lab</b>, which measures this off your actual
+    logged trades instead of sliders. Runs offline, nothing you type leaves the page.
+    Not financial advice.
+  </footer>
+</div>
+
+<script>
+"use strict";
+/* mulberry32 — the same deterministic PRNG the parent app uses, so a given
+   set of sliders always returns the same answer rather than shimmering. */
+function mulberry(seed){
+  let s = seed|0;
+  return function(){
+    s = (s + 0x6d2b79f5)|0;
+    let t = Math.imul(s ^ (s>>>15), 1|s);
+    t = (t + Math.imul(t ^ (t>>>7), 61|t)) ^ t;
+    return ((t ^ (t>>>14))>>>0) / 4294967296;
+  };
+}
+/* Acklam's inverse normal CDF, and Wilson at an arbitrary confidence. Wilson
+   rather than the textbook +-1.96*sqrt(pq/n) because that one has ZERO width
+   at a perfect record: 20 wins from 20 trades would claim the true rate is
+   between 100% and 100%. Wilson stays honest there (84%-100%). */
+function zFor(conf){
+  const p = 1 - (1-conf)/2;
+  if(p<=0||p>=1) return 1.959963985;
+  const a=[-3.969683028665376e1,2.209460984245205e2,-2.759285104469687e2,1.383577518672690e2,-3.066479806614716e1,2.506628277459239];
+  const b=[-5.447609879822406e1,1.615858368580409e2,-1.556989798598866e2,6.680131188771972e1,-1.328068155288572e1];
+  const c=[-7.784894002430293e-3,-3.223964580411365e-1,-2.400758277161838,-2.549732539343734,4.374664141464968,2.938163982698783];
+  const d=[7.784695709041462e-3,3.224671290700398e-1,2.445134137142996,3.754408661907416];
+  const pl=0.02425; let q,r;
+  if(p<pl){q=Math.sqrt(-2*Math.log(p));return(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);}
+  if(p>1-pl){q=Math.sqrt(-2*Math.log(1-p));return -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5])/((((d[0]*q+d[1])*q+d[2])*q+d[3])*q+1);}
+  q=p-0.5;r=q*q;
+  return (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q/(((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+}
+function wilson(p,n,conf){
+  if(!(n>0)) return {lo:0,hi:1};
+  const z=zFor(conf), den=1+(z*z)/n;
+  const rad=z*Math.sqrt((p*(1-p))/n+(z*z)/(4*n*n));
+  return {lo:Math.max(0,(p+(z*z)/(2*n)-rad)/den), hi:Math.min(1,(p+(z*z)/(2*n)+rad)/den)};
+}
+/* Never a bare 100% or 0% from a finite simulation: 1,000 of 1,000 is a sample
+   that happened not to fail, not a guarantee. */
+function pctEst(x){
+  if(x>=0.995) return ">99%";
+  if(x>0 && x<0.005) return "<1%";
+  return Math.round(x*100)+"%";
+}
+
+const el = (id)=>document.getElementById(id);
+const DD_HINT = {
+  "static": "The floor sits that far below your starting balance and never moves.",
+  "trailing-eod": "The floor follows your highest <b>end-of-day</b> balance, so profit you carry overnight pulls it up behind you.",
+  "trailing": "The floor follows your highest balance at <b>any moment</b>, so a spike you give back still counts against you. Hardest of the three."
+};
+const IN = ["wr","rr","n","p1","p2","dd","dl","risk","tpd","md","tl"];
+const S = { ddType: "static" };
+function readInputs(){ IN.forEach(k=>{ S[k] = parseFloat(el(k).value); }); }
+
+/* ---------------- question one ---------------- */
+function validate(){
+  const p = S.wr/100, b = S.rr, n = S.n;
+  const mu = p*b - (1-p);                                  // expectancy per trade, in R
+  const w = p, l = 1-p;
+  const sd = Math.sqrt(Math.max(w*b*b + l - mu*mu, 0.0001));
+  const se = sd/Math.sqrt(n), z = zFor(0.95);
+  const lo = mu - z*se, hi = mu + z*se;
+  const pf = p<=0 ? 0 : (p<1 ? (p/(1-p))*b : 99);
+  const ci = wilson(p, n, 0.95);
+
+  const sgn=(v)=>(v>=0?"+":"")+v.toFixed(2);
+  el("rExp").textContent = sgn(mu)+"R";
+  el("rExp").className = "v "+(mu>0.001?"go":mu<-0.001?"stop":"");
+  el("rExpCi").textContent = "95% range "+sgn(lo)+" to "+sgn(hi)+"R";
+  el("rWr").textContent = Math.round(ci.lo*100)+"–"+Math.round(ci.hi*100)+"%";
+  el("rPf").textContent = pf>=99?"high":pf.toFixed(2);
+  el("rPf").className = "v "+(pf>=1.5?"go":pf>=1?"caution":"stop");
+  el("rHun").textContent = sgn(mu*100)+"R";
+  el("rHun").className = "v "+(mu>0.001?"go":mu<-0.001?"stop":"");
+
+  const chip = el("vChip"), why = el("vWhy");
+  if(mu <= 0.001){
+    chip.textContent="No edge shown"; chip.className="chip stop";
+    why.innerHTML = "At "+Math.round(p*100)+"% you need better than <b>"+
+      (( (1-p)/p )).toFixed(2)+"R</b> per winner just to break even, and you're under it. "+
+      "No amount of position sizing or firm-shopping fixes that.";
+  } else if(n < 30){
+    chip.textContent="Too few trades"; chip.className="chip stop";
+    why.innerHTML = "<b>"+n+" trades</b> can't tell an edge from a hot streak. Your expectancy "+
+      "range runs "+sgn(lo)+" to "+sgn(hi)+"R, which covers a real edge and nothing at all. Keep logging.";
+  } else if(lo > 0){
+    chip.textContent="Statistically real"; chip.className="chip go";
+    why.innerHTML = "Even the bottom of the 95% range ("+sgn(lo)+"R) still makes money. On "+n+
+      " trades that's an edge, not a streak.";
+  } else {
+    chip.textContent="Promising, not proven"; chip.className="chip caution";
+    why.innerHTML = "You're making <b>"+sgn(mu)+"R</b> a trade, but the range still dips to "+sgn(lo)+
+      "R, so luck isn't ruled out. Only more trades narrow that.";
+  }
+  return mu;
+}
+
+/* ---------------- question two ----------------
+   A faithful port of the parent app's phaseWalk, minus the rules a first
+   look does not need (trailing drawdowns, consistency caps, payout gates).
+   Equity is tracked in ACCOUNT PERCENT, so every rule is comparable and no
+   dollar figure has to be invented. */
+/* Where the account dies. Static never moves. A trailing floor follows your best
+   balance, so profit you give back still counts against you, and the intraday
+   version follows every tick rather than just the close. Ported from the app's
+   ddFloor; this page leaves out the "locks at start" variant some firms add. */
+function ddFloorAt(peak, peakEod){
+  if(S.ddType === "static") return -S.dd;
+  return (S.ddType === "trailing-eod" ? peakEod : peak) - S.dd;
+}
+function phaseWalk(target, rnd){
+  const risk = S.risk, tpd = Math.max(1, S.tpd|0);
+  const maxDays = S.tl > 0 ? Math.min(S.tl, 500) : 500;
+  const p = S.wr/100, b = S.rr;
+  let eq=0, peak=0, peakEod=0, dayStart=0, dayIdx=0, inDay=0, reached=false;
+  /* once the target is hit the app models a trader coasting to the minimum-day
+     requirement rather than continuing to swing at full size */
+  const coast = Math.min(risk, 0.12);
+  for(let t=0; t<maxDays*tpd; t++){
+    const use = reached ? coast : risk;
+    eq += (rnd() < p ? b : -1) * use;
+    if(eq>peak) peak=eq;
+    if(eq <= ddFloorAt(peak, peakEod)) return {res:"dd", days:dayIdx+1};
+    if(S.dl>0 && eq-dayStart <= -S.dl) return {res:"dl", days:dayIdx+1};
+    if(eq>=target) reached=true;
+    if(eq>=target && dayIdx+1 >= S.md) return {res:"pass", days:dayIdx+1};
+    inDay++;
+    /* the end-of-day balance is what an EOD floor ratchets on */
+    if(inDay>=tpd){ inDay=0; if(eq>peakEod) peakEod=eq; dayIdx++; dayStart=eq; }
+  }
+  return {res:"to", days:maxDays};
+}
+const SIMS = 1000;
+function challenge(){
+  const rnd = mulberry(12345);
+  const two = S.p2 > 0;
+  let pass=0, dd=0, dl=0, to=0;
+  const days=[];
+  for(let i=0;i<SIMS;i++){
+    const r1 = phaseWalk(S.p1, rnd);
+    if(r1.res==="pass"){
+      if(two){
+        const r2 = phaseWalk(S.p2, rnd);
+        if(r2.res==="pass"){ pass++; days.push(r1.days+r2.days); }
+        else if(r2.res==="dd") dd++; else if(r2.res==="dl") dl++; else to++;
+      } else { pass++; days.push(r1.days); }
+    }
+    else if(r1.res==="dd") dd++; else if(r1.res==="dl") dl++; else to++;
+  }
+  days.sort((a,b)=>a-b);
+  const rate = pass/SIMS;
+  const w=(v)=>((v/SIMS)*100).toFixed(3)+"%";
+  el("bPass").style.width=w(pass); el("bDd").style.width=w(dd);
+  el("bDl").style.width=w(dl);     el("bTo").style.width=w(to);
+  el("ribbon").setAttribute("aria-label",
+    "Of 1,000 attempts: "+pass+" passed, "+dd+" hit the drawdown, "+dl+" hit a daily loss, "+to+" ran out of time.");
+  el("kPass").textContent=pass; el("kDd").textContent=dd;
+  el("kDl").textContent=dl;     el("kTo").textContent=to;
+
+  el("rAtt").textContent = rate>=0.995 ? "1" : rate<=0.005 ? "many" : (1/rate).toFixed(1);
+  el("rDays").textContent = days.length ? days[(days.length*0.5)|0] : "—";
+
+  const chip=el("cChip"), why=el("cWhy");
+  const label = two ? "clear both phases" : "clear the evaluation";
+  if(rate>=0.7){ chip.textContent="Likely to pass"; chip.className="chip go"; }
+  else if(rate>=0.35){ chip.textContent="Coin flip"; chip.className="chip caution"; }
+  else { chip.textContent="Unlikely to pass"; chip.className="chip stop"; }
+  const worst = dd>=dl && dd>=to ? ["the total drawdown", dd]
+              : dl>=to ? ["a single bad day", dl] : ["running out of time", to];
+  why.innerHTML = "<b>"+pctEst(rate)+"</b> of attempts "+label+" at "+S.risk.toFixed(2)+
+    "% risk. Of the "+(SIMS-pass)+" that didn't, most died on <b>"+worst[0]+"</b> ("+worst[1]+").";
+}
+
+/* ---------------- charts ----------------
+   Canvas rather than SVG: the fan draws 40 polylines and the risk curve is
+   swept live, and this keeps the whole page one file with no library. Colours
+   are read from the CSS custom properties on every draw, so the charts follow
+   the theme toggle without a second palette living in JS. */
+function tok(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function surface(cv){
+  /* device-pixel scaling, or every line is a soft grey smear on a retina screen */
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  const w = cv.clientWidth, h = +cv.dataset.h || 200;
+  cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+  cv.style.height = h + "px";
+  const g = cv.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  return { g, w, h };
+}
+function axes(g, w, h, pad, xs, ys){
+  g.strokeStyle = tok("--c-grid"); g.lineWidth = 1;
+  g.fillStyle = tok("--muted");
+  g.font = "10px " + tok("--mono");
+  ys.forEach(t => {
+    const y = Math.round(t.y) + 0.5;
+    g.beginPath(); g.moveTo(pad.l, y); g.lineTo(w - pad.r, y); g.stroke();
+    g.textAlign = "right"; g.textBaseline = "middle";
+    g.fillText(t.label, pad.l - 6, y);
+  });
+  xs.forEach(t => {
+    g.textAlign = "center"; g.textBaseline = "top";
+    g.fillText(t.label, t.x, h - pad.b + 6);
+  });
+  g.strokeStyle = tok("--c-axis"); g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(pad.l + 0.5, pad.t); g.lineTo(pad.l + 0.5, h - pad.b + 0.5);
+  g.lineTo(w - pad.r, h - pad.b + 0.5); g.stroke();
+}
+
+/* --- 1. the break-even map: why a 40% win rate can beat a 60% one --- */
+function need0(wr){ return (100 - wr) / wr; }
+function drawBreakEven(){
+  const cv = document.getElementById("cBe"); if(!cv || !cv.clientWidth) return;
+  cv.dataset.h = 190;
+  const { g, w, h } = surface(cv);
+  const pad = { l: 34, r: 12, t: 10, b: 24 };
+  const X = (p) => pad.l + (p - 5) / (90 - 5) * (w - pad.l - pad.r);
+  const Y = (b) => (h - pad.b) - Math.min(b, 8) / 8 * (h - pad.b - pad.t);
+  axes(g, w, h, pad,
+    [20,40,60,80].map(v => ({ x: X(v), label: v + "%" })),
+    [0,2,4,6,8].map(v => ({ y: Y(v), label: v + "R" })));
+
+  /* the curve is b = (1-p)/p : below it you lose, above it you win, and the
+     shape is the whole lesson - it falls away steeply, so a few points of win
+     rate at the low end are worth far more than at the high end */
+  const pts = [];
+  for(let p = 5; p <= 90; p += 0.5){ pts.push([X(p), Y((100 - p) / p)]); }
+  g.save();
+  g.beginPath(); g.moveTo(pad.l, pad.t);
+  pts.forEach(([x, y], i) => { const yy = Math.max(pad.t, y); i ? g.lineTo(x, yy) : g.moveTo(x, yy); });
+  g.lineTo(w - pad.r, pad.t); g.closePath();
+  g.fillStyle = tok("--c-pass"); g.globalAlpha = 0.10; g.fill();
+  g.restore();
+
+  g.beginPath();
+  pts.forEach(([x, y], i) => { const yy = Math.max(pad.t - 2, y); i ? g.lineTo(x, yy) : g.moveTo(x, yy); });
+  g.strokeStyle = tok("--c-axis"); g.lineWidth = 2; g.setLineDash([5,4]); g.stroke();
+  g.setLineDash([]);
+
+  const px = X(S.wr), py = Y(S.rr), mu = S.wr/100*S.rr - (1 - S.wr/100);
+  const col = mu > 0.001 ? tok("--c-pass") : tok("--c-f2");
+  g.beginPath(); g.arc(px, py, 7, 0, Math.PI*2);
+  g.fillStyle = tok("--panel"); g.fill();          /* 2px surface ring, so the
+                                                      marker reads over the fill */
+  g.lineWidth = 2.5; g.strokeStyle = col; g.stroke();
+  g.beginPath(); g.arc(px, py, 3, 0, Math.PI*2); g.fillStyle = col; g.fill();
+
+  g.fillStyle = tok("--muted"); g.font = "10px " + tok("--mono");
+  g.textAlign = "left"; g.textBaseline = "middle";
+  g.fillText("break-even", X(52), Y((100-52)/52) - 12);
+  cv.setAttribute("aria-label", "Break-even map. At a " + S.wr + "% win rate break-even is " +
+    need0(S.wr).toFixed(2) + "R; you are taking " + S.rr.toFixed(2) + "R, expectancy " +
+    (mu>=0?"+":"") + mu.toFixed(2) + "R a trade.");
+
+  const need = ((100 - S.wr) / S.wr);
+  document.getElementById("beNote").innerHTML =
+    "Dashed line is break-even. At <b>" + S.wr + "%</b> you need <b>" +
+    need.toFixed(2) + "R</b> per winner just to stand still. You're taking <b>" +
+    S.rr.toFixed(2) + "R</b>, which puts you " +
+    (mu > 0.001 ? "<b>above</b> it" : mu < -0.001 ? "<b>below</b> it" : "right <b>on</b> it") + ".";
+}
+
+/* --- 2. the fan: what a real edge still looks like over n trades --- */
+function drawFan(){
+  const cv = document.getElementById("cFan"); if(!cv || !cv.clientWidth) return;
+  cv.dataset.h = 190;
+  const { g, w, h } = surface(cv);
+  const pad = { l: 34, r: 12, t: 10, b: 24 };
+  const n = S.n, p = S.wr/100, b = S.rr;
+  const RUNS = 40;
+  const rnd = mulberry(777);
+  const paths = [];
+  let hi = 1, lo = -1;
+  for(let r = 0; r < RUNS; r++){
+    const path = [0]; let eq = 0;
+    for(let t = 0; t < n; t++){ eq += (rnd() < p ? b : -1); path.push(eq); if(eq>hi) hi=eq; if(eq<lo) lo=eq; }
+    paths.push(path);
+  }
+  const span = Math.max(Math.abs(hi), Math.abs(lo), 1) * 1.08;
+  const X = (i) => pad.l + i / n * (w - pad.l - pad.r);
+  const Y = (v) => (h - pad.b + pad.t)/2 - v/span * ((h - pad.b - pad.t)/2);
+  axes(g, w, h, pad,
+    [0, Math.round(n/2), n].map(v => ({ x: X(v), label: v })),
+    [span, 0, -span].map(v => ({ y: Y(v), label: (v>=0?"+":"") + Math.round(v) + "R" })));
+
+  let up = 0;
+  paths.forEach((path) => {
+    const won = path[path.length-1] > 0;
+    if(won) up++;
+    g.beginPath();
+    path.forEach((v, i) => { i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v)); });
+    g.strokeStyle = won ? tok("--c-pass") : tok("--c-f2");
+    g.globalAlpha = 0.42; g.lineWidth = 1.5; g.stroke();
+  });
+  g.globalAlpha = 1;
+  /* the expectancy line: where the edge says you should end up */
+  const mu = p*b - (1-p);
+  g.beginPath(); g.moveTo(X(0), Y(0)); g.lineTo(X(n), Y(mu*n));
+  g.strokeStyle = tok("--ink"); g.lineWidth = 2; g.setLineDash([6,4]); g.stroke();
+  g.setLineDash([]);
+
+  cv.setAttribute("aria-label", RUNS + " simulated runs of " + n + " trades: " + up + " ended in profit, " + (RUNS-up) + " ended down.");
+  document.getElementById("fanNote").innerHTML =
+    "Forty traders with your <em>exact</em> edge, " + n + " trades each. <b>" + up +
+    "</b> finished up, <b>" + (RUNS - up) + "</b> finished down" +
+    (mu > 0 ? ". Nothing separates them but luck. The dashed line is where the maths says they land." : ".") +
+    (n < 60 ? " <b>Drag the trade count up</b> and watch the spread close." : "");
+}
+
+/* --- 3. pass rate against risk: the curve with a peak and a cliff --- */
+let riskCurve = [];
+function drawRisk(){
+  const cv = document.getElementById("cRisk"); if(!cv || !cv.clientWidth) return;
+  cv.dataset.h = 190;
+  const { g, w, h } = surface(cv);
+  const pad = { l: 34, r: 12, t: 10, b: 24 };
+  const X = (r) => pad.l + (r - 0.1) / (4 - 0.1) * (w - pad.l - pad.r);
+  const Y = (v) => (h - pad.b) - v * (h - pad.b - pad.t);
+  axes(g, w, h, pad,
+    [1,2,3,4].map(v => ({ x: X(v), label: v + "%" })),
+    [0,0.25,0.5,0.75,1].map(v => ({ y: Y(v), label: Math.round(v*100) + "%" })));
+  if(!riskCurve.length) return;
+
+  g.beginPath();
+  riskCurve.forEach((d, i) => { i ? g.lineTo(X(d.r), Y(d.p)) : g.moveTo(X(d.r), Y(d.p)); });
+  g.lineTo(X(riskCurve[riskCurve.length-1].r), Y(0)); g.lineTo(X(riskCurve[0].r), Y(0)); g.closePath();
+  g.fillStyle = tok("--c-pass"); g.globalAlpha = 0.12; g.fill(); g.globalAlpha = 1;
+
+  g.beginPath();
+  riskCurve.forEach((d, i) => { i ? g.lineTo(X(d.r), Y(d.p)) : g.moveTo(X(d.r), Y(d.p)); });
+  g.strokeStyle = tok("--c-pass"); g.lineWidth = 2; g.stroke();
+
+  let best = riskCurve[0];
+  riskCurve.forEach(d => { if(d.p > best.p) best = d; });
+  /* THE FLAT TOP, NOT THE ARGMAX. Picking the single best of twenty simulated
+     points is the same selection problem the parent app refuses everywhere: the
+     winner is partly just the luckiest draw. Everything within 3% of the best is
+     indistinguishable from it, so that band is the answer and the low end of it
+     is the one to take, because it gets there on less risk. */
+  const band = riskCurve.filter(d => d.p >= best.p * 0.97);
+  const bLo = band[0], bHi = band[band.length - 1];
+  g.save();
+  g.fillStyle = tok("--c-pass"); g.globalAlpha = 0.14;
+  g.fillRect(X(bLo.r), pad.t, Math.max(2, X(bHi.r) - X(bLo.r)), (h - pad.b) - pad.t);
+  g.restore();
+  /* where you are now, and where the top is - the two points worth marking */
+  g.beginPath(); g.moveTo(X(S.risk), pad.t); g.lineTo(X(S.risk), h - pad.b);
+  g.strokeStyle = tok("--ink"); g.lineWidth = 1.5; g.setLineDash([3,3]); g.stroke();
+  g.setLineDash([]);
+  g.beginPath(); g.arc(X(best.r), Y(best.p), 6, 0, Math.PI*2);
+  g.fillStyle = tok("--panel"); g.fill();
+  g.lineWidth = 2.5; g.strokeStyle = tok("--c-pass"); g.stroke();
+
+  cv.setAttribute("aria-label", "Pass rate is flat-topped between " + bLo.r.toFixed(2) + "% and " +
+    bHi.r.toFixed(2) + "% risk at about " + Math.round(best.p*100) + "%; at your " +
+    S.risk.toFixed(2) + "% it is " + pctEst(passAt(S.risk)) + ".");
+  document.getElementById("riskNote").innerHTML =
+    "Shaded band is the <b>flat top</b>, <b>" + bLo.r.toFixed(2) + "–" + bHi.r.toFixed(2) +
+    "%</b>. Every size in it lands within 3% of the best (" + pctEst(best.p) + "), so take the " +
+    "<b>low end</b> and carry less risk for the same odds. You're at <b>" + S.risk.toFixed(2) +
+    "%</b>. Past the top, size stops buying chances and starts spending them.";
+}
+function passAt(r){
+  let near = riskCurve[0];
+  riskCurve.forEach(d => { if(Math.abs(d.r - r) < Math.abs(near.r - r)) near = d; });
+  return near ? near.p : 0;
+}
+/* the sweep is the expensive one - a coarse grid at reduced sims, because its
+   job is the SHAPE and where the top is, not a fourth decimal */
+function sweepRisk(){
+  const keep = S.risk;
+  riskCurve = [];
+  for(let r = 0.1; r <= 4.0001; r += 0.2){
+    S.risk = r;
+    const rnd = mulberry(4242);
+    const two = S.p2 > 0;
+    let pass = 0;
+    for(let i = 0; i < 400; i++){
+      const r1 = phaseWalk(S.p1, rnd);
+      if(r1.res === "pass"){ if(!two || phaseWalk(S.p2, rnd).res === "pass") pass++; }
+    }
+    riskCurve.push({ r: +r.toFixed(2), p: pass/400 });
+  }
+  S.risk = keep;
+}
+/* hover: an HTML chart is interactive, so the risk curve carries a crosshair */
+(function hookRiskHover(){
+  const cv = document.getElementById("cRisk"), tip = document.getElementById("riskTip");
+  if(!cv || !tip) return;
+  const move = (ev) => {
+    if(!riskCurve.length) return;
+    const b = cv.getBoundingClientRect();
+    const x = (ev.touches ? ev.touches[0].clientX : ev.clientX) - b.left;
+    const pad = { l: 34, r: 12 };
+    const r = 0.1 + (x - pad.l) / (b.width - pad.l - pad.r) * (4 - 0.1);
+    if(r < 0.05 || r > 4.05){ tip.classList.remove("on"); return; }
+    let near = riskCurve[0];
+    riskCurve.forEach(d => { if(Math.abs(d.r - r) < Math.abs(near.r - r)) near = d; });
+    tip.innerHTML = near.r.toFixed(2) + "% risk &middot; " + pctEst(near.p) + " pass";
+    tip.style.left = (pad.l + (near.r - 0.1)/(4-0.1)*(b.width - pad.l - pad.r)) + "px";
+    tip.style.top = ((190 - 24) - near.p*(190 - 24 - 10) - 10) + "px";
+    tip.classList.add("on");
+  };
+  cv.addEventListener("mousemove", move);
+  cv.addEventListener("touchmove", move, { passive: true });
+  cv.addEventListener("mouseleave", () => tip.classList.remove("on"));
+})();
+
+function drawAll(){ drawBreakEven(); drawFan(); drawRisk(); }
+
+/* ---------------- wiring ---------------- */
+function fmt(){
+  el("wrO").textContent = S.wr+"%";
+  el("rrO").textContent = S.rr.toFixed(2)+"R";
+  el("nO").textContent  = S.n;
+  el("p1O").textContent = S.p1+"%";
+  el("p2O").textContent = S.p2>0 ? S.p2+"%" : "one phase";
+  el("ddO").textContent = S.dd+"%";
+  el("ddHint").innerHTML = DD_HINT[S.ddType];
+  /* A trailing floor on a two-step evaluation is a firm nobody runs. Across 21
+     real firms every trailing one is futures or single-phase, and every two-step
+     is static. Worth saying, because the page will happily price the hybrid. */
+  const odd = S.ddType !== "static" && S.p2 > 0;
+  const wn = el("ddWarn");
+  wn.hidden = !odd;
+  if(odd) wn.innerHTML = "<b>That combination doesn't exist.</b> Trailing floors are a " +
+    "futures and single-phase thing (Topstep, Apex, MyFundedFutures). Of 21 real firms, " +
+    "every trailing one is futures or one-phase and every two-step one is static. " +
+    "If yours is two-step set phase 2 to 0, or switch the floor back to static.";
+  el("dlO").textContent = S.dl>0 ? S.dl+"%" : "none";
+  el("riskO").textContent = S.risk.toFixed(2)+"%";
+  el("tpdO").textContent = S.tpd;
+  el("mdO").textContent = S.md>0 ? S.md : "none";
+  el("tlO").textContent = S.tl>0 ? S.tl+" days" : "none";
+}
+let queued = false;
+function run(){
+  readInputs(); fmt(); validate(); drawBreakEven(); drawFan();
+  if(queued) return;
+  queued = true;
+  /* the Monte Carlo halves are the expensive part; let the sliders and the
+     cheap panels paint before they run so dragging never feels sticky */
+  requestAnimationFrame(()=>{
+    queued = false;
+    challenge();
+    sweepRisk();
+    drawRisk();
+  });
+}
+IN.forEach(k=> el(k).addEventListener("input", run));
+document.querySelectorAll("#ddSeg button").forEach((btn)=>{
+  btn.addEventListener("click", ()=>{
+    S.ddType = btn.getAttribute("data-dd");
+    document.querySelectorAll("#ddSeg button").forEach((o)=>
+      o.setAttribute("aria-pressed", o === btn ? "true" : "false"));
+    run();
+  });
+});
+
+/* the charts read their colours from CSS custom properties, so a theme change
+   is a redraw and not a second palette to keep in step */
+new MutationObserver(drawAll).observe(document.documentElement, { attributes:true, attributeFilter:["data-theme"] });
+if(window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", drawAll);
+let rz;
+addEventListener("resize", ()=>{ clearTimeout(rz); rz = setTimeout(drawAll, 120); });
+
+run();
+</script>

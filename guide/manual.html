@@ -1,0 +1,627 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Edge Lab — User Manual</title>
+<style>
+  @page { size: A4; margin: 17mm 15mm 20mm; }
+  * { box-sizing: border-box; }
+  html { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  body {
+    margin: 0; font-family: "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+    font-size: 10.3pt; line-height: 1.55; color: #232823; background: #fff;
+  }
+  code, .mono { font-family: "Cascadia Code", "Cascadia Mono", Consolas, ui-monospace, monospace; }
+  h1, h2, h3, h4 { line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 18pt; margin: 26px 0 6px; padding-bottom: 6px; border-bottom: 3px solid #2E7A4C;
+       break-after: avoid; break-inside: avoid; }
+  h2.part { break-before: page; margin-top: 0; font-size: 22pt; border-bottom-width: 5px; }
+  h2.first { margin-top: 0; }
+  h3 { font-size: 12.5pt; margin-top: 18px; color: #215938; break-after: avoid; }
+  h4 { font-size: 10.6pt; margin-top: 12px; break-after: avoid; }
+  p { margin: 0 0 8px; }
+  ul, ol { margin: 0 0 9px; padding-left: 20px; }
+  li { margin-bottom: 3px; }
+  .lead { font-size: 11.2pt; color: #3C443C; margin-bottom: 12px; }
+  .ui { font-family: "Cascadia Code", Consolas, monospace; font-size: 0.9em; font-weight: 700;
+        border: 1px solid #9BA28F; background: #F5F6F0; padding: 0 4px; white-space: nowrap; }
+  .kbd { font-family: Consolas, monospace; font-size: 8.8pt; border: 1px solid #9BA28F;
+         background: #F5F6F0; padding: 0 4px; border-radius: 2px; }
+
+  .cover { height: 250mm; display: flex; flex-direction: column; justify-content: center; break-after: page; }
+  .cover .kicker { font-family: "Cascadia Code", Consolas, monospace; font-size: 10pt;
+    letter-spacing: 0.18em; text-transform: uppercase; color: #5C635A; margin-bottom: 10px; }
+  .cover h1 { font-size: 40pt; font-weight: 800; margin-bottom: 8px; }
+  .cover .sub { font-size: 15pt; color: #3C443C; margin-bottom: 26px; }
+  .cover .rule { height: 5px; background: #2E7A4C; width: 90px; margin: 0 0 22px; }
+  .cover .meta { font-family: "Cascadia Code", Consolas, monospace; font-size: 9.5pt; color: #5C635A;
+    border-top: 2px solid #C6CBBD; padding-top: 12px; margin-top: 26px; }
+
+  figure { margin: 10px 0 14px; break-inside: avoid; }
+  figure img { width: auto; max-width: 100%; height: auto; max-height: 200mm;
+               border: 1.5px solid #9BA28F; display: block; margin: 0 auto; }
+  figure img.mid { max-height: 150mm; }
+  figure img.narrow { max-width: 62%; max-height: 140mm; }
+  figure img.small { max-width: 48%; max-height: 95mm; }
+  figcaption { font-size: 8.8pt; color: #5C635A; margin-top: 5px; line-height: 1.45; text-align: center; }
+
+  .note { border-left: 4px solid #2E7A4C; background: #F2F5EF; padding: 8px 12px; margin: 10px 0; break-inside: avoid; }
+  .note.warn { border-left-color: #AF3A2C; background: #FAF1EE; }
+  .note.tip { border-left-color: #A9741A; background: #FBF6E9; }
+  .note .h { font-family: "Cascadia Code", Consolas, monospace; font-size: 8.3pt; letter-spacing: 0.06em;
+    text-transform: uppercase; color: #5C635A; margin-bottom: 3px; }
+  .note p:last-child { margin-bottom: 0; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 9.2pt; margin: 8px 0 12px; }
+  tr { break-inside: avoid; }
+  th, td { text-align: left; padding: 4px 7px; border-bottom: 1px solid #DDE1D5; vertical-align: top; }
+  th { background: #EFF1EA; font-size: 8.4pt; text-transform: uppercase; letter-spacing: 0.04em; color: #5C635A; }
+  td.k { font-family: "Cascadia Code", Consolas, monospace; font-size: 8.8pt; width: 32%; }
+
+  .steps { counter-reset: s; padding-left: 0; list-style: none; }
+  .steps > li { counter-increment: s; position: relative; padding-left: 28px; margin-bottom: 7px; }
+  .steps > li::before { content: counter(s); position: absolute; left: 0; top: 1px;
+    width: 20px; height: 20px; background: #2E7A4C; color: #fff; font-family: Consolas, monospace;
+    font-size: 9.5pt; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+
+  .toc { column-count: 2; column-gap: 26px; font-size: 10pt; }
+  .toc div { margin-bottom: 2px; break-inside: avoid; }
+  .toc .g { font-weight: 700; margin-top: 10px; color: #215938; }
+  .toc .g:first-child { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<!-- ============================ COVER ============================ -->
+<section class="cover">
+  <div class="kicker">Edge in / verdict out</div>
+  <h1>Edge Lab</h1>
+  <div class="sub">User manual</div>
+  <div class="rule"></div>
+  <p style="max-width:135mm;font-size:11pt">
+    How to use every screen: what to click, what to type, and how to read what comes back.
+    The app itself shows only the numbers. The explanations are in this manual.
+  </p>
+  <div class="meta">
+    Version 2.16.0 &nbsp;·&nbsp; Windows and macOS &nbsp;·&nbsp; produced by jiidc &nbsp;·&nbsp; MIT licensed<br>
+    Offline: no account, no telemetry, no network. Your journal stays on your machine.<br>
+    Open this manual any time from the <b>?</b> button at the top right of the app.
+  </div>
+</section>
+
+<!-- ============================ TOC ============================ -->
+<h2 class="first">Contents</h2>
+<div class="toc">
+  <div class="g">Part 1 — Getting started</div>
+  <div>1. What Edge Lab does</div>
+  <div>2. The one unit: R</div>
+  <div>3. The screen at a glance</div>
+  <div>4. Quick start</div>
+  <div class="g">Part 2 — Journal</div>
+  <div>5. Accounts</div>
+  <div>6. Logging a trade</div>
+  <div>7. The trade log</div>
+  <div>8. Filters</div>
+  <div>9. Equity and dollars</div>
+  <div>10. Rule guard</div>
+  <div>11. Stats — Performance</div>
+  <div>12. Stats — Edge report</div>
+  <div>13. Stats — Timing</div>
+  <div>14. Stats — Calendar</div>
+  <div>15. Backups and your data</div>
+  <div class="g">Part 3 — Simulator</div>
+  <div>16. Your edge: sliders or journal</div>
+  <div>17. Leave out (what if I stop…)</div>
+  <div>18. The firm and its rules</div>
+  <div>19. Validate</div>
+  <div>20. Challenge</div>
+  <div>21. Funded</div>
+  <div>22. Decision</div>
+  <div class="g">Part 4 — Reference</div>
+  <div>23. Messages you may see</div>
+  <div>24. What the model assumes</div>
+  <div>25. Glossary</div>
+  <div>26. Keyboard shortcuts</div>
+  <div>27. Troubleshooting</div>
+</div>
+
+<!-- ============================ PART 1 ============================ -->
+<h2 class="part">Part 1 — Getting started</h2>
+
+<h3>1. What Edge Lab does</h3>
+<p>Edge Lab answers two questions a prop trader has to get right:</p>
+<ul>
+  <li><b>Is my edge real?</b> Or is my record still explainable by luck?</li>
+  <li><b>How big should I trade?</b> What size passes this firm's evaluation, keeps the funded account alive, and pays me?</li>
+</ul>
+<p>It has two modes, switched with the buttons at the top right:</p>
+<table>
+  <tr><th>Mode</th><th>Use it to</th></tr>
+  <tr><td class="k">Journal</td><td>Log your trades, review them, and see what your record says: stats, strengths and leaks, timing, calendar, and how close each account is to its firm's rules.</td></tr>
+  <tr><td class="k">Simulator</td><td>Run your edge thousands of times against a firm's rules: whether the edge is real, your odds of passing, your payouts once funded, and whether the challenge is worth buying.</td></tr>
+</table>
+<p>The two modes connect through one switch, <span class="ui">Use my journal</span>. When it is on, the Simulator runs on your logged trades instead of the sliders.</p>
+
+<h3>2. The one unit: R</h3>
+<p><b>1R is the amount you planned to lose on a trade</b>, the distance from entry to stop times your size.
+A trade that makes twice what you risked is <b>+2R</b>. A full stop-out is <b>&minus;1R</b>. A trade closed at break-even is a <b>scratch</b> (0R).</p>
+<p>Edge Lab works in R because R does not depend on account size. Your edge is the same whether you trade a $25,000 or a $150,000 account.
+Dollars come in at the end: set what 1R is worth (Journal) or your risk per trade (Simulator), and the app converts.</p>
+<div class="note tip"><p class="h">Why it matters</p>
+<p>A trade with no stop, no Risk $ and no R override has no R. It still counts toward win rate and dollar totals, but every R statistic leaves it out. Log a stop or a Risk $ on every trade.</p></div>
+
+<h3>3. The screen at a glance</h3>
+<figure><img src="shots/32-header.png" class="mid" alt="Header"><figcaption>The header: brand, mode switch, manual, reload, colour scheme.</figcaption></figure>
+<table>
+  <tr><th>Control</th><th>What it does</th></tr>
+  <tr><td class="k">Simulator / Journal</td><td>Switches mode. Each mode keeps its own state.</td></tr>
+  <tr><td class="k">?</td><td>Opens this manual.</td></tr>
+  <tr><td class="k">&#8635; (reload)</td><td>Reloads the app (<span class="kbd">F5</span>). If a trade editor is open, it asks first.</td></tr>
+  <tr><td class="k">&#9680; (colour scheme)</td><td>Picks a colour scheme: System (follows your OS), Daylight, Forest, Carbon, Midnight or Parchment.</td></tr>
+</table>
+<p>Both modes share a layout: a <b>rail</b> of controls on the left and the <b>results</b> on the right. Change something on the left and the right side recalculates.</p>
+
+<h3>4. Quick start</h3>
+<ol class="steps">
+  <li><b>Create an account.</b> In <span class="ui">Journal</span>, click <span class="ui">+ New</span> in Account scope. Name it after the prop account, e.g. "Apex 50k".</li>
+  <li><b>Log your trades.</b> Click <span class="ui">+ New trade</span> (<span class="kbd">Ctrl+N</span>). At minimum: instrument, session, and a result (prices, or Risk $ plus P&amp;L, or an R value).</li>
+  <li><b>Set the firm.</b> Switch to <span class="ui">Simulator</span>, click <span class="ui">Edit rules</span> in The firm, pick a preset and match every field to your firm.</li>
+  <li><b>Turn on Use my journal.</b> It needs at least 10 resolved trades. The Simulator now runs on your record.</li>
+  <li><b>Read the four tabs in order:</b> Validate (is it real?) → Challenge (will it pass?) → Funded (will it pay?) → Decision (is it worth the fee?).</li>
+  <li><b>Bind the firm to the account.</b> Back in Journal, pick the account in Account scope and click <span class="ui">Bind sim firm</span> in Rule guard. The rule meters now track that account live.</li>
+</ol>
+
+<!-- ============================ PART 2 ============================ -->
+<h2 class="part">Part 2 — Journal</h2>
+<figure><img src="shots/20-journal-log.png" class="mid" alt="Journal"><figcaption>The Journal: rail on the left, trade log on the right.</figcaption></figure>
+
+<h3>5. Accounts</h3>
+<p>Every trade belongs to one account. Keep <b>one journal account per prop account</b>. The rule guard and prop odds treat an account's trades as the real history of that account.</p>
+<figure><img src="shots/21-account-scope.png" class="small" alt="Account scope"><figcaption>Account scope.</figcaption></figure>
+<ul>
+  <li><b>Create:</b> <span class="ui">+ New</span>, type a name, confirm.</li>
+  <li><b>Switch:</b> pick it in the Account scope dropdown. The log, stats, filters, equity and odds all follow the scope.</li>
+  <li><b>All accounts:</b> combines everything. Useful for overall stats. Rule guard needs a single account.</li>
+  <li><b>Delete:</b> select the account, click <span class="ui">Delete</span>, confirm. Its trades and screenshots are removed <b>permanently</b>. Export a backup first.</li>
+</ul>
+
+<h3>6. Logging a trade</h3>
+<p>Click <span class="ui">+ New trade</span> or press <span class="kbd">Ctrl+N</span>. Save with <span class="ui">Save trade</span> or <span class="kbd">Ctrl+Enter</span>.
+<span class="ui">Quick log</span> hides the deeper sections for fast capture. Switch back to the full form any time.</p>
+<figure><img src="shots/25-new-trade.png" class="mid" alt="Trade editor"><figcaption>The trade editor (full form).</figcaption></figure>
+
+<h4>Trade</h4>
+<table>
+  <tr><th>Field</th><th>What to enter</th></tr>
+  <tr><td class="k">Date &amp; time</td><td>When you entered. Used by Calendar, Timing and the rule guard's daily limits.</td></tr>
+  <tr><td class="k">Instrument *</td><td>Required. Pick from the list or choose custom and type it.</td></tr>
+  <tr><td class="k">Direction</td><td>Long or short.</td></tr>
+  <tr><td class="k">Setup / playbook</td><td>Your name for the setup. Earlier ones are suggested as you type.</td></tr>
+  <tr><td class="k">Entry model</td><td>Optional. The trigger you used (e.g. "Liq sweep + CHOCH"). Gets its own table in the Edge report and its own filter.</td></tr>
+  <tr><td class="k">Session *</td><td>Required: Asia, London, New York or Other. It is a tag you pick, not read off the clock, so it stays right in any timezone.</td></tr>
+  <tr><td class="k">Account</td><td>Which account the trade belongs to.</td></tr>
+</table>
+
+<h4>Execution</h4>
+<table>
+  <tr><td class="k">Entry, Stop, Target, Exit, Size</td><td>Prices and size. With entry and stop the app knows 1R. With a target too it shows the planned R:R. With an exit it computes the result.</td></tr>
+  <tr><td class="k">Exit date &amp; time</td><td>Optional. Enables holding time and the after-a-loss table on the Timing tab.</td></tr>
+</table>
+
+<h4>Result</h4>
+<table>
+  <tr><td class="k">Risk $ (1R)</td><td>What one full loss would cost. Defaults to the account's R value if one is set.</td></tr>
+  <tr><td class="k">P&amp;L $ (net)</td><td>Leave on <i>auto</i> and it fills itself as <b>R × Risk $ − fees</b>. Type your own figure to override. Clear it to go back to auto.</td></tr>
+  <tr><td class="k">Fees $</td><td>Commissions for the trade.</td></tr>
+  <tr><td class="k">R override</td><td>Type the R result directly if you journal without prices. Otherwise R = P&amp;L ÷ Risk $.</td></tr>
+  <tr><td class="k">MFE / MAE</td><td>Optional. How far the trade ran in your favour (MFE) and against you (MAE) while open. Enter in R, $ or price with the switch. <b>MAE is entered as a positive number</b>: 0.6 means it sat 0.6R offside. $ mode needs a Risk $; price mode needs entry and stop.</td></tr>
+  <tr><td class="k">Planned R:R</td><td>The target you set, in R. Type it here if you log without prices. It is derived automatically when entry, stop and target are filled.</td></tr>
+  <tr><td class="k">Full run (R) — winners only</td><td>How far price got <b>before it would have come back to your stop</b>, whether or not you were still in. Losers need nothing: losing already proves the run fell short. This feeds the target sweep (section 11).</td></tr>
+</table>
+<div class="note warn"><p class="h">Common mix-up</p>
+<p>Planned R:R is where your order sat, not how far price went. Putting the MFE in the Planned R:R box makes the target sweep report that your winners fell short of their own targets.</p></div>
+
+<h4>Tags, psychology, review, screenshots</h4>
+<ul>
+  <li><b>Quality</b> (pick one): A+ setup, B setup, C setup, Forced, Revenge trade.</li>
+  <li><b>Mistakes</b> (any): Entered early/late, Sized too large, No stop, Moved stop, Exited early, Held too long, Outside plan, Chased, Overtraded.</li>
+  <li><b>Market conditions</b> (any): Trend day, Range / chop, High volatility, Low volume, News day, Open drive, Reversal.</li>
+  <li><b>Emotion before / after</b> (1 calm – 5 tilted) and <b>Followed the plan?</b> These feed the Edge report and the day guard.</li>
+  <li><b>Plan / thesis</b> and <b>Notes / review</b>: free text, searchable from the filter.</li>
+  <li><b>Screenshots:</b> click the drop zone, drag images in, or paste with <span class="kbd">Ctrl+V</span> / <span class="ui">Paste from clipboard</span>.</li>
+</ul>
+
+<h3>7. The trade log</h3>
+<ul>
+  <li>Trades are grouped by day with a daily total. Click a trade to open its detail view.</li>
+  <li><b>Detail view:</b> <span class="kbd">←</span> / <span class="kbd">→</span> steps through trades. <span class="ui">Edit</span> opens the editor. Click a screenshot to zoom: scroll to zoom, drag to pan, double-click to fit.</li>
+  <li><b>Unit switch</b> (top right): show results in <span class="ui">R</span>, <span class="ui">P&amp;L</span> or <span class="ui">Both</span>. P&amp;L needs dollars turned on (section 9).</li>
+  <li><b>Bulk delete:</b> <span class="ui">Select</span>, tick trades or use <span class="ui">All</span>, then <span class="ui">Delete (n)</span>.</li>
+</ul>
+
+<h3>8. Filters</h3>
+<figure><img src="shots/24-filters.png" class="small" alt="Filters"><figcaption>The Filter panel.</figcaption></figure>
+<p>Filters narrow the log <b>and every Stats tab</b>. Combine any of: text search (notes and plan), setup, entry model, outcome, direction, session, mistake tag, market condition, instrument, date range.
+<span class="ui">Reset</span> clears them all.</p>
+<p>Clicking a row in the Edge report adds a <b>segment filter</b> chip above the log. Click its &times; to remove it.</p>
+
+<h3>9. Equity and dollars</h3>
+<figure><img src="shots/31-equity.png" class="small" alt="Equity"><figcaption>The Equity panel with dollars shown.</figcaption></figure>
+<p>The journal works in R by default. To see money:</p>
+<ol class="steps">
+  <li>Pick a single account in Account scope.</li>
+  <li>Click <span class="ui">Show dollars</span> in the Equity panel.</li>
+  <li>Enter a <b>Starting balance</b>.</li>
+  <li>Enter <b>What 1R is worth</b>, either <span class="ui">$ per R</span> (fixed dollars) or <span class="ui">% of start</span>.</li>
+</ol>
+<p>Trades logged in R only are then priced at that value. Trades with a logged P&amp;L keep their own figure. The line under the inputs says how many trades are priced.</p>
+<p>On <i>All accounts</i>, combined dollars only work when every account has a balance and the same R value.</p>
+
+<h3>10. Rule guard</h3>
+<figure><img src="shots/22-rule-guard.png" class="small" alt="Rule guard"><figcaption>Rule guard on a bound account.</figcaption></figure>
+<p>Rule guard shows how far this account is from breaking its firm's rules: drawdown headroom, today's loss against the daily limit, distance to target, min days and consistency.</p>
+<ol class="steps">
+  <li>Set the firm's rules in the Simulator (section 18).</li>
+  <li>In Journal, pick <b>one</b> account in Account scope.</li>
+  <li>Click <span class="ui">Bind sim firm</span>. The firm is now stored with this account. <span class="ui">Rebind sim firm</span> replaces it. <span class="ui">Unbind</span> removes it.</li>
+  <li>Set the phase: <span class="ui">eval</span> or <span class="ui">funded</span>. Funded replaces the target meter with payout readiness and starts counting from the funding date.</li>
+</ol>
+<div class="note"><p class="h">What it assumes</p>
+<p>That this journal account <b>is</b> the prop account: its trades are the trades placed there, at those sizes. On a general journal covering everything you trade, the meters describe an account that does not exist. Add a separate account per prop account.</p>
+<p>Meters are computed from logged trade closes, not tick data. Keep a buffer on trailing rules.</p></div>
+<p>The <b>day guard</b> line shows today's trades and R. It warns when you have 2+ losses in a row, 3+ losses today, or an elevated logged emotion. Stop for the day when you see it.</p>
+
+<h3>11. Stats — Performance</h3>
+<figure><img src="shots/26-stats-performance.png" alt="Performance"><figcaption>Stats → Performance.</figcaption></figure>
+<h4>How to read it</h4>
+<ul>
+  <li><b>The four headline cards</b> are the edge: Expectancy, Win rate, Reward : risk, Profit factor. Expectancy is the one that grows the account. Win rate and reward:risk only mean something together.</li>
+  <li><b>Bands</b> (95% CI) under a number show how sure the sample is. If the expectancy band touches 0, luck is not ruled out yet.</li>
+  <li><b>The tile grid</b> adds trades, totals, balance, SQN, volatility, deepest drawdown, streaks, Kelly, recent form, best-day share and tail ratio. Each is defined in the glossary. These unlock at 8+ resolved trades.</li>
+  <li><b>Best-day share</b> matters for consistency rules. Many firms cap one day's share of profit near 30–50%.</li>
+</ul>
+<h4>Prop odds</h4>
+<p>Your journaled trades, resampled against the firm (the bound firm, or the Simulator's firm if none is bound), at the Decision tab's eval and funded risk. It shows pass odds, attempts and fees to fund, the chance to stay funded a year, the chance a purchase ends in a payout, expected payout, and sample quality. It needs 10 resolved trades. Under 50 trades, treat every range as directional.</p>
+<h4>Charts</h4>
+<ul>
+  <li><b>Equity curve</b> in R, oldest to newest. <b>R-multiple distribution</b>: red losses, green wins.</li>
+  <li><b>Rolling expectancy</b> over a 30-trade window. A falling line means the edge is drifting or the market changed.</li>
+</ul>
+<h4>Exit management (needs MFE/MAE on 30+ trades)</h4>
+<ul>
+  <li><b>Exit efficiency</b> = realised R ÷ best available R (MFE).</li>
+  <li><b>Avg MFE</b> is the average best point a trade reached. Compare it with your average winner: the gap is what your exits cost.</li>
+  <li><b>Avg heat (MAE)</b> is how far trades went against you on average. <b>Full-risk touches</b> near 100% mean stops fire late or get moved.</li>
+  <li><b>How far trades run — by session:</b> the band is the middle half of runs, the dark mark the median, the light mark the best 10%. <b>Kept</b> is the share of the run you realised.</li>
+</ul>
+<h4>Target sweep — what should the R:R be?</h4>
+<p>Your stop is 1R, so a target of <b>T</b> pays <b>+T</b> if the move reached T before coming back to the stop, and &minus;1R if it did not. The sweep applies that to your record at every target and shows expectancy per trade.</p>
+<ol class="steps">
+  <li>Give every trade a <b>Planned R:R</b> (typed, or from entry/stop/target). If you traded one target throughout, type it in the <b>Planned R:R across this account</b> box and click <span class="ui">Set on n with none</span>. <span class="ui">Replace on all</span> overwrites every trade.</li>
+  <li>Log <b>Full run (R)</b> on your winners, at least 20 of them.</li>
+  <li>Read the <b>flat top</b>, not the single peak. Every target inside the flat top pays about the same; the lower end fills more often and pays sooner. The shaded range shows where 90% of resamples of your record put the best target.</li>
+</ol>
+<div class="note warn"><p class="h">Don't set the target to your average MFE</p>
+<p>The average sits above most trades. Every winner that peaks short of a higher target turns into a full &minus;1R loss. Going from target P to T only pays if <b>p(T)·(T+1) &gt; p(P)·(P+1)</b>. At a 48% win rate, moving 1.5R → 3R needs 63% of your current winners to also reach 3R.</p></div>
+<p>The sweep starts at your lowest planned target: a trade that ran halfway and reversed is recorded only as a loss, so nothing below it can be measured. It assumes the stop stays put and that you would really hold to the new target. It follows the log filter, so filter to one setup or session to get a target for that subset. If runs are logged on under 80% of winners it warns you: logging runs mostly on big days biases it toward bigger targets.</p>
+
+<h3>12. Stats — Edge report</h3>
+<figure><img src="shots/28-edge-report.png" alt="Edge report"><figcaption>Stats → Edge report.</figcaption></figure>
+<ul>
+  <li><b>Discipline check:</b> clean trades against trades with a tagged mistake.</li>
+  <li><b>Strengths — lean in / Leaks — cut these:</b> every tag, grade, emotion, setup, session and direction with 4+ trades, ranked. <b>Click a row</b> to filter the log to those trades.</li>
+  <li><b>Direction:</b> long against short. Total R, expectancy and win rate side by side. The toggle picks which side's win/loss breakdown is shown. Under 8 trades a side, it's a hint, not a finding.</li>
+  <li><b>By entry model / setup / quality tag / session:</b> n, win%, RR (average winner ÷ average loser), expectancy, total R. Click an entry model row to filter the log. A row under 4 trades is noise.</li>
+  <li><b>By session radar:</b> where your R comes from. The dashed ring is 0R. Untagged trades count as Other. Open a trade and set its session to move it.</li>
+</ul>
+<div class="note"><p class="h">Read it as hypotheses</p>
+<p>With ~20 segments on screen, one will look best by chance. A leak is worth acting on when it has a real sample behind it and still holds after you log more trades.</p></div>
+
+<h3>13. Stats — Timing</h3>
+<figure><img src="shots/27-timing.png" alt="Timing"><figcaption>Stats → Timing.</figcaption></figure>
+<p>The same record cut by clock: entry hour, weekday, holding time, which trade of the day, how long you waited after a loss, and how busy the day was.</p>
+<h4>"Does any of it hold up?"</h4>
+<p>The box at the top tests whether any one bucket really differs from the rest. It needs 30+ trades on an axis in 2+ buckets of 4+. It reports the most striking bucket, its gap against the rest, and the <b>noise floor</b>: the gap that picking the best of that many buckets produces on a record with no timing edge at all. <b>Stands out</b> means the gap cleared both the 90% band and the noise floor. <b>Nothing stands out yet</b> means it didn't. Log more trades in the thin buckets rather than changing your trading.</p>
+<p>Even when a bucket stands out, an hour is <i>when</i> you traded, not <i>what</i>. Check the setup, session and direction mix inside it on the Edge report before changing anything.</p>
+<h4>Columns</h4>
+<table>
+  <tr><td class="k">win% (small range)</td><td>Win rate and its range.</td></tr>
+  <tr><td class="k">RR</td><td>Average winner ÷ average loser, in R.</td></tr>
+  <tr><td class="k">held / win / loss held</td><td>Median holding time. Needs exit times.</td></tr>
+  <tr><td class="k">ran to (won) / (lost)</td><td>Median MFE, split by outcome. It says where price got, not whether you could have stayed in: MFE and MAE are stored with no order between them. Treat it as a reason to test a bigger target, not as a backtest of one.</td></tr>
+  <tr><td class="k">expectancy bar</td><td>Expectancy per trade with its band.</td></tr>
+</table>
+<ul>
+  <li>Hours are read straight from the times you logged, in your timezone. For market sessions use the session tag.</li>
+  <li><b>Holding time is never tested.</b> Winners run to target and are held longer, losers stop out fast, so long holds win by construction. It describes your trades; it is not an instruction to hold longer.</li>
+  <li><b>Which trade of the day</b> matters because the daily loss limit ends prop accounts. A decay down this column is a stopping rule, after it clears the test above.</li>
+  <li><b>After a loss</b> measures the gap from a losing exit to your next entry on the same account. It needs exit times on losers.</li>
+  <li><b>By how busy the day was</b> has one row per day (median day, green days, total R), not per trade.</li>
+  <li>Blank cells mean the data isn't logged: holding time needs exit times, RR/kept needs a planned R:R, ran-to needs MFE.</li>
+</ul>
+
+<h3>14. Stats — Calendar</h3>
+<figure><img src="shots/29-calendar.png" class="mid" alt="Calendar"><figcaption>Stats → Calendar.</figcaption></figure>
+<p>A month grid tinted by each day's result. Use <span class="ui">&lsaquo;</span> / <span class="ui">&rsaquo;</span> to change month. The unit switch shows R, P&amp;L or both.</p>
+
+<h3>15. Backups and your data</h3>
+<ul>
+  <li><b>Desktop app:</b> the journal is <code>journal.db</code> (SQLite) plus screenshots in <code>images\</code>, inside <code>Documents\PropEdgeLab\</code>. <span class="ui">Open folder</span> in the rail reveals it.</li>
+  <li><b>Browser version:</b> trades live in that browser only. Export backups often.</li>
+  <li><span class="ui">Export backup</span> writes a JSON file of every trade and setting. The app also makes a silent weekly backup into <code>exports\</code>.</li>
+  <li><span class="ui">Import</span> reads one of those backup files. You choose to <b>Merge</b> with the current journal or <b>Replace</b> it.</li>
+</ul>
+
+<!-- ============================ PART 3 ============================ -->
+<h2 class="part">Part 3 — Simulator</h2>
+<figure><img src="shots/01-first-look.png" class="mid" alt="Simulator"><figcaption>The Simulator: your edge and the firm on the left, four tabs on the right.</figcaption></figure>
+<p>Every Simulator number comes from Monte Carlo: your edge is played trade by trade, thousands of times, against the firm's rules. Internally everything is in R, scaled by your risk per trade, then shown in dollars.</p>
+
+<h3>16. Your edge: sliders or journal</h3>
+<figure><img src="shots/02-edge-bar.png" class="small" alt="Your edge"><figcaption>Your edge.</figcaption></figure>
+<h4>Sliders (default)</h4>
+<table>
+  <tr><td class="k">Win rate %</td><td>Share of <b>decided</b> trades that win. Scratches are outside it, the same as in the journal.</td></tr>
+  <tr><td class="k">Reward to risk (R)</td><td>Average winner in R. Toggle <span class="ui">Profit factor</span> to enter PF instead.</td></tr>
+  <tr><td class="k">Scratch rate %</td><td>Share of <b>all</b> trades that close at 0R. Scratches burn days without moving the account, which matters for time limits, subscriptions and payout windows.</td></tr>
+  <tr><td class="k">Trades in record</td><td>How big a sample the numbers stand for. Controls how wide the ranges on Validate are.</td></tr>
+</table>
+<h4>Use my journal</h4>
+<figure><img src="shots/03-journal-switch.png" class="small" alt="Use my journal"><figcaption>Use my journal.</figcaption></figure>
+<ol class="steps">
+  <li>Turn on <span class="ui">Use my journal</span>. It needs 10+ resolved trades with an R basis.</li>
+  <li>Pick the <b>Edge source</b>: one account, or all.</li>
+</ol>
+<p>Every tab now resamples your real trades instead of the sliders. Trades without a stop or Risk $ are left out; the line under the switch says how many.</p>
+<div class="note tip"><p class="h">Several accounts, one signal</p>
+<p>If you fire the same trades into several accounts, pooling them counts one decision two or three times and makes every range look more certain than it is. Set Edge source to a single account. Validate flags pooled and mirrored trades.</p></div>
+
+<h3>17. Leave out (what if I stop…)</h3>
+<p>With Use my journal on, <b>Leave out</b> removes one segment of your record (the same segments as the Edge report, e.g. "Direction · Short"). Every tab then recomputes without it. The box below shows:</p>
+<ul>
+  <li>the change in expectancy with its 90% band;</li>
+  <li>the <b>noise floor</b>: how much cutting the most striking of that many segments moves a record when nothing is going on;</li>
+  <li>a verdict: <b>Stands out</b>, <b>Inside the noise floor</b>, <b>Band includes zero</b> or <b>Barely moves the record</b>;</li>
+  <li>a warning if survival drops. Fewer trades is a shorter record, not automatically a safer one.</li>
+</ul>
+<p>Even "Stands out" is a hypothesis: you picked the segment by looking at these same trades. Trade it forward before believing it. Each segment you test is another look at the same record, so Validate widens its ranges for every look (see "Multiple looks" in section 23). Clearing the cut does not undo that. If the cut leaves fewer than 30 trades, it is not applied.</p>
+
+<h3>18. The firm and its rules</h3>
+<figure><img src="shots/04-firm-editor.png" class="mid" alt="Firm editor"><figcaption>The firm editor.</figcaption></figure>
+<ol class="steps">
+  <li>Click <span class="ui">Edit rules</span> in The firm.</li>
+  <li>Pick a <b>Preset</b> (2-step, 1-phase, Futures trailing, or one you saved) as a starting point.</li>
+  <li>Set <b>every field</b> to match your actual firm. 0 turns a rule off.</li>
+  <li>Optional: <span class="ui">Save as preset</span> to reuse it. <span class="ui">Delete preset</span> removes a saved one.</li>
+</ol>
+<p>The <span class="ui">$</span> / <span class="ui">%</span> switch shows the firm summary and the Funded tab in dollars or % of account. Decision is always in dollars.</p>
+<table>
+  <tr><th>Field</th><th>Meaning</th></tr>
+  <tr><td class="k">Account size / quick chips</td><td>The funded account's size.</td></tr>
+  <tr><td class="k">Structure</td><td>2-step, 1-phase or futures (one phase).</td></tr>
+  <tr><td class="k">Instant funding</td><td>Yes = the fee buys the funded account outright. No evaluation; targets don't apply; the fee is a certain cost.</td></tr>
+  <tr><td class="k">Target phase 1 / 2 (%)</td><td>Profit target per phase. Phase 2 starts from a fresh balance with full drawdown room.</td></tr>
+  <tr><td class="k">Max drawdown (%)</td><td>Distance from the high-water mark (or start) to the floor.</td></tr>
+  <tr><td class="k">Drawdown type</td><td><b>Static</b>: floor fixed below the starting balance. <b>Trailing intraday</b>: floor follows the peak tick. <b>Trailing end-of-day</b>: floor follows the daily close.</td></tr>
+  <tr><td class="k">Trailing locks at start</td><td>Yes = the trailing floor stops rising once it reaches the starting balance.</td></tr>
+  <tr><td class="k">Daily loss limit (%)</td><td>Max loss in one day.</td></tr>
+  <tr><td class="k">Min trading days</td><td>Days required before a pass counts.</td></tr>
+  <tr><td class="k">Consistency cap (%)</td><td>Max share of total profit one day may contribute during the evaluation.</td></tr>
+  <tr><td class="k">Trades per day</td><td>Your pace, 1–20. It sets when daily limits reset, how long a day is and how many trades fit in a year, so it changes almost every number.</td></tr>
+  <tr><td class="k">Profit split (%)</td><td>Your share of payouts.</td></tr>
+  <tr><td class="k">Time limit (trading days)</td><td>Days allowed per phase, in <b>trading</b> days (30 calendar days ≈ 21). 0 = none.</td></tr>
+  <tr><td class="k">Fee type / Challenge fee</td><td>One-time, or monthly until passed (a subscription keeps charging while the evaluation runs).</td></tr>
+  <tr><td class="k">Activation fee</td><td>One-off fee when the evaluation converts to funded.</td></tr>
+  <tr><td class="k">Reset fee</td><td>Discounted re-attempt price after a failed evaluation (one-time-fee firms only). 0 = full fee every time.</td></tr>
+  <tr><td class="k">Payout every / first payout after</td><td>Trading days between payout windows (0 = on demand) and before the first one.</td></tr>
+  <tr><td class="k">Min payout ($)</td><td>Minimum withdrawal. Only matters once it exceeds 5% of the account.</td></tr>
+  <tr><td class="k">Payout buffer ($ profit)</td><td>Profit the account must hold before any withdrawal (e.g. $50k account pays only above $53k = $3,000 buffer).</td></tr>
+  <tr><td class="k">Max payout (% of profit)</td><td>Most of current profit one withdrawal may take; the rest stays at the firm.</td></tr>
+  <tr><td class="k">Max payout ($ per request)</td><td>Fixed dollar ceiling per payout (the first tier if the firm tiers it).</td></tr>
+  <tr><td class="k">Payout consistency (% max day)</td><td>Largest share of profit-since-last-payout any one day may contribute. A big day blocks withdrawals until later profit dilutes it; it does not fail the account.</td></tr>
+  <tr><td class="k">Winning days for payout / Winning day is ($+)</td><td>E.g. 5 days closing up $150+ before a payout can be requested. The count resets after each payout.</td></tr>
+</table>
+<div class="note warn"><p class="h">Check the rules yourself</p><p>Presets are starting points. Prop firm rules change often. Confirm every field on the firm's own site before you pay.</p></div>
+
+<h3>19. Validate — is your edge real?</h3>
+<figure><img src="shots/07-validate.png" alt="Validate"><figcaption>Validate.</figcaption></figure>
+<h4>Steps</h4>
+<ol class="steps">
+  <li>Set your edge (sliders or journal).</li>
+  <li>Read the verdict: <b>Likely real</b>, <b>Promising, unproven</b>, <b>Not enough data</b> or <b>No edge</b>.</li>
+  <li>Set the drawdown <b>Horizon</b> (how many trades ahead you plan for) and, optionally, your own <b>Account drawdown limit %</b> (0 = the firm's).</li>
+  <li>Read the <b>largest risk per trade</b> box at the bottom.</li>
+</ol>
+<h4>Reading the verdict</h4>
+<ul>
+  <li><b>Likely real</b>: the 95% range for expectancy stays above zero.</li>
+  <li><b>Promising, unproven</b>: the average is positive, but the range still crosses zero. More trades will settle it.</li>
+  <li><b>Not enough data</b>: under 30 trades. Aim for 100+. Everything below still prints; only the verdict holds back.</li>
+</ul>
+<p>Each figure (win rate, expectancy, profit factor) has its range underneath. <b>Sample</b> shows the trade count and how many <b>independent</b> observations they amount to. Trades that cluster by day, setup or account are not separate draws, so every range is computed from the effective count.</p>
+<p>The <b>curve</b> is where your true average trade could sit. The shaded band is the 95% range; the dashed line is break-even. If the band crosses it, you cannot yet rule out having no edge.</p>
+<h4>Drawdown to plan for</h4>
+<p>Maximum drawdown grows with how long you trade (roughly with log of trades), so every number names its horizon and percentile. Your record is resampled first, then the future simulated from each resample, so the answer covers the edge you might actually have, not just the one you measured.</p>
+<table>
+  <tr><td class="k">p50 — coin flip</td><td>The median. Not a plan.</td></tr>
+  <tr><td class="k">p75 — 1 in 4 worse</td><td>One run in four is deeper.</td></tr>
+  <tr><td class="k">p90 — size to this</td><td>The sizing anchor.</td></tr>
+  <tr><td class="k">p99 — worst case</td><td>The bad year. Size to survive it.</td></tr>
+</table>
+<p>On the chart: solid line p90, dashed p99, dotted p50; the vertical line is your horizon. Every point is the same edge. The curve rises because a longer run has more chances to go wrong.</p>
+<ul>
+  <li><b>Resampling — Block (fitted)</b> keeps runs of consecutive trades together, so clustered losses survive the resampling. The block length is fitted from your record's lag-1 autocorrelation. <b>Independent</b> draws each trade separately and understates drawdown when losses cluster. The line under it shows the fitted block and, if clustered, what independent draws would have said.</li>
+  <li><b>Use realised loss sizes</b>: on = losses are resampled at the sizes you actually logged, so a stop that filled at &minus;1.4R can happen again. Off = every loss is your average loss. If all your logged losses are the same size, your journal records planned losses, not fills.</li>
+</ul>
+<h4>Largest risk per trade</h4>
+<p>The risk per trade at which the p95 drawdown over your horizon exactly fills the account limit. It is shown in green if the Funded tab's risk is inside it, red if not, with how much of the limit a 1-in-20 bad run would use. One run in twenty is still worse, so treat it as a ceiling, not a target.</p>
+<h4>Warnings on this tab</h4>
+<ul>
+  <li><b>Multiple looks</b>: you have tested several subsets with Leave out, so ranges are widened (each is a stricter interval, so the whole family still carries 95%).</li>
+  <li><b>Pooled accounts</b>: the edge pools several accounts; mirrored trades (same instrument and direction within 5 minutes in different accounts) are discounted.</li>
+  <li><b>The full record, for comparison</b>: shown whenever a Leave-out cut is active.</li>
+</ul>
+
+<h3>20. Challenge — will it pass?</h3>
+<figure><img src="shots/08-challenge.png" alt="Challenge"><figcaption>Challenge.</figcaption></figure>
+<ol class="steps">
+  <li>Set <b>Risk per trade %</b> for the evaluation.</li>
+  <li>Read <b>chance to pass</b>, its 90% range, and typical trading days to pass.</li>
+  <li>Read the one-line advice under it (see below).</li>
+  <li>Use <span class="ui">&#8635; re-roll</span> to draw a new sample of paths. On a 2-step firm, <span class="ui">Phase 1</span> / <span class="ui">Phase 2</span> switches which phase is drawn.</li>
+</ol>
+<ul>
+  <li><b>Paths chart:</b> each line is a live trade-by-trade walk of your edge against the rules. The pass figure itself averages 2,600 attempts.</li>
+  <li><b>How attempts end:</b> pass, drawdown, daily limit, timeout. On a 2-step firm the faded end of a bar is failure in phase 2.</li>
+  <li><b>Days to pass:</b> trading days, not calendar days; the total across both phases on a 2-step. The time limit applies per phase.</li>
+  <li><b>Pass phase 1 × then pass phase 2</b> multiply into the headline on a 2-step firm.</li>
+</ul>
+<table>
+  <tr><th>Advice line</th><th>What to do</th></tr>
+  <tr><td class="k">Too big. Smaller risk lifts these odds a lot.</td><td>Lower risk per trade.</td></tr>
+  <tr><td class="k">Smaller is worse here…</td><td>A smaller size is slower, and the time limit or min days is what fails you. Don't size down; the clock is the constraint.</td></tr>
+  <tr><td class="k">Size isn't the lever.</td><td>The firm's rules or your edge decide it. Try another firm or improve the edge.</td></tr>
+  <tr><td class="k">Phase 1/2 is the harder gate</td><td>Which phase kills most attempts on a 2-step firm.</td></tr>
+</table>
+
+<h3>21. Funded — will it pay?</h3>
+<figure><img src="shots/09-funded.png" alt="Funded"><figcaption>Funded.</figcaption></figure>
+<ol class="steps">
+  <li>Set <b>Risk per trade %</b> for the funded account. Most traders size down after passing.</li>
+  <li>Optional: set a <b>Payout goal</b> per month or per year. 0 = off. The slider moves in whole payouts.</li>
+  <li>Read the results and the chart.</li>
+</ol>
+<table>
+  <tr><td class="k">Chance of a payout</td><td>Chance of at least one withdrawal inside the year, including the first-payout wait and minimum.</td></tr>
+  <tr><td class="k">Payouts / year</td><td>Typical (median) and average count. Each payout is up to 5% of the account.</td></tr>
+  <tr><td class="k">Profit / year</td><td>Cash actually withdrawn, averaged over every account including the ones that blew up. In $ mode it is after your split; in % mode, before.</td></tr>
+  <tr><td class="k">Survival</td><td>Accounts still alive after 252 trading days.</td></tr>
+  <tr><td class="k">Breached banks</td><td>Median cash an account that breaches had withdrawn before it died, beside a survivor's. Shown when survival is under 100%.</td></tr>
+  <tr><td class="k">Best size</td><td>The largest size whose profit is within 3% of the best <b>and</b> where 85+ accounts in 100 survive the year. Hidden under 30 trades.</td></tr>
+  <tr><td class="k">Smallest size for goal</td><td>The smallest size whose odds of reaching your goal are within 3% of the best.</td></tr>
+</table>
+<p><b>Chart:</b> profit per year against size. It rises, flattens, then falls as accounts start dying. The background shades with survival: green survives, red dies. The bracket marks the flat top: sizes that pay within 3% of the best, but that do <b>not</b> survive the same. The solid line is your size; a dashed line marks the smallest size for your goal.</p>
+<div class="note"><p class="h">The withdrawal habit this tab assumes</p>
+<p>Up to 5% of the account is swept every 5 trading days, <b>never out of the drawdown cushion</b>. On a static or locked-trailing floor, a sweep only happens if the account stays a full max-drawdown above its floor afterwards: on $50,000 with a $2,000 drawdown, $2,000 stays in and the first withdrawal needs about $4,500 of profit. That retained cushion is most of what "Survival" measures. Keeping $500 less costs about 16 points of survival; $1,000 less costs about 51. If you sweep down to the firm's minimum, the survival figure does not describe you. On an <b>unlocked</b> trailing floor nothing is retained, because the floor follows the withdrawal down.</p>
+<p>Payout gates (buffer, % cap, $ cap, consistency, winning days) are applied exactly as the firm would. Payout <b>cadence</b> is shown but not priced. Trades are drawn independently: no tilt, no streaks, no sizing up after a loss.</p></div>
+
+<h3>22. Decision — is it worth buying?</h3>
+<figure><img src="shots/10-decision.png" alt="Decision"><figcaption>Decision.</figcaption></figure>
+<ol class="steps">
+  <li>Set <b>Eval risk / trade %</b> and <b>Funded risk / trade %</b>. These two also drive the journal's prop odds.</li>
+  <li>Read <b>Net expected value of buying in</b> and its verdict: <b>Worth it</b>, <b>Not worth it</b>, or <b>Could go either way</b> (graded on the low end of the 90% range).</li>
+  <li>If it's not worth it, read the line under the verdict: it names an eval size that would make it pay, or says no size will.</li>
+</ol>
+<table>
+  <tr><td class="k">Chance to pass</td><td>End-to-end pass odds (both phases on a 2-step).</td></tr>
+  <tr><td class="k">Expected fees to fund</td><td>Average cost to get funded, re-attempting until you pass: fees, resets, subscription months, activation.</td></tr>
+  <tr><td class="k">Best eval size</td><td>The eval size that funds you for the least money, measured on this firm; where several cost the same, the quickest. Under a time limit or min days, a <b>smaller</b> size can cost more.</td></tr>
+  <tr><td class="k">First-year payout</td><td>Expected withdrawals over a funded year, after split.</td></tr>
+  <tr><td class="k">Pass → paid</td><td>Chance one purchase ends with money withdrawn; in brackets, the odds once funded and typical days to the first payout.</td></tr>
+  <tr><td class="k">Net @ 1st payout</td><td>Where you stand the day of your first withdrawal: the odds of getting there × one payout, minus the cost to fund. A firm can be worth a year and still not have repaid its fee by then.</td></tr>
+</table>
+<p><b>Budget to funded</b> shows what to set aside to be 50%, 80% or 95% sure of getting funded, with attempts and months. Plan from these rather than the average when evaluations come out of savings. They assume attempts are independent; real traders tilt after failures, so treat them as floors.</p>
+<p>The net EV assumes your edge is real (check Validate), that you re-attempt until funded, and about a year of trading. It ignores time value and taxes. Discounted resets are priced only when a Reset fee is set.</p>
+
+<!-- ============================ PART 4 ============================ -->
+<h2 class="part">Part 4 — Reference</h2>
+
+<h3>23. Messages you may see</h3>
+<table>
+  <tr><th>Message</th><th>Meaning / what to do</th></tr>
+  <tr><td class="k">Needs 10 resolved trades</td><td>Use my journal, prop odds: log more trades with a stop or Risk $.</td></tr>
+  <tr><td class="k">More stats at 8+ resolved trades</td><td>The quant tiles (ranges, SQN, Kelly, streaks) unlock at 8.</td></tr>
+  <tr><td class="k">No R basis</td><td>No trade in view has a stop, Risk $ or R override. Add one.</td></tr>
+  <tr><td class="k">Too few trades to judge. Aim for 100+.</td><td>Validate won't call an edge real under 30 trades.</td></tr>
+  <tr><td class="k">Multiple looks</td><td>You've tested several Leave-out subsets; ranges are widened for it.</td></tr>
+  <tr><td class="k">Pooled accounts / mirrored</td><td>Same signal in several accounts. Pick one account as Edge source.</td></tr>
+  <tr><td class="k">No proven edge. Check Validate first.</td><td>Decision: expectancy ≤ 0, so the fee funds the firm, not you.</td></tr>
+  <tr><td class="k">Pass odds too low to budget</td><td>Decision budget can't be bounded. Fix the edge first.</td></tr>
+  <tr><td class="k">too thin to size</td><td>Funded best size is withheld under 30 trades.</td></tr>
+  <tr><td class="k">none survivable</td><td>Even the smallest size loses 15+ accounts in 100 a year. The edge has to change, not the size.</td></tr>
+  <tr><td class="k">the firm caps you first</td><td>Your payout goal needs more payouts than the firm's window allows in a year. Bigger account, faster-paying firm, or smaller goal.</td></tr>
+  <tr><td class="k">out of reach at every size</td><td>The goal is more than this edge produces in a year. It's an account-size problem; raising risk makes it worse.</td></tr>
+  <tr><td class="k">Pick a single account to use.</td><td>Rule guard needs one account in scope, not All accounts.</td></tr>
+  <tr><td class="k">No dollar basis</td><td>Rule guard: every rule is in dollars. Set what 1R is worth in Equity.</td></tr>
+  <tr><td class="k">n of m trades are not in these meters</td><td>Some trades have no P&amp;L, Risk $ or R value, so the meters are <b>optimistic</b>. Set what 1R is worth.</td></tr>
+  <tr><td class="k">No trades since funding</td><td>Account marked funded but nothing logged since. Log a trade or switch back to eval.</td></tr>
+  <tr><td class="k">Day guard</td><td>Losing streak or tilt logged today. Stop for the day.</td></tr>
+  <tr><td class="k">Not applied — only n trades left</td><td>Leave-out would leave under 30 trades. The full record is still used.</td></tr>
+  <tr><td class="k">Too few trades to test timing</td><td>Timing test needs 30+ trades on an axis, 2+ buckets of 4+.</td></tr>
+  <tr><td class="k">Nothing to sweep yet</td><td>Add a Planned R:R to your trades.</td></tr>
+  <tr><td class="k">The planned R:R does not match…</td><td>Most winners paid less than their planned R:R. The field probably holds MFE; replace it.</td></tr>
+  <tr><td class="k">Not enough logged runs to sweep on</td><td>Log Full run (R) on 20+ winners. Without runs, the curve would just peak at the target you already use.</td></tr>
+  <tr><td class="k">Runs logged on only n% of winners</td><td>Logging runs mainly on big winners biases the sweep toward bigger targets.</td></tr>
+  <tr><td class="k">Mixed targets — read the hits column</td><td>Trades aimed at different targets; lower rows use fewer trades.</td></tr>
+  <tr><td class="k">n of m trades have no date / exit time</td><td>Those trades are missing from that Timing table.</td></tr>
+  <tr><td class="k">Rules checked n days ago</td><td>Firm presets may be out of date. Verify on the firm's site.</td></tr>
+</table>
+
+<h3>24. What the model assumes</h3>
+<ul>
+  <li><b>Your record is a fair sample of your future trading.</b> A record can't check this about itself.</li>
+  <li><b>Trades are drawn independently</b> in Challenge, Funded and Decision: no tilt, no streaks, no sizing up after a loss. (Validate's drawdown uses block resampling to keep clusters.)</li>
+  <li><b>The firm's published rules hold</b> as entered. Min days and consistency are modelled approximately.</li>
+  <li><b>Withdrawal habit</b>: up to 5% of the account every 5 trading days, never out of the drawdown cushion (section 21).</li>
+  <li><b>Not modelled:</b> payout cadence after the first payout, the risk of a firm not paying (collapse, rule changes, denied withdrawals), time value of money, taxes.</li>
+  <li><b>Why ranges, not single numbers:</b> every figure from your journal is re-run on resamples of your own record, so it shows the edge you might have, not just the one you measured. A range that crosses a line (zero, 85% survival) means the record can't yet say which side you're on.</li>
+</ul>
+<p>Nothing in Edge Lab is financial advice, an endorsement or an affiliate link.</p>
+
+<h3>25. Glossary</h3>
+<table>
+  <tr><td class="k">R</td><td>What you planned to lose on one trade. All results are multiples of it.</td></tr>
+  <tr><td class="k">Resolved / decided / scratch</td><td>Resolved = finished. Decided = a win or a loss. Scratch = closed at 0R, neither.</td></tr>
+  <tr><td class="k">Win rate</td><td>Share of decided trades that won. On its own it decides nothing: 35% pays well if winners are 3× losers.</td></tr>
+  <tr><td class="k">Expectancy</td><td>What one average trade is worth, in R. +0.20R = every trade adds a fifth of one risk unit on average.</td></tr>
+  <tr><td class="k">Reward : risk</td><td>Average winner ÷ average loser. With win rate, it is the edge.</td></tr>
+  <tr><td class="k">Profit factor</td><td>Gross wins ÷ gross losses. Under 1 you pay to trade; 1.25–1.5 is workable; over 3 usually means a small sample or one big winner.</td></tr>
+  <tr><td class="k">Total R / Total P&amp;L</td><td>Everything added up, in R or money.</td></tr>
+  <tr><td class="k">Balance</td><td>Starting balance plus every priced trade in the <b>account</b>, whatever the filter.</td></tr>
+  <tr><td class="k">SQN</td><td>System Quality Number (Van Tharp): expectancy ÷ its volatility, scaled by sample size; graded at n = 100.</td></tr>
+  <tr><td class="k">σ per trade</td><td>Spread of R outcomes. Higher = bumpier ride and deeper holes for the same expectancy.</td></tr>
+  <tr><td class="k">Deepest drawdown so far</td><td>The worst peak-to-trough fall this record has taken. One realisation, not a floor; Validate gives the forward distribution.</td></tr>
+  <tr><td class="k">Streaks</td><td>Longest win and loss runs. Size for the loss run.</td></tr>
+  <tr><td class="k">Kelly f*</td><td>The growth-maximising bet fraction, shown as the range your win-rate interval implies. Prop traders use a fraction of the lower end.</td></tr>
+  <tr><td class="k">Recent form</td><td>Average R over the last 20 trades against the whole record.</td></tr>
+  <tr><td class="k">Best-day share</td><td>How much profit came from one day, measured over windows the size of one evaluation target, the way firms measure it.</td></tr>
+  <tr><td class="k">Tail ratio</td><td>Worst single loss ÷ average loss. Above 2 = a stop didn't hold or got moved.</td></tr>
+  <tr><td class="k">MFE / MAE</td><td>Maximum favourable / adverse excursion: how far a trade ran for and against you while open.</td></tr>
+  <tr><td class="k">Full run</td><td>How far price got before it would have hit your stop, whether or not you were still in.</td></tr>
+  <tr><td class="k">Exit efficiency</td><td>Realised R ÷ MFE.</td></tr>
+  <tr><td class="k">p50 / p90 / p95 / p99</td><td>Percentiles: the value that 50 / 90 / 95 / 99 runs in 100 stay within.</td></tr>
+  <tr><td class="k">CI / band / range</td><td>The spread of plausible values given your sample.</td></tr>
+  <tr><td class="k">Effective sample</td><td>How many independent observations your trades amount to after clustering.</td></tr>
+  <tr><td class="k">Noise floor</td><td>How big a gap you get for free by picking the best of many buckets on a record with no real effect.</td></tr>
+  <tr><td class="k">Flat top</td><td>Sizes or targets that pay within 3% of the best.</td></tr>
+  <tr><td class="k">Static / trailing / EOD</td><td>Drawdown floor types; see section 18.</td></tr>
+  <tr><td class="k">Pass → paid</td><td>One purchase all the way to money out.</td></tr>
+</table>
+
+<h3>26. Keyboard shortcuts</h3>
+<table>
+  <tr><td class="k">Ctrl+N</td><td>New trade (Journal).</td></tr>
+  <tr><td class="k">Ctrl+Enter</td><td>Save the open trade.</td></tr>
+  <tr><td class="k">Ctrl+V</td><td>Paste a screenshot into the open trade.</td></tr>
+  <tr><td class="k">← / →</td><td>Previous / next trade in the detail view; previous / next image in the zoom view.</td></tr>
+  <tr><td class="k">+ / − / 0</td><td>Zoom in / out / fit in the image view.</td></tr>
+  <tr><td class="k">Esc</td><td>Close the open dialog.</td></tr>
+  <tr><td class="k">F5 / Ctrl+R</td><td>Reload the app.</td></tr>
+</table>
+<p>On a Mac, use <span class="kbd">Cmd</span> instead of <span class="kbd">Ctrl</span>.</p>
+
+<h3>27. Troubleshooting</h3>
+<table>
+  <tr><th>Problem</th><th>Fix</th></tr>
+  <tr><td class="k">R stats are empty</td><td>Trades need a stop, Risk $ or R override.</td></tr>
+  <tr><td class="k">No dollars anywhere</td><td>Pick one account, <span class="ui">Show dollars</span>, set starting balance and what 1R is worth.</td></tr>
+  <tr><td class="k">Use my journal won't turn on</td><td>Needs 10 resolved trades with an R basis in the Edge source.</td></tr>
+  <tr><td class="k">Rule guard shows nothing</td><td>Pick one account (not All accounts) and click Bind sim firm.</td></tr>
+  <tr><td class="k">Timing columns blank</td><td>Log exit times (holding time), planned R:R (RR/kept), MFE (ran to).</td></tr>
+  <tr><td class="k">Numbers jump slightly on each change</td><td>Monte Carlo noise. Quick previews run while you drag; full numbers land a moment after you stop.</td></tr>
+  <tr><td class="k">The ? button says the manual isn't installed</td><td>Reinstall the latest build. In the browser version, keep this PDF in the same folder as the HTML file.</td></tr>
+  <tr><td class="k">Journal missing after reinstall</td><td>The data lives in <code>Documents\PropEdgeLab\</code>, not in the app. Check that folder, or Import your latest backup from <code>exports\</code>.</td></tr>
+</table>
+
+</body>
+</html>

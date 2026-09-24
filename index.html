@@ -1,0 +1,1088 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Edge Lab</title>
+<style>
+  :root{
+    --sans:"Segoe UI",system-ui,-apple-system,Roboto,Helvetica,Arial,sans-serif;
+    --mono:"Cascadia Code","Cascadia Mono",Consolas,"SF Mono",ui-monospace,monospace;
+    --paper:#E7E9E1;--panel:#F5F6F0;--panel-2:#EDEFE7;--ink:#232823;--muted:#5C635A;
+    --line:#C6CBBD;--line-strong:#9BA28F;
+    --go:#2E7A4C;--go-bg:#DBE7DA;--go-ink:#215938;
+    --caution:#A9741A;--caution-bg:#EFE6CE;--caution-ink:#7E5510;
+    --stop:#AF3A2C;--stop-bg:#EFDAD4;--stop-ink:#83291E;
+    /* Chart region fills. NOT the *-bg tints above: those are sized to sit behind
+       a few characters of coloured text, and at chart scale they were measured at
+       dE 5.6 from the panel in dark mode - the "safe" band was invisible - and
+       dE 9.6 between green and amber in light. These are separated to dE >= 20
+       from each other and >= 17 from the panel, while leaving the --ink curve
+       drawn over them above 9:1 contrast. */
+    --band-go:#C3DEC4;--band-mid:#F0DFAC;--band-stop:#F3C9BC;
+    --grid:rgba(35,40,35,0.05);--shadow:rgba(20,24,20,0.35);
+    /* Text drawn ON an accent fill: the chip, the primary button, a pressed
+       tag. It used to be a hard-coded #fff everywhere, which is right on a light
+       theme's dark accents and wrong on a dark theme's light ones - white on the
+       dark theme's --go measured 2.58:1, under even the large-text bar, and with
+       five palettes to keep honest that was going to get worse rather than
+       better. One token, checked per theme by tests/unit/theme.test.mjs. */
+    --on-accent:#FFFFFF;
+    /* tells WebKit to theme native controls (date pickers, popups, steppers,
+       scrollbars) to match - without it they open light-chromed in dark mode */
+    color-scheme:light dark;
+  }
+  @media (prefers-color-scheme:dark){:root{
+    --paper:#151813;--panel:#1E221B;--panel-2:#242820;--ink:#E7E9DF;--muted:#9BA18F;
+    --line:#333A2E;--line-strong:#4C5443;--go:#63B182;--go-bg:#1C2A21;--go-ink:#9AD3AF;
+    --caution:#D6A64E;--caution-bg:#2C2614;--caution-ink:#E6C283;--stop:#D96C5B;--stop-bg:#2E1D19;--stop-ink:#EC9585;
+    --band-go:#1F4030;--band-mid:#41371A;--band-stop:#4E231C;--on-accent:#12160F;
+    --grid:rgba(231,233,223,0.04);--shadow:rgba(0,0,0,0.6);}}
+  /* ---- NAMED COLOUR SCHEMES ----
+     Six choices: System, and five palettes the user picks by name from the
+     topbar (see THEMES in sim.ts, which owns the labels and the swatches).
+     Every palette carries the FULL token set - there is no partial theme that
+     inherits half its colours from another, because a half-applied palette is
+     exactly how a chart ends up drawn in one theme's greens on another theme's
+     paper. `light`/`dark` below are byte-for-byte the values that shipped, so
+     nothing anyone is already looking at moves.
+
+     Contrast is not left to taste. tests/unit/theme.test.mjs parses these blocks
+     and fails the build if any palette drops below the standard the original two
+     already met: body text >=12:1 on every surface, muted and the go/caution/stop
+     inks >=5:1, the chart bands >=20 dE apart from each other and >=15 dE from
+     the canvas they sit on with the --ink curve still over 9:1 on top of them,
+     and the accent trio far enough apart in Lab that green/amber/red never read
+     as the same colour. That last one is the whole point of the exercise: these
+     colours ARE the readout - a "safe" band you cannot tell from a "deadly" one
+     is not a cosmetic problem. */
+  :root[data-theme="light"]{color-scheme:light;--paper:#E7E9E1;--panel:#F5F6F0;--panel-2:#EDEFE7;--ink:#232823;--muted:#5C635A;--line:#C6CBBD;--line-strong:#9BA28F;--go:#2E7A4C;--go-bg:#DBE7DA;--go-ink:#215938;--caution:#A9741A;--caution-bg:#EFE6CE;--caution-ink:#7E5510;--stop:#AF3A2C;--stop-bg:#EFDAD4;--stop-ink:#83291E;--band-go:#C3DEC4;--band-mid:#F0DFAC;--band-stop:#F3C9BC;--on-accent:#FFFFFF;--grid:rgba(35,40,35,0.05);--shadow:rgba(20,24,20,0.35);}
+  :root[data-theme="dark"]{color-scheme:dark;--paper:#151813;--panel:#1E221B;--panel-2:#242820;--ink:#E7E9DF;--muted:#9BA18F;--line:#333A2E;--line-strong:#4C5443;--go:#63B182;--go-bg:#1C2A21;--go-ink:#9AD3AF;--caution:#D6A64E;--caution-bg:#2C2614;--caution-ink:#E6C283;--stop:#D96C5B;--stop-bg:#2E1D19;--stop-ink:#EC9585;--band-go:#1F4030;--band-mid:#41371A;--band-stop:#4E231C;--on-accent:#12160F;--grid:rgba(231,233,223,0.04);--shadow:rgba(0,0,0,0.6);}
+  /* Carbon - a true neutral near-black (#0F0F0F), no colour cast in the greys at
+     all, so the only hues on screen are the three that mean something. */
+  :root[data-theme="carbon"]{color-scheme:dark;--paper:#0F0F0F;--panel:#181818;--panel-2:#212121;--ink:#EDEDED;--muted:#9E9E9E;--line:#2F2F2F;--line-strong:#4C4C4C;--go:#5CBA8B;--go-bg:#14251C;--go-ink:#93DAB2;--caution:#D8A751;--caution-bg:#2A2314;--caution-ink:#EAC886;--stop:#E0705C;--stop-bg:#2B1A16;--stop-ink:#F19B89;--band-go:#1E4131;--band-mid:#453917;--band-stop:#52231B;--on-accent:#0F0F0F;--grid:rgba(255,255,255,0.035);--shadow:rgba(0,0,0,0.72);}
+  /* Midnight - the same darkness with a cool blue cast, for anyone who finds a
+     pure neutral flat. The accents are pushed slightly cooler to match. */
+  :root[data-theme="midnight"]{color-scheme:dark;--paper:#0D1220;--panel:#141A2B;--panel-2:#1C2438;--ink:#E4E9F6;--muted:#9AA5C2;--line:#28314C;--line-strong:#43506F;--go:#52BC8E;--go-bg:#122A20;--go-ink:#8EDEB6;--caution:#DCAB53;--caution-bg:#2A2517;--caution-ink:#EFCA88;--stop:#E37360;--stop-bg:#2C1C1E;--stop-ink:#F59D8C;--band-go:#1A4235;--band-mid:#3F3619;--band-stop:#4C2427;--on-accent:#0D1220;--grid:rgba(190,210,255,0.05);--shadow:rgba(0,0,0,0.66);}
+  /* Parchment - a warm light scheme for long sessions on a bright screen; the
+     same ink weight as Daylight, on paper rather than on limestone. */
+  :root[data-theme="parchment"]{color-scheme:light;--paper:#F0E7D5;--panel:#FCF7EC;--panel-2:#F6EEDD;--ink:#2B2519;--muted:#665C4A;--line:#DDD0B5;--line-strong:#AC9C80;--go:#2E7348;--go-bg:#DDE6D0;--go-ink:#1F5430;--caution:#9C6B12;--caution-bg:#F0E1BE;--caution-ink:#744D09;--stop:#A93A26;--stop-bg:#F1D9CD;--stop-ink:#7B2717;--band-go:#C7DDBC;--band-mid:#EEDCA2;--band-stop:#F1C6B2;--on-accent:#FFFFFF;--grid:rgba(43,37,25,0.05);--shadow:rgba(60,45,25,0.35);}
+  *{box-sizing:border-box;}
+  .hide{display:none!important;}
+  html,body{height:100%;}
+  body{margin:0;color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.55;background:var(--paper);
+    background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+    background-size:27px 27px;-webkit-font-smoothing:antialiased;}
+  ::-webkit-scrollbar{width:11px;height:11px;} ::-webkit-scrollbar-track{background:transparent;}
+  ::-webkit-scrollbar-thumb{background:var(--line-strong);border:3px solid var(--paper);border-radius:6px;}
+  .mono{font-family:var(--mono);} b,strong{font-weight:700;} p{margin:0 0 14px;}
+  h1{font-size:clamp(20px,2.4vw,26px);font-weight:800;letter-spacing:-0.02em;margin:0;}
+  h2{font-size:22px;font-weight:800;letter-spacing:-0.01em;margin:0 0 6px;}
+  .muted{color:var(--muted);} .small{font-size:13.5px;}
+  button{font-family:inherit;}
+  button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--go);outline-offset:1px;}
+  .app{max-width:1560px;margin:0 auto;padding:0 clamp(12px,2.4vw,30px);}
+  .topbar{position:sticky;top:0;z-index:30;display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    padding:12px 4px;background:var(--paper);background:color-mix(in srgb,var(--paper) 90%,transparent);-webkit-backdrop-filter:blur(9px);backdrop-filter:blur(9px);border-bottom:1.5px solid var(--line);}
+  .brand-wrap{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;}
+  .brand{font-family:var(--mono);font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:var(--muted);}
+  .modenav{display:inline-flex;border:1.5px solid var(--line-strong);margin-left:auto;}
+  .modenav button{font-family:var(--mono);font-size:12.5px;font-weight:700;letter-spacing:0.03em;background:var(--panel);color:var(--muted);
+    border:none;border-right:1.5px solid var(--line-strong);padding:9px 18px;cursor:pointer;}
+  .modenav button:last-child{border-right:none;} .modenav button[aria-pressed="true"]{background:var(--ink);color:var(--paper);}
+  .iconbtn{font-family:var(--mono);font-size:15px;font-weight:700;border:1.5px solid var(--line-strong);background:var(--panel);color:var(--ink);
+    width:38px;height:38px;cursor:pointer;line-height:1;flex:none;}
+  .iconbtn:hover{border-color:var(--go);}
+  /* ---- colour-scheme picker ----
+     A menu rather than a two-state toggle, because there are six choices now and
+     a button that cycles six palettes makes the user click five times to undo
+     one mistake. Every swatch is a real CSS class with the palette's own hexes
+     in it - not an inline style="" - so it survives the packaged app's CSP
+     (Trap #1) and so a palette and its swatch cannot drift apart unnoticed. */
+  .themewrap{position:relative;flex:none;}
+  .thememenu{position:absolute;right:0;top:calc(100% + 6px);z-index:45;min-width:236px;
+    border:2px solid var(--line-strong);background:var(--panel);box-shadow:0 10px 30px var(--shadow);padding:4px;}
+  .thememenu .throw{display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;
+    font-family:var(--sans);font-size:13px;background:transparent;color:var(--ink);border:none;padding:7px 8px;}
+  .thememenu .throw:hover{background:var(--panel-2);}
+  .thememenu .throw[aria-checked="true"]{background:var(--panel-2);}
+  .thememenu .tn{display:flex;flex-direction:column;min-width:0;flex:1;line-height:1.3;}
+  .thememenu .tn b{font-weight:700;}
+  .thememenu .td{font-family:var(--mono);font-size:10px;color:var(--muted);letter-spacing:0.02em;}
+  .thememenu .tk{font-family:var(--mono);font-size:12px;color:var(--go-ink);width:12px;flex:none;visibility:hidden;}
+  .thememenu .throw[aria-checked="true"] .tk{visibility:visible;}
+  .sw{display:inline-flex;flex:none;border:1.5px solid var(--line-strong);}
+  .sw i{display:block;width:11px;height:20px;}
+  .sw-system .a{background:#E7E9E1;} .sw-system .b{background:#151813;} .sw-system .c{background:#2E7A4C;}
+  .sw-light .a{background:#E7E9E1;} .sw-light .b{background:#EDEFE7;} .sw-light .c{background:#2E7A4C;}
+  .sw-dark .a{background:#151813;} .sw-dark .b{background:#242820;} .sw-dark .c{background:#63B182;}
+  .sw-carbon .a{background:#0F0F0F;} .sw-carbon .b{background:#212121;} .sw-carbon .c{background:#5CBA8B;}
+  .sw-midnight .a{background:#0D1220;} .sw-midnight .b{background:#1C2438;} .sw-midnight .c{background:#52BC8E;}
+  .sw-parchment .a{background:#F0E7D5;} .sw-parchment .b{background:#F6EEDD;} .sw-parchment .c{background:#2E7348;}
+  .shell{display:grid;grid-template-columns:minmax(300px,340px) 1fr;gap:22px;align-items:start;padding:20px 0 10px;}
+  @media (max-width:980px){.shell{grid-template-columns:1fr;}}
+  .rail{position:sticky;top:70px;max-height:calc(100vh - 80px);overflow:auto;display:flex;flex-direction:column;gap:14px;padding-right:2px;}
+  @media (max-width:980px){.rail{position:static;max-height:none;overflow:visible;}}
+  .main{min-width:0;}
+  .bar{border:2px solid var(--line-strong);background:var(--panel);}
+  .bar-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:11px 14px;border-bottom:1.5px solid var(--line);background:var(--panel-2);}
+  .bar-head .t{font-family:var(--mono);font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);}
+  .bar-sum{font-family:var(--mono);font-size:12px;color:var(--ink);padding:9px 14px;border-bottom:1.5px solid var(--line);}
+  .bar-sum b{color:var(--go-ink);}
+  .barbtn{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;border:1.5px solid var(--line-strong);background:var(--panel);color:var(--ink);padding:6px 10px;cursor:pointer;}
+  .barbtn:hover{border-color:var(--go);}
+  .sb-ctrl{padding:12px 14px;border-bottom:1.5px solid var(--line);}
+  .sb-ctrl:last-child{border-bottom:none;}
+  .sb-ctrl .row{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;gap:8px;}
+  .sb-ctrl .row span{font-size:13px;font-weight:600;} .sb-ctrl .row b{font-family:var(--mono);font-size:14px;}
+  .numin{font-family:var(--mono);font-size:13.5px;font-weight:700;width:78px;text-align:right;padding:4px 7px;
+    border:1.5px solid var(--line-strong);background:var(--panel-2);color:var(--ink);flex:none;}
+  .numin:disabled{opacity:0.45;}
+  input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:var(--line);outline:none;margin:0;border:1px solid var(--line-strong);}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;background:var(--go);border:2px solid var(--panel);cursor:pointer;}
+  input[type=range]:disabled{opacity:0.45;}
+  .seg{display:inline-flex;border:1.5px solid var(--line-strong);}
+  /* a .seg inside the column-flex .fld would otherwise stretch edge to edge */
+  .fld > .seg{align-self:flex-start;}
+  .seg button{font-family:var(--mono);font-size:11px;font-weight:700;background:var(--panel);color:var(--muted);border:none;border-right:1.5px solid var(--line-strong);padding:6px 10px;cursor:pointer;}
+  .seg button:last-child{border-right:none;} .seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper);}
+  /* equity panel: the R readout is the headline, the dollar basis is disclosed */
+  .eqline{margin:0;font-size:12.5px;line-height:1.6;}
+  .eqline b{font-size:15px;}
+  .eqline .sub{display:block;color:var(--muted);margin-top:3px;}
+  /* a tile with nothing honest to print: says why, at text weight not headline weight */
+  .sumtiles .tile .v .unset,.statgrid .tile .v .unset{font-size:12px;font-weight:400;color:var(--muted);}
+  .dollarbox{margin-top:11px;padding-top:11px;border-top:1.5px solid var(--line);display:flex;flex-direction:column;gap:11px;}
+  .dollarbox.hide{display:none;}
+  .nomarg{margin:0;}
+  .firm-edit{border-top:1.5px solid var(--line);padding:13px 14px;display:none;}
+  .firm-edit.open{display:block;}
+  .fgrid{display:grid;grid-template-columns:1fr 1fr;gap:11px 12px;}
+  .fld{display:flex;flex-direction:column;gap:4px;min-width:0;}
+  .fld.wide{grid-column:1/-1;}
+  /* in grids: labels hug the top, inputs align along the bottom, so a wrapped
+     label never leaves its neighbor's input floating above a hole */
+  .fgrid .fld,.fg .fld{justify-content:space-between;}
+  .fld label{font-family:var(--mono);font-size:10px;letter-spacing:0.03em;text-transform:uppercase;color:var(--muted);}
+  /* required-field marker, and the border a field wears when a save was refused
+     for it. Cleared the moment the field is touched, so it never nags. */
+  .fld label .req{color:var(--stop);font-weight:700;margin-left:2px;}
+  /* background-COLOR, never the shorthand: the shorthand resets background-image,
+     and on macOS the select's chevron IS a background-image (appearance is reset
+     there, so WebKit draws no arrow of its own). Flagging a required select with
+     the shorthand left it with no dropdown affordance at all. */
+  .fld select.needs,.fld input.needs{border-color:var(--stop);background-color:var(--stop-bg);}
+  .fld input,.fld select,.fld textarea{font-family:var(--mono);font-size:13px;padding:7px 9px;border:1.5px solid var(--line-strong);background:var(--panel-2);color:var(--ink);width:100%;}
+  .fld textarea{resize:vertical;font-family:var(--sans);font-size:14px;line-height:1.5;}
+  /* macOS WKWebView draws glossy native popup buttons for <select> and ignores
+     author styling until appearance is reset; resetting also removes the arrow,
+     so we supply our own chevron (one mid-tone that reads on both themes). */
+  select,.fld select{-webkit-appearance:none;appearance:none;
+    background-image:url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238E9689' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 9px center;padding-right:26px!important;}
+  /* SETUP / ENTRY MODEL: a typed field that also offers what you have used
+     before. It was a native <datalist>, and a datalist popup is drawn by the
+     BROWSER - proportional font, its own row height, its own background, and no
+     CSS reaches any of it. Beside the <select>s in the same grid it read as a
+     different application. This is the same control rebuilt in the app's own
+     vocabulary; the input underneath is still a plain text input, so anything
+     can be typed, and the list is only a shortcut. */
+  .cbox{position:relative;width:100%;}
+  .cbox input{padding-right:26px!important;}
+  .cbtog{position:absolute;top:0;right:0;width:26px;height:100%;padding:0;border:none;cursor:pointer;
+    background:transparent no-repeat center
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7' viewBox='0 0 10 7'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%238E9689' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");}
+  .cbpop{position:absolute;z-index:12;top:calc(100% + 2px);left:0;right:0;max-height:232px;overflow-y:auto;
+    background:var(--panel-2);border:1.5px solid var(--line-strong);box-shadow:0 6px 18px var(--shadow);}
+  .cbpop[hidden]{display:none;}
+  .cbopt{display:block;width:100%;text-align:left;font-family:var(--mono);font-size:13px;line-height:1.4;
+    padding:7px 9px;background:none;border:none;color:var(--ink);cursor:pointer;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  /* the same inversion .seg already uses for a chosen thing, so "the row under
+     the keyboard cursor" means one thing everywhere in the app */
+  .cbopt:hover,.cbopt.on{background:var(--ink);color:var(--paper);}
+  .cbnone{font-family:var(--mono);font-size:11.5px;padding:7px 9px;color:var(--muted);}
+  .fnote{font-size:12px;color:var(--muted);margin-top:11px;line-height:1.5;}
+  .jedge{border:1.5px dashed var(--line-strong);background:var(--panel-2);padding:11px 13px;}
+  .jedge .row{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+  .jedge .lab{font-family:var(--mono);font-size:11.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink);}
+  .jedge .desc{font-size:12px;color:var(--muted);margin-top:6px;}
+  /* the counterfactual readout. Real rules, not inline style attributes: a CSP
+     nonce makes style="" attributes inert in the packaged app (see Trap #1). */
+  .cutbox{margin-top:9px;border-top:1.5px solid var(--line-strong);padding-top:9px;font-size:12px;color:var(--muted);}
+  .cutbox.warn{border-top-color:var(--caution);}
+  .cutbox .ch{margin:0 0 7px;color:var(--ink);font-size:12px;line-height:1.45;}
+  .cutbox p{margin:0 0 6px;line-height:1.45;}
+  .cutbox p:last-child{margin-bottom:0;}
+  .cuttab{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:11.5px;margin-bottom:7px;}
+  .cuttab th{text-align:right;font-weight:700;color:var(--muted);padding:1px 0 3px;font-size:10.5px;text-transform:uppercase;letter-spacing:0.04em;}
+  .cuttab th:first-child{text-align:left;}
+  .cuttab td{padding:2px 0;color:var(--muted);}
+  .cuttab td.was,.cuttab td.now{text-align:right;width:31%;}
+  .cuttab td.was{opacity:0.72;}
+  .cuttab td.now{font-weight:700;color:var(--ink);}
+  .cutbox .cv-band{font-family:var(--mono);font-size:11.5px;color:var(--ink);}
+  .cutbox .cv-note{font-size:11.5px;}
+  .switch{position:relative;width:44px;height:24px;flex:none;}
+  .switch input{opacity:0;width:100%;height:100%;position:absolute;margin:0;cursor:pointer;z-index:1;}
+  .switch .sl{position:absolute;inset:0;background:var(--line);border:1.5px solid var(--line-strong);transition:0.15s;}
+  .switch .sl:before{content:"";position:absolute;width:16px;height:16px;left:2px;top:2px;background:var(--panel);transition:0.15s;}
+  .switch input:checked + .sl{background:var(--go);}
+  .switch input:checked + .sl:before{transform:translateX(20px);}
+  .tabs{display:flex;border:1.5px solid var(--line-strong);border-bottom:none;overflow-x:auto;}
+  .tabs button{flex:1;min-width:118px;font-family:var(--mono);font-size:12.5px;font-weight:700;background:var(--panel);color:var(--muted);border:none;border-right:1.5px solid var(--line-strong);padding:12px 8px;cursor:pointer;white-space:nowrap;}
+  .tabs button:last-child{border-right:none;} .tabs button[aria-pressed="true"]{background:var(--ink);color:var(--paper);}
+  .tabs .num{opacity:0.55;margin-right:6px;}
+  .panel{border:1.5px solid var(--line-strong);background:var(--panel);padding:22px 20px 26px;}
+  .lead{font-size:15.5px;color:var(--muted);margin-bottom:16px;}
+  .grid2{display:grid;grid-template-columns:300px 1fr;gap:22px;}
+  @media (max-width:720px){.grid2{grid-template-columns:1fr;}}
+  .controls{display:flex;flex-direction:column;gap:16px;}
+  .ctrl .row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px;}
+  .ctrl .row span{font-size:13.5px;font-weight:600;} .ctrl .row b{font-family:var(--mono);font-size:14px;}
+  .ctrl .sub,.controls .fld .sub{font-family:var(--mono);font-size:11.5px;color:var(--muted);margin-top:4px;}
+  .big{font-family:var(--mono);font-weight:700;font-size:clamp(28px,5vw,44px);line-height:1;letter-spacing:-0.02em;}
+  .big .u{font-family:var(--sans);font-size:13px;font-weight:400;color:var(--muted);margin-left:8px;}
+  .chip{display:inline-block;font-family:var(--mono);font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--on-accent);padding:5px 11px;}
+  .meter{height:15px;background:var(--panel-2);border:1.5px solid var(--line-strong);position:relative;margin:11px 0;}
+  .meter i{position:absolute;left:0;top:0;bottom:0;display:block;}
+  canvas{display:block;width:100%;border:1.5px solid var(--line-strong);background:var(--panel-2);}
+  .kv{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
+  .kv .r{display:grid;grid-template-columns:150px 1fr;gap:12px;font-size:14px;align-items:baseline;}
+  .kv .r .k{font-family:var(--mono);font-size:11px;text-transform:uppercase;letter-spacing:0.03em;color:var(--muted);padding-top:2px;}
+  .kv .r .v{font-family:var(--mono);font-size:15px;}
+  /* a qualifier under a readout - same token as .ctrl .sub, scoped to the kv
+     value so it does not inherit the 15px value font and wrap into a slab */
+  .kv .r .v .sub{font-family:var(--mono);font-size:11px;font-weight:400;color:var(--muted);margin-top:2px;line-height:1.45;}
+  .note{border-left:4px solid var(--go);background:var(--panel-2);padding:12px 15px;margin:16px 0 0;font-size:14px;}
+  .note.warn{border-left-color:var(--stop);}
+  .note .h{font-family:var(--mono);font-size:11px;letter-spacing:0.05em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
+  /* a note sized for the narrow rule-guard column rather than the main body */
+  .note.rg-note{margin:8px 0 0;padding:9px 12px;font-size:12.5px;}
+  .note.rg-note p{margin:0 0 5px;} .note.rg-note p:last-child{margin-bottom:0;}
+  .cell-go{color:var(--go-ink);} .cell-stop{color:var(--stop-ink);} .cell-caution{color:var(--caution-ink);}
+  .vh{font-family:var(--mono);font-size:11px;letter-spacing:0.05em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px;}
+  .chartgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+  @media (max-width:620px){.chartgrid{grid-template-columns:1fr;}}
+  /* three tables of the same shape, so none of them is stranded next to a hole */
+  .grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;}
+  @media (max-width:1080px){.grid3{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  @media (max-width:620px){.grid3{grid-template-columns:1fr;}}
+  .verdictbox{border:2px solid var(--line-strong);padding:18px;margin-top:16px;background:var(--panel-2);}
+  footer{padding:22px 4px 40px;color:var(--muted);font-size:12.5px;line-height:1.6;} footer b{color:var(--ink);}
+  .railbtns{display:flex;gap:8px;flex-wrap:wrap;}
+  .railbtns button{flex:1;font-family:var(--mono);font-size:12px;font-weight:700;border:1.5px solid var(--line-strong);cursor:pointer;padding:10px 8px;background:var(--panel);color:var(--ink);white-space:nowrap;}
+  .railbtns button.primary{background:var(--go);color:var(--on-accent);border-color:var(--go);}
+  .railbtns button:hover{border-color:var(--go);}
+  .filters{padding:12px 14px;}
+  .filters .fld{margin-bottom:10px;}
+  .sumtiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  .sumtiles .tile{background:var(--panel);border:1.5px solid var(--line-strong);padding:10px 12px;min-width:0;}
+  .sumtiles .tile .k{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);}
+  .sumtiles .tile .v{font-family:var(--mono);font-size:17px;font-weight:700;line-height:1.2;margin-top:2px;}
+  .dataloc{font-family:var(--mono);font-size:11px;color:var(--muted);border:1.5px dashed var(--line-strong);background:var(--panel-2);padding:9px 11px;display:flex;align-items:center;gap:8px;justify-content:space-between;}
+  .dataloc button{font-family:var(--mono);font-size:10.5px;font-weight:700;border:1.5px solid var(--line-strong);background:var(--panel);color:var(--ink);cursor:pointer;padding:4px 8px;flex:none;}
+  .dataloc span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .subnav{display:inline-flex;border:1.5px solid var(--line-strong);margin-bottom:16px;}
+  .subnav button{font-family:var(--mono);font-size:12px;font-weight:700;background:var(--panel);color:var(--muted);border:none;border-right:1.5px solid var(--line-strong);padding:9px 16px;cursor:pointer;}
+  .subnav button:last-child{border-right:none;} .subnav button[aria-pressed="true"]{background:var(--ink);color:var(--paper);}
+  .dayhead{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:18px 0 8px;padding-bottom:5px;border-bottom:1.5px solid var(--line);}
+  .dayhead:first-child{margin-top:0;}
+  .dayhead .dr{font-weight:700;text-transform:none;letter-spacing:0;font-size:12.5px;}
+  .tradecard{display:grid;grid-template-columns:64px 1fr auto;gap:12px;align-items:center;border:1.5px solid var(--line-strong);background:var(--panel);padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:border-color 0.12s, transform 0.12s;}
+  .tradecard.selmode{grid-template-columns:24px 64px 1fr auto;}
+  .tradecard .selbox{width:19px;height:19px;accent-color:var(--go);cursor:pointer;}
+  .tradecard.checked{border-color:var(--go);background:var(--go-bg);}
+  .tag.acct{border-color:var(--line-strong);color:var(--ink);}
+  .tradecard:hover{border-color:var(--go);transform:translateY(-1px);}
+  .tradecard .thumb{width:64px;height:48px;object-fit:cover;border:1.5px solid var(--line);background:var(--panel-2);}
+  .tradecard .thumb.empty{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;color:var(--muted);}
+  .tradecard .meta{min-width:0;}
+  .tradecard .meta .top{display:flex;gap:9px;align-items:baseline;flex-wrap:wrap;}
+  .tradecard .sym{font-family:var(--mono);font-weight:700;font-size:15px;}
+  .tradecard .dir{font-family:var(--mono);font-size:10.5px;text-transform:uppercase;letter-spacing:0.05em;padding:2px 6px;border:1.5px solid var(--line-strong);color:var(--muted);}
+  .tradecard .dir.long{color:var(--go-ink);border-color:var(--go);} .tradecard .dir.short{color:var(--stop-ink);border-color:var(--stop);}
+  .tradecard .when{font-family:var(--mono);font-size:11.5px;color:var(--muted);}
+  .tradecard .tags{margin-top:5px;display:flex;gap:5px;flex-wrap:wrap;}
+  .tag{font-family:var(--mono);font-size:10px;padding:2px 7px;border:1.5px solid var(--line);color:var(--muted);}
+  .tag.q{border-color:var(--go);color:var(--go-ink);}
+  .tag.m{border-color:var(--stop);color:var(--stop-ink);}
+  .tag.em{border-color:var(--line-strong);background:var(--panel-2);color:var(--ink);font-weight:700;}
+  .rpill{font-family:var(--mono);font-weight:700;font-size:16px;text-align:right;min-width:72px;padding:6px 10px;border:1.5px solid var(--line-strong);color:var(--muted);}
+  .rpill.win{color:var(--go-ink);background:var(--go-bg);border-color:var(--go);}
+  .rpill.loss{color:var(--stop-ink);background:var(--stop-bg);border-color:var(--stop);}
+  .rpill .sub2{display:block;font-size:10.5px;font-weight:400;opacity:0.75;margin-top:1px;}
+  .empty-state{border:1.5px dashed var(--line-strong);background:var(--panel-2);padding:36px 24px;text-align:center;color:var(--muted);}
+  .empty-state h3{font-family:var(--mono);color:var(--ink);margin:0 0 8px;}
+  .btn{font-family:var(--mono);font-size:13px;font-weight:700;border:1.5px solid var(--line-strong);cursor:pointer;padding:10px 16px;background:var(--panel);color:var(--ink);}
+  .btn:hover{border-color:var(--go);}
+  .btn.primary{background:var(--go);color:var(--on-accent);border-color:var(--go);}
+  .btn.primary:hover{filter:brightness(1.08);}
+  .btn.danger{background:var(--panel);color:var(--stop-ink);border-color:var(--stop);}
+  /* metric tiles are spaced cards: a partial last row simply ends, so there is
+     never a leftover slab or blank box to fill */
+  .statgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:9px;margin-bottom:16px;}
+  .statgrid .tile{background:var(--panel);border:1.5px solid var(--line-strong);padding:12px 13px;min-width:0;}
+  .tile .ts{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.45;}
+  /* mini-meter inside a tile: <i> segments are fills/bands, .tk are scale
+     ticks, .tki is the "measured value" marker */
+  .tmeter{position:relative;height:7px;background:var(--panel-2);border:1px solid var(--line);margin-top:9px;}
+  .tmeter i{position:absolute;top:0;bottom:0;display:block;}
+  .tmeter .tk{position:absolute;top:-2px;bottom:-2px;width:1.5px;background:var(--line-strong);}
+  .tmeter .tki{position:absolute;top:-2px;bottom:-2px;width:2px;background:var(--ink);}
+  /* a meter living in a table cell: no stacking margin, and wide enough that a
+     narrow band is still readable as a band */
+  .tmeter.inrow{margin:0;height:9px;min-width:110px;}
+  .statgrid .tile .k{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);}
+  .statgrid .tile .v{font-family:var(--mono);font-size:22px;font-weight:700;line-height:1.15;margin-top:3px;}
+  /* ---- metric explainers ---- */
+  /* the "i" dot carries the plain-English reading of a metric. Tabbable, because
+     a tooltip only a mouse can open is a tooltip half the users never see. The
+     glyph is a pseudo-element on purpose: as real text it landed in the
+     innerText of every tile and metric label, between the name and its value. */
+  .tinfo{display:inline-flex;align-items:center;justify-content:center;width:14px;height:14px;margin-left:5px;flex:none;
+    font-family:var(--mono);font-size:9px;font-weight:700;line-height:1;vertical-align:middle;
+    border:1.5px solid var(--line-strong);background:var(--panel-2);color:var(--muted);cursor:help;}
+  .tinfo::after{content:"i";}
+  .tinfo:hover,.tinfo:focus{border-color:var(--go);color:var(--go-ink);}
+  #chartTip.wrap{white-space:normal;max-width:330px;}
+  /* scale labels under a mini-meter: a bar with no scale is a mood, not a measure */
+  .tscale{display:flex;justify-content:space-between;font-family:var(--mono);font-size:9px;color:var(--muted);margin-top:3px;}
+  /* ---- the headline row: the four numbers that decide whether an edge exists,
+     each with a picture, a reference mark and one sentence of plain English ---- */
+  /* Four cards, so the column count is pinned to 1, 2 or 4 - never 3. An
+     auto-fit track lands on 3 at ordinary window sizes and strands the fourth
+     card beside two empty cells; letting it stretch across them instead just
+     moves the same hole inside one very wide card. Only divisors of 4 tile. */
+  .herogrid{display:grid;grid-template-columns:1fr;gap:9px;margin-bottom:10px;}
+  @media (min-width:540px){.herogrid{grid-template-columns:repeat(2,minmax(0,1fr));}}
+  /* 4-up only once the main column can give each card ~205px: the rail is 340px
+     plus gaps, so that lands around a 1280px window */
+  @media (min-width:1280px){.herogrid{grid-template-columns:repeat(4,minmax(0,1fr));}}
+  .hero{display:flex;flex-direction:column;background:var(--panel);border:2px solid var(--line-strong);padding:13px 14px 12px;min-width:0;}
+  .hero .hk{display:flex;align-items:center;font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);}
+  .hero .hv{font-family:var(--mono);font-size:30px;font-weight:700;line-height:1.08;letter-spacing:-0.02em;margin-top:4px;}
+  .hero .hv .u{font-size:14px;font-weight:400;color:var(--muted);margin-left:5px;letter-spacing:0;}
+  .hero .hs{font-family:var(--mono);font-size:10.5px;color:var(--muted);margin-top:3px;line-height:1.45;}
+  .hero .hviz{padding-top:11px;}
+  /* margin-top:auto pins every card's sentence to the same baseline. The slack
+     between a short picture and a tall one collects ABOVE that rule, where it
+     reads as padding, rather than as a hole under the sub-line. */
+  .hero .hread{font-size:11.5px;line-height:1.5;color:var(--muted);margin-top:auto;padding-top:9px;border-top:1.5px solid var(--line);}
+  .hero .hread b{color:var(--ink);font-weight:700;}
+  /* win / loss / scratch as columns: the count is the label, the height is the
+     comparison. A zero column keeps a 2px stub so it reads "none", not "missing". */
+  .wlbars{display:flex;align-items:flex-end;gap:7px;}
+  .wlbars .wlc{flex:1;display:flex;flex-direction:column;align-items:center;min-width:0;}
+  .wlbars .wln{font-family:var(--mono);font-size:11px;font-weight:700;line-height:1.3;}
+  .wlbars .wlb{width:100%;border:1.5px solid var(--line-strong);}
+  .wlbars .wlk{font-family:var(--mono);font-size:8.5px;letter-spacing:0.05em;color:var(--muted);margin-top:3px;}
+  /* half-dial: the share of gross R that landed on your side of the ledger. The
+     green sweep is wins, the red base is losses, the notch is break-even. */
+  .gauge{display:block;width:100%;max-width:172px;height:auto;margin:0 auto;overflow:visible;}
+  .gauge .arc{fill:none;stroke-width:12;}
+  .gauge .a-loss{stroke:var(--stop);} .gauge .a-win{stroke:var(--go);}
+  .gauge .gn{stroke:var(--panel);stroke-width:2;}
+  .gauge .gt{font-family:var(--mono);font-size:6px;fill:var(--muted);}
+  /* ---- long vs short (Edge report) ---- */
+  .lswrap{border:2px solid var(--line-strong);background:var(--panel);}
+  .lshead{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:10px 13px;border-bottom:1.5px solid var(--line);background:var(--panel-2);}
+  .lshead .lst{display:flex;align-items:center;font-family:var(--mono);font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:var(--muted);}
+  .lsbody{display:grid;grid-template-columns:minmax(140px,0.85fr) 1fr 1fr;gap:16px;padding:14px 13px;}
+  @media (max-width:760px){.lsbody{grid-template-columns:1fr;}}
+  .lsdial{text-align:center;min-width:0;}
+  .lsdial .dk{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);}
+  .lsdial .dv{font-family:var(--mono);font-size:28px;font-weight:700;line-height:1.1;margin:1px 0 9px;}
+  .lsdial .ds{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:6px;line-height:1.45;}
+  .lscol{min-width:0;}
+  .lscol .ch{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;color:var(--ink);margin-bottom:6px;}
+  .lscol .ch i{width:3px;height:13px;display:block;flex:none;}
+  .lsr{display:flex;justify-content:space-between;gap:10px;align-items:baseline;padding:4px 0;border-bottom:1.5px solid var(--line);}
+  .lsr:last-child{border-bottom:none;}
+  .lsr .l{font-size:12px;color:var(--muted);min-width:0;}
+  .lsr .n{font-family:var(--mono);font-size:12.5px;font-weight:700;white-space:nowrap;}
+  /* the comparison proper: long above short, both bars scaled to the bigger of
+     the pair, so the GAP is the message rather than each bar on its own scale */
+  .vscmp{border-top:1.5px solid var(--line);padding:12px 13px 13px;}
+  .vsrow{margin-bottom:11px;}
+  .vsrow:last-of-type{margin-bottom:2px;}
+  .vsrow .vk{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin-bottom:5px;}
+  .vsline{display:grid;grid-template-columns:44px 1fr 78px;gap:8px;align-items:center;margin-bottom:4px;}
+  .vsline .sl{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted);}
+  .vsline .sv{font-family:var(--mono);font-size:12px;font-weight:700;text-align:right;}
+  .vstrack{position:relative;height:12px;background:var(--panel-2);border:1px solid var(--line);}
+  .vstrack i{position:absolute;top:0;bottom:0;display:block;}
+  .vstrack .zt{position:absolute;top:-2px;bottom:-2px;width:1.5px;background:var(--line-strong);}
+  /* ---- session map ---- */
+  .sessbw{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:9px;}
+  .sessbw .sbx{border:1.5px solid var(--line-strong);background:var(--panel);padding:8px 10px;min-width:0;}
+  .sessbw .sbx .k{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);}
+  .sessbw .sbx .v{font-family:var(--mono);font-size:15px;font-weight:700;line-height:1.3;margin-top:1px;}
+  .sessbw .sbx .s{font-family:var(--mono);font-size:10px;color:var(--muted);}
+  .breakdown{width:100%;border-collapse:collapse;font-family:var(--mono);font-size:12.5px;margin-top:6px;}
+  .breakdown th,.breakdown td{text-align:right;padding:6px 8px;border-bottom:1.5px solid var(--line);}
+  .breakdown th{color:var(--muted);font-weight:700;font-size:10.5px;text-transform:uppercase;letter-spacing:0.04em;}
+  .breakdown th:first-child,.breakdown td:first-child{text-align:left;}
+  /* rows below the n>=4 the header promises: kept so the R column still
+     reconciles with Total R, but visibly not worth reading into */
+  .breakdown tr.thin td{opacity:0.45;}
+  /* Timing tab: the Wilson range under a win rate, and the expectancy meter
+     column. The range is faded rather than "lighter" - four of the six schemes
+     are light, so a direction word would be wrong on them. The meter column gets
+     a floor width so the shared scale means the same thing on every row. */
+  .breakdown .tsub{display:block;font-size:10px;color:var(--muted);letter-spacing:0;}
+  /* the planned-R:R backfill box, sized to the number it holds rather than
+     stretching across the note it sits in */
+  .rrfill{width:96px;text-align:right;}
+  /* target sweep: the row the panel names. A left edge rather than a fill, the
+     same idiom .note and .gaterow already use for "this is the one" - a filled
+     row would fight the green/red the expectancy column is already carrying. */
+  .breakdown tr.sweeppick td{background:var(--panel-2);font-weight:700;}
+  .breakdown tr.sweeppick td:first-child{box-shadow:inset 3px 0 0 var(--go);}
+  /* the full-run field sits under the excursion pair and spans it: it is always
+     in R, so it must not look like it belongs to the R/$/price switch above */
+  .exrun{margin-top:10px;padding-top:10px;border-top:1.5px solid var(--line);align-items:start;}
+  .exrun .exnote{margin:0;}
+  .breakdown th.tw,.breakdown td.tw{min-width:130px;width:130px;}
+  /* the edge-report and suggester tables are wrapped in this; without the rule
+     they simply overflowed the page on a narrow window instead of scrolling */
+  .scroll{overflow-x:auto;max-width:100%;}
+  /* suggester: the firm column is prose, so it stays left-aligned and carries a
+     second line of rules under the name */
+  .sgtable th:nth-child(2),.sgtable td:nth-child(2){text-align:left;}
+  .sgtable td:first-child{color:var(--muted);width:1%;}
+  .sgtable td .k{font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:2px;font-weight:400;}
+  /* the pass-to-paid sub-line is one short phrase; wrapping it split "~10d" onto
+     a line of its own. Auto table layout takes the few pixels back out of the
+     firm column's prose rather than overflowing. */
+  .sgtable td .k.paidk{white-space:nowrap;}
+  /* the reputation evidence: present but quiet, so it informs without competing
+     with the numbers that drive the ranking */
+  .sgtable td .k.standing{font-family:var(--sans);font-size:11px;opacity:0.72;max-width:38ch;}
+  /* journal sidebar: one suggestion card per market family */
+  .fscard{border:1.5px solid var(--line);background:var(--panel-2);padding:10px 11px;margin-bottom:10px;}
+  .fscard.top{border-color:var(--go);}
+  .fscard .fsk{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.06em;color:var(--muted);margin-bottom:5px;}
+  .fscard .fsbest{color:var(--go-ink);border:1px solid var(--go);padding:1px 5px;margin-left:5px;letter-spacing:0.04em;}
+  .fscard .fsname{margin:0 0 4px;font-size:14px;line-height:1.35;}
+  .fscard .fsrule{margin:0 0 7px;line-height:1.6;font-size:11px;}
+  .fscard .fsnum{margin:0 0 7px;line-height:1.65;font-size:11.5px;}
+  .fscard .fswhy{margin:0 0 9px;line-height:1.5;font-size:11.5px;}
+  .fscard button{width:100%;}
+  .sgtable tbody tr:hover{background:var(--panel-2);}
+  .sgtable .tag{margin-left:6px;}
+  .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:3px;}
+  .cal .d{aspect-ratio:1/1;border:1.5px solid var(--line);display:flex;flex-direction:column;justify-content:space-between;padding:4px 5px;font-family:var(--mono);font-size:10px;}
+  .cal .d.has{cursor:pointer;}
+  .cal .d.has:hover{border-color:var(--ink);}
+  .cal .d .n{color:var(--muted);} .cal .d .p{font-weight:700;font-size:11px;line-height:1.2;}
+  .cal .d .p2{font-size:9.5px;color:var(--muted);line-height:1.2;}
+  .cal .d{min-height:56px;}
+  .cal .d.off{border-color:transparent;background:transparent;}
+  .cal .dow{aspect-ratio:auto;border:none;color:var(--muted);text-align:center;font-size:10px;padding:2px 0;}
+  .calhead{display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap;}
+  .calhead b{font-family:var(--mono);font-size:14px;min-width:150px;}
+  .calhead button{font-family:var(--mono);border:1.5px solid var(--line-strong);background:var(--panel);color:var(--ink);cursor:pointer;padding:4px 10px;}
+  .ov{position:fixed;inset:0;z-index:60;background:var(--shadow);-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);display:flex;align-items:center;justify-content:center;padding:20px 14px;}
+  .sheet{background:var(--paper);border:2px solid var(--line-strong);width:100%;max-width:820px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;box-shadow:0 18px 60px rgba(0,0,0,0.45);}
+  .sheet-head{flex:none;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 18px;border-bottom:1.5px solid var(--line-strong);background:var(--panel-2);}
+  .sheet-head h3{font-family:var(--mono);font-size:15px;margin:0;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;}
+  .sheet-body{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:0 18px 14px;}
+  .sheet-foot{flex:none;display:flex;gap:10px;justify-content:space-between;align-items:center;padding:12px 18px;border-top:1.5px solid var(--line-strong);background:var(--panel-2);flex-wrap:wrap;}
+  .sheet-foot .fr{display:flex;gap:10px;align-items:center;margin-left:auto;flex-wrap:wrap;}
+  .formsec{padding:16px 0 4px;border-bottom:1.5px solid var(--line);}
+  .formsec:last-child{border-bottom:none;}
+  .formsec .sh{font-family:var(--mono);font-size:10.5px;letter-spacing:0.09em;text-transform:uppercase;color:var(--go-ink);margin:0 0 10px;font-weight:700;}
+  .fg{display:grid;gap:11px 12px;grid-template-columns:repeat(4,1fr);margin-bottom:10px;}
+  .fg.c5{grid-template-columns:repeat(5,1fr);}
+  .fg.c2{grid-template-columns:1fr 1fr;}
+  .fg .f2{grid-column:span 2;}
+  @media (max-width:680px){.fg,.fg.c5{grid-template-columns:1fr 1fr;}}
+  /* excursions: ONE pair of boxes and a switch for the unit they are read in.
+     Two pairs (prices in Execution, R in Result) meant four inputs for two
+     measurements and a silent precedence rule between them. */
+  .exwrap{border:1.5px dashed var(--line-strong);background:var(--panel-2);padding:11px 12px 2px;margin:0 0 10px;}
+  .exhead{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px;}
+  .exhead .exlbl{font-family:var(--mono);font-size:10px;letter-spacing:0.03em;text-transform:uppercase;color:var(--muted);}
+  .exwrap .seg button:disabled{opacity:0.4;cursor:default;}
+  .exnote{font-size:11.5px;line-height:1.5;color:var(--muted);margin:0 0 9px;}
+  .exnote b{color:var(--ink);}
+  .rchip{font-family:var(--mono);font-weight:700;font-size:17px;padding:7px 14px;border:1.5px solid var(--line-strong);color:var(--muted);background:var(--panel);}
+  .rchip.win{color:var(--go-ink);background:var(--go-bg);border-color:var(--go);}
+  .rchip.loss{color:var(--stop-ink);background:var(--stop-bg);border-color:var(--stop);}
+  .chipset{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;}
+  .chipset .opt{font-family:var(--mono);font-size:11px;padding:6px 10px;border:1.5px solid var(--line-strong);background:var(--panel);color:var(--muted);cursor:pointer;}
+  .chipset .opt:hover{border-color:var(--ink);color:var(--ink);}
+  /* the entry-model filter: same chips, tighter, so a long model list still fits the sidebar */
+  .chipset.mini{gap:5px;margin-bottom:6px;max-height:172px;overflow-y:auto;}
+  .chipset.mini .opt{font-size:10.5px;padding:4px 8px;}
+  .chipset .opt[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .chipset .opt.q[aria-pressed="true"]{background:var(--go);border-color:var(--go);color:var(--on-accent);}
+  .chipset .opt.m[aria-pressed="true"]{background:var(--stop);border-color:var(--stop);color:var(--on-accent);}
+  .emoblock{display:flex;flex-direction:column;gap:5px;}
+  .emorow{display:flex;gap:5px;}
+  .emorow button{font-family:var(--mono);font-size:12.5px;font-weight:700;width:34px;height:32px;border:1.5px solid var(--line-strong);background:var(--panel);color:var(--muted);cursor:pointer;}
+  .emorow button:hover{border-color:var(--ink);}
+  .emorow button[aria-pressed="true"]{background:var(--ink);color:var(--paper);border-color:var(--ink);}
+  .emocap{font-family:var(--mono);font-size:9.5px;color:var(--muted);display:flex;justify-content:space-between;width:190px;max-width:100%;}
+  .dropzone{border:1.5px dashed var(--line-strong);background:var(--panel-2);padding:18px 14px;text-align:center;color:var(--muted);font-size:13px;cursor:pointer;margin-bottom:4px;}
+  .dropzone:hover{border-color:var(--go);color:var(--go-ink);}
+  .dropzone.drag{border-color:var(--go);background:var(--go-bg);color:var(--go-ink);}
+  .thumbs{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
+  .thumbs .th{position:relative;width:96px;height:70px;border:1.5px solid var(--line-strong);background:var(--panel-2);}
+  .thumbs .th img{width:100%;height:100%;object-fit:cover;display:block;}
+  .thumbs .th button{position:absolute;top:-9px;right:-9px;width:22px;height:22px;border:1.5px solid var(--paper);background:var(--stop);color:var(--on-accent);font-family:var(--mono);font-size:12px;cursor:pointer;line-height:1;}
+  .detail dl{display:grid;grid-template-columns:auto 1fr;gap:7px 18px;font-family:var(--mono);font-size:13px;margin:12px 0 0;}
+  .detail dt{color:var(--muted);text-transform:uppercase;font-size:10.5px;letter-spacing:0.04em;padding-top:2px;}
+  .detail dd{margin:0;}
+  .detail .blocktext{background:var(--panel-2);border-left:3px solid var(--line-strong);padding:10px 13px;margin:10px 0 0;font-size:14px;white-space:pre-wrap;}
+  .detail .blocktext .h{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);margin-bottom:3px;}
+  .gallery{display:flex;flex-wrap:wrap;gap:10px;margin:14px 0 4px;}
+  .gallery img{max-height:170px;max-width:100%;border:1.5px solid var(--line-strong);cursor:zoom-in;background:var(--panel-2);}
+  .lightbox{position:fixed;inset:0;z-index:90;background:rgba(0,0,0,0.9);display:flex;align-items:center;justify-content:center;overflow:hidden;}
+  /* the image is transformed (zoom/pan), so it must not be clipped by padding */
+  .lightbox img{max-width:calc(100vw - 48px);max-height:calc(100vh - 48px);transform-origin:center center;will-change:transform;-webkit-user-select:none;user-select:none;-webkit-user-drag:none;}
+  .lb-bar{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);z-index:92;display:flex;align-items:center;gap:8px;
+    background:var(--ink);border:1.5px solid var(--line-strong);padding:7px 10px;}
+  .lb-bar .iconbtn{width:32px;height:32px;font-size:14px;background:transparent;color:var(--paper);border-color:var(--line-strong);}
+  .lb-bar .iconbtn:hover:not(:disabled){border-color:var(--go);}
+  .lb-bar .lbl{font-family:var(--mono);font-size:11.5px;color:var(--paper);min-width:44px;text-align:center;}
+  .lb-hint{position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:92;font-family:var(--mono);font-size:11px;color:rgba(255,255,255,0.5);}
+  .thumbwrap{position:relative;width:64px;height:48px;flex:none;}
+  .thumbwrap .imgn{position:absolute;right:1px;bottom:1px;background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:9px;line-height:1.4;padding:0 4px;}
+  .gallery img.lead{max-height:none;width:100%;}
+  .confirm-sheet{max-width:430px;}
+  .confirm-sheet .sheet-body{padding:18px;font-size:14.5px;}
+  #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:95;background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:13px;padding:10px 16px;border:1.5px solid var(--line-strong);display:none;max-width:90vw;}
+  #chartTip{position:fixed;z-index:99;display:none;pointer-events:none;background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:11.5px;line-height:1.5;padding:6px 9px;border:1.5px solid var(--line-strong);max-width:280px;white-space:nowrap;}
+  #chartTip b{color:inherit;}
+  canvas.tippable{cursor:crosshair;}
+  .rg-row{margin-bottom:11px;}
+  .rg-row:last-child{margin-bottom:2px;}
+  .rg-row .rl{display:flex;justify-content:space-between;align-items:baseline;font-size:12px;}
+  .rg-row .rl .k{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:0.04em;color:var(--muted);}
+  .rg-row .rl .v{font-family:var(--mono);font-size:12.5px;font-weight:700;}
+  .rg-row .meter{height:9px;margin:5px 0 0;}
+  /* ---- Validate: the drawdown panel and its qualifiers ---- */
+  /* the uncertainty sub-line under a banded headline: quiet, always present when
+     a journal record is driving, so its absence is informative too */
+  .bandline{font-size:11.5px;color:var(--muted);line-height:1.5;margin-top:4px;min-height:0;}
+  .bandline .sub{display:block;}
+  .vchipwrap{margin-top:8px;}
+  .vread{margin-top:12px;}
+  .vcap{margin-top:8px;}
+  .ddcheck{display:flex;align-items:center;gap:8px;font-family:var(--sans);font-size:13px;
+    color:var(--ink);text-transform:none;letter-spacing:0;cursor:pointer;}
+  .ddcheck input{width:16px;height:16px;accent-color:var(--go);cursor:pointer;flex:none;}
+  /* the percentile ladder. p50 is deliberately present and deliberately quiet:
+     hiding it would be its own dishonesty, but it is not a plan and must not
+     look like the headline. */
+  .statgrid .tile.full{grid-column:1/-1;}
+  .statgrid .tile .v.vsmall{font-size:13px;font-weight:400;line-height:1.5;}
+  .ddlad .tile.anchor{border-color:var(--go);}
+  .ddlad .tile.coin{opacity:0.78;}
+  .ddlad .tile .pl{font-family:var(--mono);font-size:9.5px;letter-spacing:0.05em;
+    text-transform:uppercase;color:var(--muted);margin-top:4px;}
+  .ddrisk{border:2px solid var(--line-strong);background:var(--panel-2);padding:13px 15px;margin-top:16px;}
+  .ddrisk .rk{font-family:var(--mono);font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--muted);}
+  .ddrisk .rv{font-family:var(--mono);font-size:26px;font-weight:700;line-height:1.15;margin-top:2px;}
+  .ddrisk .rs{font-size:12.5px;color:var(--muted);line-height:1.55;margin-top:6px;}
+  .ddrisk .rs b{color:var(--ink);}
+  /* ---- My firm: the bound firm + this record, as a plan ----
+     Real CSS rules, no inline style="" attributes: a CSP nonce makes those inert
+     in the packaged app and nowhere else (Trap #1), which is the one class of
+     bug that ships looking fine. */
+  .plan-head{border:2px solid var(--line-strong);background:var(--panel-2);padding:12px 14px;margin-bottom:12px;}
+  .plan-head .ph{font-family:var(--mono);font-size:10px;letter-spacing:0.07em;text-transform:uppercase;color:var(--muted);}
+  .plan-head .pn{font-family:var(--mono);font-size:15px;font-weight:700;line-height:1.3;margin-top:2px;}
+  .plan-head .ps{font-size:12px;color:var(--muted);line-height:1.5;margin-top:4px;}
+  .plan-why{margin:0 0 18px;}
+  .plan-lead{margin:0 0 10px;}
+  .plan-note2{margin:8px 0 0;}
+  .plan-act{margin:10px 0 0;}
+  .vh.vh0{margin-top:0;}
+  /* one rule of the firm's, and what it does to THIS record. The verdict rides
+     on the left edge (the same idiom .note uses) so the rule text stays the
+     firm's words rather than the app's opinion of them. */
+  .gaterow{border:1.5px solid var(--line);border-left-width:4px;background:var(--panel);padding:10px 12px;margin-bottom:8px;}
+  .gaterow:last-child{margin-bottom:0;}
+  .gaterow.t-go{border-left-color:var(--go);}
+  .gaterow.t-caution{border-left-color:var(--caution);}
+  .gaterow.t-stop{border-left-color:var(--stop);}
+  .gaterow .gk{display:flex;justify-content:space-between;align-items:baseline;gap:10px;flex-wrap:wrap;}
+  .gaterow .gn{font-family:var(--mono);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:var(--ink);min-width:0;}
+  .gaterow .gc{font-family:var(--mono);font-size:11px;font-weight:700;white-space:nowrap;cursor:help;}
+  .gaterow .gm{font-size:12.5px;line-height:1.55;color:var(--muted);margin-top:6px;}
+  .gaterow .gm b{color:var(--ink);}
+  .segchip{display:inline-flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11.5px;font-weight:700;border:1.5px solid var(--go);background:var(--go-bg);color:var(--go-ink);padding:6px 10px;margin-bottom:12px;}
+  .segchip button{border:none;background:none;color:inherit;font-family:inherit;font-weight:700;cursor:pointer;font-size:13px;padding:0 2px;}
+  .iconbtn:disabled,.btn:disabled{opacity:0.4;cursor:default;}
+  .iconbtn:disabled:hover{border-color:var(--line-strong);}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
+</style>
+</head>
+<body>
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand-wrap"><h1>Edge Lab</h1><span class="brand">edge in / verdict out</span></div>
+    <nav class="modenav" role="tablist" aria-label="Mode">
+      <button data-mode="sim" aria-pressed="true">Simulator</button>
+      <button data-mode="journal" aria-pressed="false">Journal</button>
+    </nav>
+    <button id="manualBtn" class="iconbtn" title="User manual" aria-label="Open the user manual">?</button>
+    <button id="reloadBtn" class="iconbtn" title="Reload the app (F5)" aria-label="Reload the app">&#8635;</button>
+    <div class="themewrap" id="themeWrap">
+      <button id="themeBtn" class="iconbtn" title="Colour scheme" aria-label="Colour scheme" aria-haspopup="true" aria-expanded="false">&#9680;</button>
+      <div class="thememenu hide" id="themeMenu" role="menu" aria-label="Colour scheme"></div>
+    </div>
+  </header>
+
+  <div class="shell" id="mode-sim">
+    <aside class="rail">
+      <div class="bar">
+        <div class="bar-head"><span class="t">Your edge</span></div>
+        <div class="bar-sum" id="sbSum">--</div>
+        <div class="sb-ctrl"><div class="row"><span>Win rate %</span><input type="number" class="numin" id="nwr" min="0" max="100" step="1" value="55" aria-label="Win rate value"></div><input type="range" id="swr" min="0" max="100" step="1" value="55" aria-label="Win rate"></div>
+        <div class="sb-ctrl"><div class="row"><span id="lpaylbl">Reward to risk (R)</span><input type="number" class="numin" id="npay" min="0.5" max="6" step="0.05" value="1" aria-label="Payoff value"></div><input type="range" id="spay" min="0.5" max="6" step="0.05" value="1" aria-label="Payoff">
+          <div style="margin-top:8px"><div class="seg" role="group" aria-label="payoff type"><button data-pm="rr" aria-pressed="true">R:R</button><button data-pm="pf" aria-pressed="false">Profit factor</button></div></div></div>
+        <div class="sb-ctrl"><div class="row"><span title="Share of ALL your trades that scratch at 0R - neither a win nor a loss. Win rate above is of DECIDED trades, matching the journal. Scratches slow the clock: they burn trading days without moving the account, which matters for time limits, subscription months and payout windows.">Scratch rate %</span><input type="number" class="numin" id="nsc" min="0" max="60" step="1" value="0" aria-label="Scratch rate value"></div><input type="range" id="ssc" min="0" max="60" step="1" value="0" aria-label="Scratch rate"></div>
+        <div class="sb-ctrl"><div class="row"><span>Trades in record</span><input type="number" class="numin" id="nn" min="10" max="1500" step="10" value="120" aria-label="Trades value"></div><input type="range" id="sn" min="10" max="1500" step="10" value="120" aria-label="Trades in record"></div>
+      </div>
+
+      <div class="jedge">
+        <div class="row"><span class="lab">Use my journal</span>
+          <label class="switch"><input type="checkbox" id="useJournal" aria-label="Use journal trades as the edge"><span class="sl"></span></label></div>
+        <div class="fld" style="margin-top:8px"><label for="jEdgeAcct">Edge source</label><select id="jEdgeAcct"></select></div>
+        <div class="fld" style="margin-top:8px"><label for="jEdgeCut" title="Leave one segment of your record out and every tab recomputes without it - the counterfactual behind &quot;what happens to my odds if I stop taking shorts?&quot;. The segments are the same ones the journal's edge report names. Answered with a band on the change, because a segment you picked by looking at these trades is a hypothesis, not a finding.">Leave out (what if I stop&hellip;)</label><select id="jEdgeCut"></select></div>
+        <div class="desc" id="jedgeDesc">Off &mdash; using the sliders.</div>
+        <div class="cutbox hide" id="jedgeCut"></div>
+      </div>
+
+      <div class="bar">
+        <div class="bar-head">
+          <span class="t">The firm</span>
+          <div class="seg" role="group" aria-label="display unit" title="Switches the firm summary and the Funded tab between dollars and % of account. Decision, Firms and Portfolio always quote dollars - each says so on the tab."><button data-disp="$" aria-pressed="true">$</button><button data-disp="%" aria-pressed="false">%</button></div>
+          <button class="barbtn" id="firmToggle">Edit rules</button>
+        </div>
+        <div class="bar-sum" id="firmSum">--</div>
+        <div class="firm-edit" id="firmEdit">
+          <div class="fgrid">
+            <div class="fld wide"><label for="fPreset">Preset</label><select id="fPreset"></select>
+              <div style="display:flex;gap:8px;margin-top:6px"><button class="barbtn" id="fSavePreset" type="button">Save as preset</button><button class="barbtn hide" id="fDelPreset" type="button">Delete preset</button></div></div>
+            <div class="fld wide"><label>Quick account size</label>
+              <div class="chipset" id="accChips" style="margin-bottom:0">
+                <button type="button" class="opt" data-acc="5000">$5k</button>
+                <button type="button" class="opt" data-acc="10000">$10k</button>
+                <button type="button" class="opt" data-acc="25000">$25k</button>
+                <button type="button" class="opt" data-acc="50000">$50k</button>
+                <button type="button" class="opt" data-acc="100000">$100k</button>
+              </div></div>
+            <div class="fld"><label for="fAccount">Account size ($)</label><input type="number" id="fAccount" value="100000" step="1000" min="100" max="100000000"></div>
+            <div class="fld"><label for="fType">Structure</label><select id="fType"><option value="2step">2-step</option><option value="1phase">1-phase</option><option value="futures">Futures</option></select></div>
+            <div class="fld"><label for="fInstant" title="Instant funding: the fee buys the funded account outright - there is no evaluation to pass, so the targets below do not apply and the Decision tab prices the fee as a certain cost instead of a gamble on passing. Some catalogue firms load with this on.">Instant funding</label><select id="fInstant"><option value="0">No &mdash; evaluation first</option><option value="1">Yes &mdash; fee buys the account</option></select></div>
+            <div class="fld" id="wrapP1"><label for="fP1">Target phase 1 (%)</label><input type="number" id="fP1" value="10" step="0.5" min="0" max="1000"></div>
+            <div class="fld" id="wrapP2"><label for="fP2">Target phase 2 (%)</label><input type="number" id="fP2" value="5" step="0.5" min="0" max="1000"></div>
+            <div class="fld"><label for="fMaxdd">Max drawdown (%)</label><input type="number" id="fMaxdd" value="10" step="0.5" min="0.01" max="100"></div>
+            <div class="fld"><label for="fDdType">Drawdown type</label><select id="fDdType"><option value="static">Static (from start)</option><option value="trailing">Trailing intraday (peak tick)</option><option value="trailing-eod">Trailing end-of-day (daily close)</option></select></div>
+            <div class="fld" id="wrapDdLock"><label for="fDdLock">Trailing locks at start</label><select id="fDdLock"><option value="1">Yes</option><option value="0">No</option></select></div>
+            <div class="fld"><label for="fDaily">Daily loss limit (%)</label><input type="number" id="fDaily" value="5" step="0.5" min="0" max="100"></div>
+            <div class="fld"><label for="fMinDays">Min trading days</label><input type="number" id="fMinDays" value="0" step="1" min="0" max="500"></div>
+            <div class="fld"><label for="fCons" title="Max share of the total profit any single day may contribute">Consistency cap (%)</label><input type="number" id="fCons" value="0" step="5" min="0" max="100"></div>
+            <div class="fld"><label for="fTpd" title="How many trades you take in a trading day. This is the engine's day clock - it decides when a daily loss limit resets, how long a &quot;day&quot; is, and how many trades fit in the modelled year - so it changes almost every number in the app. Capped at 20: it multiplies the length of every simulation, and beyond that the app spends longer computing than the answer is worth.">Trades per day</label><input type="number" id="fTpd" value="5" step="1" min="1" max="20"></div>
+            <div class="fld"><label for="fSplit">Profit split (%)</label><input type="number" id="fSplit" value="90" step="1" min="0" max="100"></div>
+            <div class="fld"><label for="fTimeLimit" title="TRADING days allowed to finish the evaluation - the engine counts trading days, never weekends, so enter the firm's calendar limit converted (30 calendar days is about 21 trading days). 0 = no time limit, which several futures firms offer.">Time limit (trading days)</label><input type="number" id="fTimeLimit" value="0" step="1" min="0" max="500"></div>
+            <div class="fld"><label for="fFeeMode" title="A monthly subscription keeps charging for every month the evaluation runs, passed or not">Fee type</label><select id="fFeeMode"><option value="once">One-time</option><option value="monthly">Monthly until passed</option></select></div>
+            <div class="fld"><label for="fFee"><span id="fFeeLbl">Challenge fee ($)</span></label><input type="number" id="fFee" value="540" step="10" min="0" max="1000000"></div>
+            <div class="fld"><label for="fActivation" title="One-off fee charged when the evaluation converts to a funded account">Activation fee ($)</label><input type="number" id="fActivation" value="0" step="10" min="0" max="1000000"></div>
+            <div class="fld"><label for="fResetFee" title="Discounted price for re-attempting after a failed evaluation. 0 = every attempt at the full fee. Only used for one-time-fee firms - a subscription's renewal is already its reset.">Reset fee ($, 0 = none)</label><input type="number" id="fResetFee" value="0" step="5" min="0" max="1000000"></div>
+            <div class="fld"><label for="fPayEvery" title="Trading days between payout windows. 0 = on demand. Profit you cannot withdraw yet is still exposed to the drawdown.">Payout every (days)</label><input type="number" id="fPayEvery" value="0" step="1" min="0" max="365"></div>
+            <div class="fld"><label for="fPayFirst" title="Trading days on the funded account before the first payout is allowed">First payout after (days)</label><input type="number" id="fPayFirst" value="0" step="1" min="0" max="365"></div>
+            <div class="fld"><label for="fPayMin" title="Minimum withdrawal. Only bites once it exceeds 5% of the account.">Min payout ($)</label><input type="number" id="fPayMin" value="0" step="50" min="0" max="10000000"></div>
+            <div class="fld"><label for="fPayBuffer" title="Profit the account must hold before ANY withdrawal is allowed - a firm that only pays once a $50,000 account reaches $53,000 has a $3,000 buffer. Priced in the first-payout odds AND the funded cash-flow. 0 = none.">Payout buffer ($ profit)</label><input type="number" id="fPayBuffer" value="0" step="250" min="0" max="10000000"></div>
+            <div class="fld"><label for="fPayCap" title="The most of your CURRENT profit one withdrawal may take - 50 means at most half the profit leaves per payout, the rest stays at the firm. Modelled in both the first-payout odds and the cash-flow. The profit it forces you to leave at the firm is priced only by YOUR haircut slider. 0 = uncapped.">Max payout (% of profit)</label><input type="number" id="fPayCap" value="0" step="5" min="0" max="100"></div>
+            <div class="fld"><label for="fPayCapAmt" title="A fixed dollar ceiling on ONE payout request - the commonest real payout rule in futures prop (Apex, Topstep, Tradeify, Goat and others cap the first payouts at $1,500-$3,000). Where a firm tiers the cap by payout number, this is the FIRST tier. Modelled in the cash-flow; it refuses payouts entirely if it sits below the firm minimum. 0 = no ceiling.">Max payout ($ per request)</label><input type="number" id="fPayCapAmt" value="0" step="250" min="0" max="10000000"></div>
+            <div class="fld"><label for="fPayCons" title="Consistency rule as a PAYOUT gate: the largest share of profit-since-your-last-payout that any single trading day may contribute. 40 means one big day cannot be more than 40% of the profit you are withdrawing against. A big day does not fail the account - it blocks withdrawals until later profit dilutes it. Distinct from the Consistency cap above, which applies to the evaluation. 0 = no rule.">Payout consistency (% max day)</label><input type="number" id="fPayCons" value="0" step="5" min="0" max="100"></div>
+            <div class="fld"><label for="fWinDays" title="Winning-days rule: this many trading days each closing up by at least the amount beside it, before a payout may be requested. The count resets after every payout. 0 = no rule.">Winning days for payout</label><input type="number" id="fWinDays" value="0" step="1" min="0" max="365"></div>
+            <div class="fld"><label for="fWinAmt" title="What a day must close up by to count as a winning day - Tradeify-style: 5 days of $150+. Ignored when Winning days is 0.">Winning day is ($+)</label><input type="number" id="fWinAmt" value="0" step="25" min="0" max="10000000"></div>
+          </div>
+          <p class="fnote">0 = off.</p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="main">
+      <div class="tabs" role="tablist">
+        <button data-tab="validate" aria-pressed="true"><span class="num">1</span>Validate</button>
+        <button data-tab="challenge" aria-pressed="false"><span class="num">2</span>Challenge</button>
+        <button data-tab="funded" aria-pressed="false"><span class="num">3</span>Funded</button>
+        <button data-tab="decision" aria-pressed="false"><span class="num">4</span>Decision</button>
+
+      </div>
+
+      <div class="panel" id="p-validate">
+        <h2>Is your edge real?</h2>
+
+        <div class="note warn hide" id="vLooks"><p class="h">Multiple looks at one record</p><p class="nomarg" id="vLooksMsg">--</p></div>
+        <div class="note warn hide" id="vPool"><p class="h">Pooled accounts</p><p class="nomarg" id="vPoolMsg">--</p></div>
+        <div class="grid2">
+          <div>
+            <div class="big" id="vVerdict">--</div>
+            <div class="vchipwrap"><span class="chip" id="vChip">--</span></div>
+            <p class="small vread" id="vRead">--</p>
+            <div class="kv">
+              <div class="r"><div class="k" title="Wins as a share of DECIDED trades - a 0R scratch is neither a win nor a loss, so it sits outside this rate and outside its interval. Same definition as the journal's Stats tab.">Win rate, decided</div><div class="v" id="vWR">--</div></div>
+              <div class="r"><div class="k" title="Average R per trade across every resolved trade, scratches included - a 0R is real data worth exactly zero.">Expectancy</div><div class="v" id="vEV">--</div></div>
+              <div class="r"><div class="k">Profit factor</div><div class="v" id="vPF">--</div></div>
+              <div class="r"><div class="k" title="Trades logged, and how many INDEPENDENT observations they amount to. Trades sharing a day, a setup or an account are not separate draws, and every interval on this screen is computed from the effective figure rather than the raw count.">Sample</div><div class="v" id="vN">--</div></div>
+            </div>
+            <p class="small muted vcap" id="vNNote">--</p>
+          </div>
+          <div><div class="vh vh0">Where your true expectancy could be</div><canvas id="cBell" height="220"></canvas>
+            <p class="small muted vcap" id="vBellCap">--</p></div>
+        </div>
+
+        <div class="vh">Drawdown to plan for</div>
+
+        <div class="grid2">
+          <div class="controls">
+            <div class="ctrl"><div class="row"><span title="How many trades ahead you are planning for. Drawdown is a maximum over a run, so it grows with the length of the run - the same edge draws about 5R over 100 trades and 9R over 1,000.">Horizon (trades)</span><input type="number" class="numin" id="nHz" min="50" max="2000" step="50" value="250" aria-label="Drawdown horizon"></div><input type="range" id="sHz" min="50" max="2000" step="50" value="250" aria-label="Drawdown horizon slider"><div class="sub" id="lHzSub">--</div></div>
+            <div class="ctrl"><div class="row"><span title="How much of the account one full loss costs. Only used to turn the R figures into a percentage of the account and to answer the sizing question below.">Account drawdown limit %</span><input type="number" class="numin" id="nDDLim" min="0" max="50" step="0.5" value="0" aria-label="Account drawdown limit"></div><div class="sub" id="lDDLimSub">--</div></div>
+            <div class="fld"><label>Resampling</label>
+              <div class="seg" role="group" aria-label="Resampling method"><button type="button" data-ddm="block" aria-pressed="true" title="Stationary block bootstrap: keeps runs of consecutive trades intact, so clustered losses survive the resampling. The block length is fitted from your own record's autocorrelation.">Block (fitted)</button><button type="button" data-ddm="iid" aria-pressed="false" title="Plain bootstrap: every trade drawn independently. Destroys any serial structure, and therefore understates drawdown on a record with clustered losses.">Independent</button></div>
+              <div class="sub" id="lDDMethod">--</div></div>
+            <div class="fld"><label class="ddcheck"><input type="checkbox" id="cbOvershoot" checked> <span title="On: losses are resampled at the magnitudes you actually logged, so a stop that filled at -1.4R can happen again. Off: every loss is drawn at your average loss exactly. The model never invents a tail - if your logged losses are all the same size, this changes nothing and says so.">Use realised loss sizes</span></label>
+              <div class="sub" id="lOvershoot">--</div></div>
+          </div>
+          <div>
+            <div class="statgrid" id="ddLadder"></div>
+            <canvas id="cDD" height="210"></canvas>
+            <p class="small muted vcap" id="ddCurveCap">--</p>
+          </div>
+        </div>
+        <div id="ddRisk"></div>
+        <div class="note hide" id="vBaseline"><p class="h">The full record, for comparison</p><p class="nomarg" id="vBaselineMsg">--</p></div>
+      </div>
+
+      <div class="panel hide" id="p-challenge">
+        <h2>Passing the challenge</h2>
+
+        <div class="grid2">
+          <div class="controls">
+            <div class="ctrl"><div class="row"><span>Risk per trade %</span><input type="number" class="numin" id="nrc" min="0.1" max="3" step="0.05" value="0.75" aria-label="Challenge risk value"></div><input type="range" id="src" min="0.1" max="3" step="0.05" value="0.75" aria-label="Challenge risk per trade"><div class="sub" id="lrcSub">--</div></div>
+            <div class="big" id="cPass">--<span class="u">chance to pass</span></div>
+            <div class="mono bandline" id="cPassBand"></div>
+            <div class="meter"><i id="cMeter"></i></div>
+            <span class="chip" id="cChip">--</span>
+            <div class="kv" style="margin-top:12px">
+              <div class="r" id="cRowP1"><div class="k" title="Of every attempt started, the share that clears the first target without breaching a rule.">Pass phase 1</div><div class="v" id="cP1">--</div></div>
+              <div class="r" id="cRowP2"><div class="k" title="Of the attempts that GET to phase 2, the share that clear it. Phase 2 starts from a fresh balance with the full drawdown room again, so it is a second independent gate - which is why the two multiply into the headline rather than averaging.">Then pass phase 2</div><div class="v" id="cP2">--</div></div>
+              <div class="r"><div class="k" title="Trading days, not calendar days, and for a 2-step firm it is the TOTAL across both phases. The time limit is applied per phase, so this total can exceed it without any rule being broken.">Typical trading days to pass</div><div class="v" id="cDays">--</div></div>
+            </div>
+            <p class="small muted" id="cRead" style="margin-top:10px">--</p>
+          </div>
+          <div>
+            <div class="vh" style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><span id="cPathsTitle">simulated attempts</span>
+              <span style="display:flex;gap:8px;align-items:center">
+                <span class="seg hide" id="cPhaseSeg" role="group" aria-label="Which phase to draw" title="Phase 2 starts from a fresh balance with the full drawdown room, so its walks are drawn the same way phase 1's are - only the target moves."><button type="button" data-cphase="1" aria-pressed="true">Phase 1</button><button type="button" data-cphase="2" aria-pressed="false">Phase 2</button></span>
+                <button class="barbtn" id="reroll" title="Draw a fresh random sample">&#8635; re-roll</button>
+              </span></div>
+            <canvas id="cPaths" height="240"></canvas>
+
+            <div class="chartgrid" style="margin-top:14px">
+              <div><div class="vh" style="margin-top:2px" title="Every attempt, all the way to funded or dead. A 2-step attempt that clears phase 1 and then breaches in phase 2 is a failed attempt, and it is counted as one here.">How attempts end</div><canvas id="cOut" height="150"></canvas></div>
+              <div><div class="vh" style="margin-top:2px">Days to pass</div><canvas id="cHist" height="150"></canvas></div>
+            </div>
+            <p class="small muted hide" id="cOutLeg" style="margin:6px 0 0"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel hide" id="p-funded">
+        <h2>Getting paid once funded</h2>
+
+        <div class="grid2">
+          <div class="controls">
+            <div class="ctrl"><div class="row"><span>Risk per trade %</span><input type="number" class="numin" id="nrf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk value"></div><input type="range" id="srf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk per trade"><div class="sub" id="lrfSub">--</div></div>
+            <div class="ctrl"><div class="row"><span id="lGoalLbl" title="What you want this account to pay you. The model withdraws in fixed 5%-of-account chunks, so the slider moves in whole payouts. 0 = off.">Payout goal $</span><input type="number" class="numin" id="nGoal" min="0" step="250" value="0" aria-label="Payout goal in dollars"></div><input type="range" id="sGoal" min="0" max="24" step="1" value="0" aria-label="Payout goal in whole payouts">
+              <div style="margin-top:8px"><div class="seg" role="group" aria-label="Goal period"><button type="button" data-goalp="mo" aria-pressed="false">Per month</button><button type="button" data-goalp="yr" aria-pressed="true">Per year</button></div></div>
+              <div class="sub" id="lGoalSub">0 = off</div></div>
+            <div class="kv" style="margin-top:6px">
+              <div class="r"><div class="k" title="Chance a funded account reaches at least one withdrawal inside the year. This one DOES price the firm's first-payout waiting period and minimum, so it matches the Decision tab.">Chance of a payout</div><div class="v" id="fPayAny">--</div></div>
+              <div class="r"><div class="k" title="How many withdrawals land in a year, assuming the app's uniform sweep habit. Median is the typical account; the mean is dragged up by the long-lived ones.">Payouts / year</div><div class="v" id="fPays">--</div></div>
+              <div class="r"><div class="k" title="Cash actually withdrawn over the year, averaged across every account including the ones that blew up. Whatever is left sitting in the account at the end is collateral, not payout, so it is not counted.">Profit / year</div><div class="v" id="fProfit">--</div></div>
+              <div class="r"><div class="k" title="Share of accounts still alive after a full trading year - 252 trading days at your trades-per-day setting - without hitting the drawdown floor or the daily loss limit.">Survival</div><div class="v" id="fSurv">--</div></div>
+              <div class="r hide" id="fFateRow"><div class="k" title="The Profit/year figure above is a mean over every account, and at low survival it is carried by a minority of long-lived ones. This is the median cash an account that BREACHES inside the year has already withdrawn before it dies - the money the likely outcome actually pays you - beside what a surviving account banks over the year.">Breached banks</div><div class="v" id="fFate">--</div></div>
+              <div class="r"><div class="k" title="The largest size whose profit is within 3% of the best AND where at least 85 accounts in 100 still survive the year. Sizes inside the flat top pay the same but do NOT survive the same - profit is flat across it, risk of ruin is not, which is why this picks the survivable end rather than the profitable one.">Best size</div><div class="v" id="fPeak">--</div></div>
+              <div class="r hide" id="fGoalRow"><div class="k" title="The SMALLEST size whose odds of reaching your goal are within 3% of the best size's odds. Smaller means more survival for the same shot at the goal.">Smallest size for goal</div><div class="v" id="fGoal">--</div></div>
+            </div>
+          </div>
+          <div><div class="vh">Profit per year vs size (your edge, this firm)</div><canvas id="cGrowth" height="230"></canvas>
+            <p class="small muted" style="margin-top:8px">Shading: green = survives, red = dies &middot; bracket = best range &middot; solid = your size &middot; dashed = smallest size for your goal.</p></div>
+        </div>
+      </div>
+
+      <div class="panel hide" id="p-decision">
+        <h2>Is this challenge worth buying?</h2>
+
+        <div class="grid2">
+          <div class="controls">
+            <div class="ctrl"><div class="row"><span title="How much of the account you lose when ONE trade during the evaluation hits its stop. Everything on this tab is computed at this size.">Eval risk / trade %</span><input type="number" class="numin" id="nrde" min="0.1" max="3" step="0.05" value="0.75" aria-label="Eval risk value"></div><input type="range" id="srde" min="0.1" max="3" step="0.05" value="0.75" aria-label="Eval risk"><div class="sub" id="lrdeSub">--</div></div>
+            <div class="ctrl"><div class="row"><span title="The same thing once funded. Most traders size down after passing; the payout figures here run at this size.">Funded risk / trade %</span><input type="number" class="numin" id="nrdf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk value"></div><input type="range" id="srdf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk"><div class="sub" id="lrdfSub">--</div></div>
+            <div class="kv" style="margin-top:6px">
+              <div class="r"><div class="k">Chance to pass</div><div class="v" id="dPass">--</div></div>
+              <div class="r"><div class="k">Expected fees to fund</div><div class="v" id="dFees">--</div></div>
+              <div class="r"><div class="k" title="The eval size that reaches a funded account for the least money, measured on this firm rather than assumed &mdash; and where a range of sizes costs the same, the quickest of them. The cost already prices re-attempting until you pass, so a size that washes out more often shows up here as a bigger number. Under a time limit or a min-days rule a SMALLER size costs more, not less: slower attempts run out of room before they reach the target.">Best eval size</div><div class="v" id="dEvalSize">--</div></div>
+              <div class="r"><div class="k">First-year payout</div><div class="v" id="dPayout">--</div></div>
+              <div class="r"><div class="k" title="Chance one purchase ends with money actually withdrawn: passing every phase AND reaching a first payout inside the funded year.">Pass &rarr; paid</div><div class="v" id="dPaid">--</div></div>
+              <div class="r"><div class="k" title="Where you stand the day you take your first withdrawal: the odds a funded account gets there, times one withdrawal after the split, minus the cost to get funded. That cost already prices re-attempting until you pass, so this uses the odds once funded rather than the end-to-end figure.">Net @ 1st payout</div><div class="v" id="dEvFirst">--</div></div>
+            </div>
+          </div>
+          <div>
+            <div class="verdictbox">
+              <div class="vh" style="margin:0 0 6px">Net expected value of buying in</div>
+              <div class="big" id="dEV">--</div>
+              <div class="mono bandline" id="dEVBand"></div>
+              <div style="margin-top:8px"><span class="chip" id="dChip">--</span></div>
+              <p class="small" id="dRead" style="margin:10px 0 0">--</p>
+            </div>
+            <div class="note" id="dEdgeNote"><p class="h">Reminder</p><p style="margin:0" id="dEdgeMsg">--</p></div>
+          </div>
+        </div>
+        <div class="vh" style="margin-top:18px">Budget to funded</div>
+
+        <div class="statgrid" id="dBudget" style="margin-bottom:4px"></div>
+      </div>
+
+      <footer>
+        <p>Not financial advice. Firm rules change &mdash; verify before paying. See the <b>?</b> manual for how everything works.</p>
+        <p class="mono" style="font-size:11px;letter-spacing:0.05em">Edge Lab &mdash; produced by <b>jiidc</b> &middot; &copy; 2026 jiidc &middot; MIT licensed &middot; open source</p>
+      </footer>
+    </main>
+  </div>
+
+  <div class="shell hide" id="mode-journal">
+    <aside class="rail">
+      <div class="railbtns"><button class="primary" id="jNew">+ New trade&nbsp;&nbsp;<span style="opacity:0.7" data-kbd="mod+N">Ctrl+N</span></button></div>
+      <div class="railbtns">
+        <button id="jExport">Export backup</button>
+        <button id="jImport">Import</button>
+      </div>
+      <input type="file" id="jImportFile" accept="application/json,.json" class="hide">
+      <div class="dataloc hide" id="jDataLoc"><span id="jDataPath" title=""></span><button id="jReveal">Open folder</button></div>
+
+      <div class="bar">
+        <div class="bar-head"><span class="t">Account scope</span><span style="display:flex;gap:8px"><button class="barbtn" id="jNewAcct">+ New</button><button class="barbtn hide" id="jDelAcct" style="border-color:var(--stop);color:var(--stop-ink)">Delete</button></span></div>
+        <div class="filters">
+          <div class="fld" style="margin-bottom:0"><select id="jAcct" aria-label="Account scope"></select></div>
+
+        </div>
+      </div>
+
+      <div class="bar hide" id="ruleGuard">
+        <div class="bar-head"><span class="t" id="rgTitle">Rule guard</span><span style="display:flex;gap:8px"><span class="seg hide" id="rgPhaseSeg" title="Which phase this account is in. Funded swaps the target meter for payout-readiness, and starts the payout-window clock."><button id="rgPhaseEval" aria-pressed="true">eval</button><button id="rgPhaseFunded" aria-pressed="false">funded</button></span><button class="barbtn hide" id="rgBind">Bind sim firm</button><button class="barbtn hide" id="rgUnbind" style="border-color:var(--stop);color:var(--stop-ink)">Unbind</button></span></div>
+        <div class="filters" id="rgBody"></div>
+      </div>
+
+      <div class="bar">
+        <div class="bar-head"><span class="t" id="jEqTitle">Equity</span><button class="barbtn" id="jDollarBtn" aria-expanded="false" aria-controls="jDollarBox" title="Shows or hides YOUR money — the dollar layer derived from R: Total P&amp;L, Balance, Return, the equity line's dollar restatement, and the R/P&amp;L unit switch on the log and calendar. The prop-odds panel keeps its dollars either way: fees and payouts are the firm's published prices, not a derivation of your R.">Show dollars</button></div>
+        <div class="filters">
+          <p class="mono eqline" id="jEqLine"></p>
+          <div class="hide dollarbox" id="jDollarBox">
+            <div class="fld"><label for="jStartBal" id="jStartBalLbl">Starting balance ($)</label><input type="number" id="jStartBal" step="100" min="0" placeholder="e.g. 100000"></div>
+            <div class="fld"><label for="jRVal" id="jRValLbl">What 1R is worth</label><input type="number" id="jRVal" step="any" min="0" placeholder="e.g. 50"><span class="seg" id="jRModeSeg"><button type="button" id="jRModeFixed" aria-pressed="true" title="Dollars risked per trade">$ per R</button><button type="button" id="jRModePct" aria-pressed="false" title="Percent of the starting balance risked per trade">% of start</button></span></div>
+            <p class="small muted mono nomarg" id="jBalLine"></p>
+          </div>
+        </div>
+      </div>
+
+      <div class="bar">
+        <div class="bar-head"><span class="t">Filter</span><button class="barbtn" id="jClearFilter">Reset</button></div>
+        <div class="filters">
+          <div class="fld"><label for="fltText">Search notes &amp; plan</label><input type="text" id="fltText" placeholder="anything you wrote..."></div>
+          <div class="fld"><label for="fltSetup">Setup</label><select id="fltSetup"><option value="">All setups</option></select></div>
+          <div class="fld" id="fltModelWrap"><label>Entry model <span class="muted" id="fltModelHint"></span></label><div class="chipset mini" id="fltModelBox"></div><p class="small muted mono" id="fltModelStat" style="margin:0;font-size:11px;line-height:1.5"></p></div>
+          <div class="fld"><label for="fltOutcome">Outcome</label><select id="fltOutcome"><option value="">All</option><option value="win">Winners</option><option value="loss">Losers</option><option value="flat">Break-even</option></select></div>
+          <div class="fld"><label for="fltDir">Direction</label><select id="fltDir"><option value="">Both</option><option value="long">Long</option><option value="short">Short</option></select></div>
+          <div class="fld"><label for="fltSess">Session</label><select id="fltSess"><option value="">Any session</option><option>Asia</option><option>London</option><option>New York</option><option>Other</option></select></div>
+          <div class="fld"><label for="fltMistake">Mistake tag</label><select id="fltMistake"><option value="">Any</option></select></div>
+          <div class="fld"><label for="fltCond">Market condition</label><select id="fltCond"><option value="">Any</option></select></div>
+          <div class="fld"><label for="fltSym">Instrument contains</label><input type="text" id="fltSym" placeholder="ES, EURUSD..."></div>
+          <div class="fld"><label for="fltFrom">From</label><input type="date" id="fltFrom"></div>
+          <div class="fld"><label for="fltTo">To</label><input type="date" id="fltTo"></div>
+        </div>
+      </div>
+
+      <div class="sumtiles" id="jSummary"></div>
+      <p class="small muted" id="jStorageNote" style="margin:2px 2px 0"></p>
+      <p class="mono muted" style="margin:2px 2px 0;font-size:10.5px;letter-spacing:0.05em">produced by <b>jiidc</b> &middot; &copy; 2026 jiidc &middot; MIT</p>
+    </aside>
+
+    <main class="main">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <div class="subnav" style="margin-bottom:0" role="tablist">
+          <button data-jview="log" aria-pressed="true">Trade log</button>
+          <button data-jview="stats" aria-pressed="false">Stats</button>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <span class="seg" role="group" aria-label="Display unit" id="unitSeg">
+            <button data-unit="R" aria-pressed="true" title="Show R multiples">R</button>
+            <button data-unit="$" aria-pressed="false" title="Show dollars">P&amp;L</button>
+            <button data-unit="both" aria-pressed="false" title="Show both">Both</button>
+          </span>
+          <span id="logTools" style="display:flex;gap:8px">
+          <button class="barbtn" id="jSelMode">Select</button>
+          <button class="barbtn hide" id="jSelAll">All</button>
+          <button class="barbtn hide" id="jDelSel" style="border-color:var(--stop);color:var(--stop-ink)">Delete (0)</button>
+          </span>
+        </div>
+      </div>
+      <div id="jv-log"></div>
+      <div class="hide" id="jv-stats"></div>
+    </main>
+  </div>
+</div>
+
+<div class="ov hide" id="editorOv" role="dialog" aria-modal="true" aria-labelledby="edTitle">
+  <div class="sheet">
+    <div class="sheet-head"><h3 id="edTitle">New trade</h3><span style="display:flex;gap:8px;align-items:center"><button class="barbtn" id="edModeBtn" title="Toggle between quick capture and the full form">Quick log</button><button class="iconbtn" id="edClose" aria-label="Close editor">&times;</button></span></div>
+    <div class="sheet-body">
+      <div class="formsec" id="secTrade">
+        <div class="sh">Trade</div>
+        <div class="fg">
+          <div class="fld f2"><label for="edDate">Date &amp; time</label><input type="datetime-local" id="edDate"></div>
+          <div class="fld"><label for="edSymSel">Instrument <span class="req" title="Required">*</span></label><select id="edSymSel"></select></div>
+          <div class="fld"><label for="edDir">Direction</label><select id="edDir"><option value="long">Long</option><option value="short">Short</option></select></div>
+          <div class="fld hide" id="edSymCustomWrap"><label for="edSym">Custom symbol</label><input type="text" id="edSym" placeholder="type it" autocomplete="off"></div>
+          <div class="fld f2"><label for="edSetup">Setup / playbook</label>
+            <div class="cbox" id="cbSetup"><input type="text" id="edSetup" placeholder="Breakout, ORB, VWAP fade..." autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="cbSetupPop"><button type="button" class="cbtog" id="cbSetupTog" tabindex="-1" aria-label="Show setups you have used before"></button><div class="cbpop" id="cbSetupPop" role="listbox" aria-label="Setups you have used before" hidden></div></div></div>
+          <div class="fld f2"><label for="edModel">Entry model <span class="muted">(optional)</span></label>
+            <div class="cbox" id="cbModel"><input type="text" id="edModel" placeholder="e.g. Liq sweep + CHOCH" autocomplete="off" role="combobox" aria-expanded="false" aria-autocomplete="list" aria-controls="cbModelPop"><button type="button" class="cbtog" id="cbModelTog" tabindex="-1" aria-label="Show entry models you have used before"></button><div class="cbpop" id="cbModelPop" role="listbox" aria-label="Entry models you have used before" hidden></div></div></div>
+          <div class="fld"><label for="edSess">Session <span class="req" title="Required">*</span></label><select id="edSess"><option value="">Pick one&hellip;</option><option>Asia</option><option>London</option><option>New York</option><option>Other</option></select></div>
+          <div class="fld"><label for="edAcct">Account</label><select id="edAcct"></select></div>
+        </div>
+      </div>
+      <div class="formsec" id="secExec">
+        <div class="sh">Execution</div>
+        <div class="fg c5">
+          <div class="fld"><label for="edEntry">Entry</label><input type="number" id="edEntry" step="any" inputmode="decimal"></div>
+          <div class="fld"><label for="edStop">Stop</label><input type="number" id="edStop" step="any" inputmode="decimal"></div>
+          <div class="fld"><label for="edTarget">Target</label><input type="number" id="edTarget" step="any" inputmode="decimal"></div>
+          <div class="fld"><label for="edExit">Exit</label><input type="number" id="edExit" step="any" inputmode="decimal"></div>
+          <div class="fld"><label for="edSize">Size</label><input type="number" id="edSize" step="any" inputmode="decimal"></div>
+        </div>
+        <div class="fg">
+          <div class="fld f2"><label for="edExitTime">Exit date &amp; time</label><input type="datetime-local" id="edExitTime"></div>
+        </div>
+        <p class="small muted mono" id="edPlanRR" style="margin:0 0 10px">Planned RR shows here once entry, stop and target are set.</p>
+      </div>
+      <div class="formsec" id="secResult">
+        <div class="sh">Result</div>
+        <div class="fg">
+          <div class="fld"><label for="edRisk">Risk $ (1R)</label><input type="number" id="edRisk" step="any" inputmode="decimal" placeholder="optional"></div>
+          <div class="fld"><label for="edPnl">P&amp;L $ (net)</label><input type="number" id="edPnl" step="any" inputmode="decimal" placeholder="auto"></div>
+          <div class="fld"><label for="edFees">Fees $</label><input type="number" id="edFees" step="any" inputmode="decimal" placeholder="0"></div>
+          <div class="fld"><label for="edR">R override</label><input type="number" id="edR" step="any" inputmode="decimal" placeholder="auto"></div>
+        </div>
+
+        <p class="small hide" id="edPnlNote" style="margin:0 0 10px"></p>
+        <div class="exwrap">
+          <div class="exhead">
+            <span class="exlbl">Excursions &mdash; how far it ran while open (optional)</span>
+            <div class="seg" role="group" aria-label="Excursion unit"><button type="button" data-exu="R" aria-pressed="true">In R</button><button type="button" data-exu="$" aria-pressed="false">In $</button><button type="button" data-exu="price" aria-pressed="false">In price</button></div>
+          </div>
+          <div class="fg c2">
+            <div class="fld"><label for="edMfeIn" id="edMfeLbl">MFE</label><input type="number" id="edMfeIn" step="any" inputmode="decimal" placeholder="optional"></div>
+            <div class="fld"><label for="edMaeIn" id="edMaeLbl">MAE</label><input type="number" id="edMaeIn" step="any" inputmode="decimal" placeholder="optional"></div>
+          </div>
+          <p class="exnote" id="edExNote"></p>
+          <div class="fg c2 exrun">
+            <div class="fld"><label for="edRrIn">Planned R:R</label><input type="number" id="edRrIn" step="any" inputmode="decimal" placeholder="e.g. 1.5"></div><div class="fld"><label for="edRunIn">Full run (R) &mdash; winners only</label><input type="number" id="edRunIn" step="any" inputmode="decimal" placeholder="e.g. 4.2"></div>
+
+          </div>
+        </div>
+      </div>
+      <div class="formsec" id="secTags">
+        <div class="sh">Tags</div>
+        <div class="fld"><label>Quality (pick one)</label><div class="chipset" id="edQuality"></div></div>
+        <div class="fld"><label>Mistakes</label><div class="chipset" id="edMistakes"></div></div>
+        <div class="fld"><label>Market conditions</label><div class="chipset" id="edConditions"></div></div>
+      </div>
+      <div class="formsec" id="secPsych">
+        <div class="sh">Psychology</div>
+        <div class="fg c2">
+          <div class="fld"><label>Emotion before</label>
+            <div class="emoblock"><div class="emorow" id="edEmoB"></div><div class="emocap"><span>calm</span><span>tilted</span></div></div></div>
+          <div class="fld"><label>Emotion after</label>
+            <div class="emoblock"><div class="emorow" id="edEmoA"></div><div class="emocap"><span>calm</span><span>tilted</span></div></div></div>
+        </div>
+        <div class="fld" style="margin-bottom:10px"><label>Followed the plan?</label>
+          <div class="seg" role="group" aria-label="Followed plan"><button type="button" data-plan="1" aria-pressed="true">Yes</button><button type="button" data-plan="0" aria-pressed="false">No</button></div></div>
+      </div>
+      <div class="formsec" id="secReview">
+        <div class="sh">Review</div>
+        <div class="fld" style="margin-bottom:10px"><label for="edPlan">Plan / thesis</label><textarea id="edPlan" rows="2" placeholder="Why you took it. What would invalidate it."></textarea></div>
+        <div class="fld" style="margin-bottom:10px"><label for="edNotes">Notes / review</label><textarea id="edNotes" rows="3" placeholder="What actually happened. What to repeat, what to fix."></textarea></div>
+      </div>
+      <div class="formsec" id="secShots">
+        <div class="sh">Screenshots</div>
+        <div class="dropzone" id="edDrop" tabindex="0" role="button" aria-label="Add screenshots">Click, drag in, or paste (<span data-kbd="mod+V">Ctrl+V</span>) chart images &mdash; setup / management / exit</div>
+        <div style="display:flex;gap:8px;margin-top:8px"><button type="button" class="barbtn" id="edPasteBtn" title="Read the image currently on your clipboard">Paste from clipboard</button></div>
+        <input type="file" id="edFiles" accept="image/*" multiple class="hide">
+        <div class="thumbs" id="edThumbs"></div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn danger" id="edDelete">Delete</button>
+      <div class="fr">
+        <span class="rchip" id="edRchip">0.00R</span>
+        <button class="btn" id="edCancel">Cancel</button>
+        <button class="btn primary" id="edSave" data-kbdtitle="mod+Enter" title="Ctrl+Enter">Save trade</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="ov hide" id="detailOv" role="dialog" aria-modal="true" aria-labelledby="dtTitle">
+  <div class="sheet">
+    <div class="sheet-head"><h3><span id="dtTitle">Trade</span><span id="dtR" class="mono"></span></h3><button class="iconbtn" id="dtClose" aria-label="Close">&times;</button></div>
+    <div class="sheet-body detail">
+      <div id="dtTags" style="margin-top:14px"></div>
+      <div class="gallery" id="dtGallery"></div>
+      <dl id="dtDl"></dl>
+      <div id="dtPlanWrap" class="blocktext hide"><div class="h">Plan</div><span id="dtPlan"></span></div>
+      <div id="dtNotesWrap" class="blocktext hide"><div class="h">Notes</div><span id="dtNotes"></span></div>
+    </div>
+    <div class="sheet-foot">
+      <button class="btn danger" id="dtDelete">Delete</button>
+      <div class="fr"><button class="iconbtn" id="dtPrev" title="Previous trade (Left arrow)" aria-label="Previous trade">&lsaquo;</button><button class="iconbtn" id="dtNext" title="Next trade (Right arrow)" aria-label="Next trade">&rsaquo;</button><button class="btn" id="dtCloseB">Close</button><button class="btn primary" id="dtEdit">Edit</button></div>
+    </div>
+  </div>
+</div>
+
+<div class="ov hide" id="askOv" role="alertdialog" aria-modal="true" style="z-index:80">
+  <div class="sheet confirm-sheet">
+    <div class="sheet-body" id="askMsg"></div>
+    <div class="sheet-foot"><div class="fr" id="askBtns"></div></div>
+  </div>
+</div>
+
+<div class="lightbox hide" id="lightbox">
+  <img id="lightboxImg" alt="screenshot">
+  <div class="lb-hint" id="lbHint">scroll to zoom &middot; drag to pan &middot; double-click to fit</div>
+  <div class="lb-bar">
+    <button class="iconbtn hide" id="lbPrev" title="Previous image (Left arrow)" aria-label="Previous image">&lsaquo;</button>
+    <span class="lbl hide" id="lbCount"></span>
+    <button class="iconbtn hide" id="lbNext" title="Next image (Right arrow)" aria-label="Next image">&rsaquo;</button>
+    <button class="iconbtn" id="lbOut" title="Zoom out (-)" aria-label="Zoom out">&minus;</button>
+    <span class="lbl" id="lbZoom">100%</span>
+    <button class="iconbtn" id="lbIn" title="Zoom in (+)" aria-label="Zoom in">+</button>
+    <button class="iconbtn" id="lbFit" title="Fit to screen (0)" aria-label="Fit to screen">&#9633;</button>
+    <button class="iconbtn" id="lbClose" title="Close (Esc)" aria-label="Close">&times;</button>
+  </div>
+</div>
+<div id="toast" role="status"></div>
+
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>
