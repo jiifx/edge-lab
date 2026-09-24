@@ -452,6 +452,11 @@ function drawBell(mu: number, se: number, lo: number, hi: number, conf: number) 
   for (let v = lo; v <= hi; v += (hi - lo) / 90) ctx.lineTo(X(v), base - ampl * pdf(v));
   ctx.lineTo(X(hi), base); ctx.closePath();
   ctx.fillStyle = lo > 0 ? css("--band-go") : css("--band-mid"); ctx.fill();
+  // the interval's edges, dashed in the band's own colour so they line up with
+  // the printed bounds below and read apart from the red break-even line
+  ctx.strokeStyle = lo > 0 ? css("--go") : css("--caution"); ctx.lineWidth = 1.4; ctx.setLineDash([4, 4]);
+  [lo, hi].forEach((v) => { ctx.beginPath(); ctx.moveTo(X(v), pT + 12); ctx.lineTo(X(v), base); ctx.stroke(); });
+  ctx.setLineDash([]);
   ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2.2; ctx.beginPath();
   for (let v = xLo; v <= xHi; v += (xHi - xLo) / 140) {
     const x = X(v), y = base - ampl * pdf(v);
@@ -657,7 +662,7 @@ function renderValidate() {
   $("vChip").textContent = chip; $("vChip").style.background = col;
   $("vRead").textContent = rt;
   drawBell(mu, seE, evLo, evHi, conf);
-  $("vBellCap").textContent = "Shaded: " + (Math.round(conf * 1000) / 10) + "% range · dashed: break-even";
+  $("vBellCap").textContent = "Shaded: " + (Math.round(conf * 1000) / 10) + "% range (edges dashed) · red: break-even";
 
   renderDD(n, nEff);
 }

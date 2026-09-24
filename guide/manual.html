@@ -439,7 +439,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <li><b>Not enough data</b>: under 30 trades. Aim for 100+. Everything below still prints; only the verdict holds back.</li>
 </ul>
 <p>Each figure (win rate, expectancy, profit factor) has its range underneath. <b>Sample</b> shows the trade count and how many <b>independent</b> observations they amount to. Trades that cluster by day, setup or account are not separate draws, so every range is computed from the effective count.</p>
-<p>The <b>curve</b> is where your true average trade could sit. The shaded band is the 95% range; the dashed line is break-even. If the band crosses it, you cannot yet rule out having no edge.</p>
+<p>The <b>curve</b> is where your true average trade could sit. The shaded band is the 95% range, with its edges marked by dashed lines in the band's colour; the red dashed line is break-even. If the band crosses break-even, you cannot yet rule out having no edge.</p>
 <h4>Drawdown to plan for</h4>
 <p>Maximum drawdown grows with how long you trade (roughly with log of trades), so every number names its horizon and percentile. Your record is resampled first, then the future simulated from each resample, so the answer covers the edge you might actually have, not just the one you measured.</p>
 <table>
