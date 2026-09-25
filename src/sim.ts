@@ -76,6 +76,7 @@ export function sumStrat() {
 }
 export function enableSliders(on: boolean) {
   ["swr", "spay", "sn", "nwr", "npay", "nn", "ssc", "nsc"].forEach((id) => { $i(id).disabled = !on; });
+  $("edgeBar").classList.toggle("jlocked", !on);
 }
 // number input <-> slider pairing: typing routes through the slider's own input event
 function wireNum(numId: string, rangeId: string) {
@@ -1261,9 +1262,11 @@ function renderFunded() {
   // copy promises "every payout figure", and banked profit IS payout cash
   const hcF = Math.max(0, Math.min(0.5, LS.get<number>("pel_haircut", 0)));
   const hcTag = hcF > 0 ? ", after your " + Math.round(hcF * 100) + "% haircut" : "";
-  $("fProfit").textContent = view.DISP === "$"
-    ? money((((cur.profit / 100) * F.account * F.split) / 100) * (1 - hcF)) + " (your split" + hcTag + ")"
-    : Math.round(cur.profit * (1 - hcF)) + "% of account" + (hcF > 0 ? " (after haircut)" : "");
+  // headline on its own line, qualifier underneath: the value column is 150px
+  // and "$77,609 (your split)" wrapped mid-number there
+  $("fProfit").innerHTML = view.DISP === "$"
+    ? money((((cur.profit / 100) * F.account * F.split) / 100) * (1 - hcF)) + '<div class="sub">your split' + hcTag + "</div>"
+    : Math.round(cur.profit * (1 - hcF)) + "%" + '<div class="sub">of account' + (hcF > 0 ? ", after haircut" : "") + "</div>";
   $("fProfit").className = "v " + (cur.profit > 0 ? "cell-go" : "cell-stop");
   // The Profit/year figure above is a MEAN over every fate, and at low survival
   // it is carried by a minority of long-lived accounts - "$53k/yr" at 28%
@@ -1642,11 +1645,12 @@ function renderDecision() {
   const netEV = payout - cf.cost;
   const feeNote = (F.feeMode === "monthly" ? ", ~" + cf.months + " mo of subscription" : "") +
     (F.activation ? ", +" + money(F.activation) + " activation" : "");
-  $("dPass").textContent = F.instant ? "instant - the fee buys the account" : pctEst(pPass) + (F.type === "2step" ? " (both)" : "");
-  $("dFees").textContent = F.instant
-    ? money(cf.cost) + " (exact - no evaluation to retry)"
-    : money(cf.cost) + " (" + (cf.attempts >= 199 ? "many" : cf.attempts.toFixed(1)) + " attempts" + feeNote + ")";
-  $("dPayout").textContent = money(payout) + " / year" + (hcD > 0 ? " (after your " + Math.round(hcD * 100) + "% haircut)" : "");
+  $("dPass").innerHTML = F.instant ? "instant" + '<div class="sub">the fee buys the account</div>'
+    : pctEst(pPass) + (F.type === "2step" ? '<div class="sub">both phases</div>' : "");
+  $("dFees").innerHTML = F.instant
+    ? money(cf.cost) + '<div class="sub">exact &middot; no evaluation to retry</div>'
+    : money(cf.cost) + '<div class="sub">' + (cf.attempts >= 199 ? "many" : cf.attempts.toFixed(1)) + " attempts" + feeNote + "</div>";
+  $("dPayout").innerHTML = money(payout) + '<div class="sub">per year' + (hcD > 0 ? ", after your " + Math.round(hcD * 100) + "% haircut" : "") + "</div>";
   // The rest of the funnel, same formulas and pairing as the Firms table
   // (scoreFirm/assemble in suggest.ts): the paid odds CONDITIONAL on funding
   // pair with the retry-inclusive cost - the end-to-end figure would charge
@@ -1657,10 +1661,10 @@ function renderDecision() {
   const po = payoutOdds(rf, FAST ? 200 : PAID_SIMS, yearSteps());
   const firstPay = (((po.chunkPct / 100) * F.account * F.split) / 100) * (1 - hcD);
   const evFirst = po.p * firstPay - cf.cost;
-  $("dPaid").innerHTML = pctEst(pPass * po.p) + " <span class=\"muted\">(" + pctEst(po.p) + " if funded" +
-    (po.medDays ? " &middot; ~" + po.medDays + "d" : "") + ")</span>";
+  $("dPaid").innerHTML = pctEst(pPass * po.p) + '<div class="sub">' + pctEst(po.p) + " if funded" +
+    (po.medDays ? " &middot; ~" + po.medDays + "d" : "") + "</div>";
   $("dEvFirst").innerHTML = (evFirst >= 0 ? "+" : "") + money(evFirst) +
-    ' <span class="muted">(' + money(firstPay) + " a payout)</span>";
+    '<div class="sub">' + money(firstPay) + " a payout</div>";
   $("dEvFirst").className = "v " + (evFirst > 0 ? "cell-go" : "cell-stop");
   // Budget to funded: quantiles of a geometric, not the mean. n_q attempts at
   // confidence q, cash from the same fee model as costToFund (resets included),

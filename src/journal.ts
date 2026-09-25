@@ -840,12 +840,16 @@ function todayKey(): string {
   const d = new Date();
   return d.getFullYear() + "-" + pad2(d.getMonth() + 1) + "-" + pad2(d.getDate());
 }
-function rgMeter(k: string, v: string, frac: number, invert: boolean): string {
-  // frac = share of the limit consumed (0 safe .. 1 breached)
+function rgMeter(k: string, v: string, frac: number, invert: boolean, remaining = false): string {
+  // frac = share of the limit consumed (0 safe .. 1 breached). A `remaining`
+  // meter draws what is LEFT instead - full green when safe, shrinking toward
+  // the limit - because its label reads "$x left" and an empty bar beside
+  // "$17,200 left" read as an account on its floor.
   const f = Math.max(0, Math.min(1, frac));
   const col = (invert ? 1 - f : f) >= 0.8 ? "var(--stop)" : (invert ? 1 - f : f) >= 0.5 ? "var(--caution)" : "var(--go)";
+  const w = remaining ? 1 - f : f;
   return '<div class="rg-row"><div class="rl"><span class="k">' + k + '</span><span class="v">' + v + "</span></div>" +
-    '<div class="meter"><i style="width:' + Math.round(f * 100) + "%;background:" + col + '"></i></div></div>';
+    '<div class="meter"><i style="width:' + Math.round(w * 100) + "%;background:" + col + '"></i></div></div>';
 }
 function renderRuleGuard() {
   const bar = $("ruleGuard");
@@ -957,11 +961,11 @@ function renderRuleGuard() {
         return bound.ddLock ? Math.min(base - dd$, 0) : base - dd$;
       })();
     const headroom = cum - floor$;
-    html += rgMeter("DD headroom", money(headroom) + " left", 1 - headroom / lim(bound.maxdd), false);
+    html += rgMeter("DD headroom", money(headroom) + " left", 1 - headroom / lim(bound.maxdd), false, true);
     if (bound.daily > 0) {
       const dLim = lim(bound.daily);
       const used = Math.max(0, -today);
-      html += rgMeter("Daily loss", money(dLim - used) + " left today", used / dLim, false);
+      html += rgMeter("Daily loss", money(dLim - used) + " left today", used / dLim, false, true);
     }
     if (ph.phase === "funded") {
       // A funded account has no target to pass - the questions are "when may I
@@ -4764,6 +4768,7 @@ export function applyJournalEdge() {
   setPair("ssc", "nsc", String(Math.round(S.s * 100)), "1");
   if (shown > 0) setPair("spay", "npay", shown.toFixed(2), "0.01");
   ["swr", "spay", "sn", "ssc", "nwr", "npay", "nn", "nsc"].forEach((id) => { $i(id).disabled = true; });
+  $("edgeBar").classList.add("jlocked");
   let ev = 0;
   rs.forEach((r) => { ev += r; });
   ev /= rs.length;
@@ -4799,6 +4804,7 @@ export function clearJournalEdge() {
   // - that is what the hooks object exists for). The inputs are re-enabled FIRST
   // because syncSliders reads them.
   ["swr", "spay", "sn", "ssc", "nwr", "npay", "nn", "nsc"].forEach((id) => { $i(id).disabled = false; });
+  $("edgeBar").classList.remove("jlocked");
   // ...and the EDITABLE geometry, which applyJournalEdge widened so the readouts
   // could hold the record exactly. These are the values index.html ships; the
   // payoff pair is owned by the R:R / Profit-factor toggle, so it is restored to

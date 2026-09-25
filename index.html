@@ -138,6 +138,13 @@
   .numin{font-family:var(--mono);font-size:13.5px;font-weight:700;width:78px;text-align:right;padding:4px 7px;
     border:1.5px solid var(--line-strong);background:var(--panel-2);color:var(--ink);flex:none;}
   .numin:disabled{opacity:0.45;}
+  /* driven by the journal: locked, but the values ARE the record - show them at full
+     strength and say where they come from, rather than greying them out as if broken */
+  .jtag{display:none;font-family:var(--mono);font-size:10px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;
+    color:var(--go-ink);background:var(--go-bg);border:1.5px solid var(--go);padding:2px 7px;margin-left:auto;}
+  #edgeBar.jlocked .jtag{display:inline-block;}
+  #edgeBar.jlocked .numin:disabled{opacity:1;color:var(--ink);border-style:dashed;background:transparent;}
+  #edgeBar.jlocked input[type=range]:disabled{opacity:0.35;}
   input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:6px;background:var(--line);outline:none;margin:0;border:1px solid var(--line-strong);}
   input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;background:var(--go);border:2px solid var(--panel);cursor:pointer;}
   input[type=range]:disabled{opacity:0.45;}
@@ -579,6 +586,10 @@
      look like the headline. */
   .statgrid .tile.full{grid-column:1/-1;}
   .statgrid .tile .v.vsmall{font-size:13px;font-weight:400;line-height:1.5;}
+  /* one row of four: the ladder is ONE scale, p50 -> p99, and auto-fit dropped
+     p99 - the worst case - onto a row of its own at the usual window width */
+  .statgrid.ddlad{grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;}
+  @media (max-width:1100px){.statgrid.ddlad{grid-template-columns:repeat(2,minmax(0,1fr));}}
   .ddlad .tile.anchor{border-color:var(--go);}
   .ddlad .tile.coin{opacity:0.78;}
   .ddlad .tile .pl{font-family:var(--mono);font-size:9.5px;letter-spacing:0.05em;
@@ -640,8 +651,8 @@
 
   <div class="shell" id="mode-sim">
     <aside class="rail">
-      <div class="bar">
-        <div class="bar-head"><span class="t">Your edge</span></div>
+      <div class="bar" id="edgeBar">
+        <div class="bar-head"><span class="t">Your edge</span><span class="jtag">from journal</span></div>
         <div class="bar-sum" id="sbSum">--</div>
         <div class="sb-ctrl"><div class="row"><span>Win rate %</span><input type="number" class="numin" id="nwr" min="0" max="100" step="1" value="55" aria-label="Win rate value"></div><input type="range" id="swr" min="0" max="100" step="1" value="55" aria-label="Win rate"></div>
         <div class="sb-ctrl"><div class="row"><span id="lpaylbl">Reward to risk (R)</span><input type="number" class="numin" id="npay" min="0.5" max="6" step="0.05" value="1" aria-label="Payoff value"></div><input type="range" id="spay" min="0.5" max="6" step="0.05" value="1" aria-label="Payoff">
