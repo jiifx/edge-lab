@@ -8,7 +8,10 @@ const { pathToFileURL } = require('url');
 
 const APP = pathToFileURL(path.resolve(__dirname, '../dist/PropEdgeLab2.html')).href;
 const SAMPLE = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../samples/sample-1000-trades.json'), 'utf-8'));
-const COPIES = 10, BUDGET_MS = 6000;
+// The budget is generous on purpose: CI machines are slower and shared, and the
+// heavy work (the Timing verdict) runs in the background. What must NEVER
+// happen is the page not answering - that is FREEZE_MS, measured while waiting.
+const COPIES = 10, BUDGET_MS = 15000, FREEZE_MS = 1500;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (m) => { console.log('FAIL: ' + m); process.exitCode = 1; };
 const ok = (m) => console.log('ok: ' + m);
@@ -42,11 +45,16 @@ const back = (s, weeks) => { if (!s) return s; const d = new Date(s + ':00Z'); d
   const step = async (name, act, done) => {
     const t0 = Date.now();
     await page.evaluate(act);
+    // ping the page every 100 ms while it works; the longest wait for an
+    // answer is how long it was frozen
+    let finished = false, worst = 0;
+    const pinger = (async () => { while (!finished) { const p0 = Date.now(); await page.evaluate(() => 1); worst = Math.max(worst, Date.now() - p0); await wait(100); } })();
     try { await page.waitForFunction(done, { timeout: 60000, polling: 100 }); }
-    catch { fail(name + ': did not finish within 60 s'); return; }
+    catch { finished = true; await pinger; fail(name + ': did not finish within 60 s'); return; }
+    finished = true; await pinger;
     const ms = Date.now() - t0;
-    const p0 = Date.now(); await page.evaluate(() => 1); const lag = Date.now() - p0;
-    (ms > BUDGET_MS ? fail : ok)(name + ': ' + ms + ' ms' + (lag > 200 ? ' (then ' + lag + ' ms to respond)' : ''));
+    const line = name + ': ' + ms + ' ms, longest unresponsive ' + worst + ' ms';
+    (ms > BUDGET_MS || worst > FREEZE_MS ? fail : ok)(line);
   };
 
   await page.evaluate(() => document.querySelector('[data-mode="journal"]').click());

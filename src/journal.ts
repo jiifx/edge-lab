@@ -1895,16 +1895,28 @@ function separabilityAsync(dims: { axis: string; rows: TimeRow[] }[], done: (r: 
   const { cands, choices } = sepCands(dims);
   let cancelled = false, win: SepRead | null = null, i = 0;
   if (!cands.length || choices < 2) { setTimeout(() => { if (!cancelled) done({ best: null, choices }); }, 0); return () => { cancelled = true; }; }
+  let gen: Generator<void, SepRead> | null = null;
   const step = () => {
     if (cancelled) return;
-    win = sepPick(win, cands[i++], choices);
-    if (i < cands.length) setTimeout(step, 0); else done({ best: win, choices });
+    const t0 = performance.now();
+    while (performance.now() - t0 < 12) {
+      if (!gen) {
+        if (i >= cands.length) { done({ best: win, choices }); return; }
+        gen = sepPickGen(win, cands[i++], choices);
+      }
+      const r = gen.next();
+      if (r.done) { win = r.value; gen = null; }
+    }
+    setTimeout(step, 0);
   };
   setTimeout(step, 0);
   return () => { cancelled = true; };
 }
 function sepPick(win: SepRead | null, c: SepCand, choices: number): SepRead {
-  const st = cutStat(c.row.rs, c.rest, choices);
+  return runGen(sepPickGen(win, c, choices));
+}
+function* sepPickGen(win: SepRead | null, c: SepCand, choices: number): Generator<void, SepRead> {
+  const st = yield* cutStatGen(c.row.rs, c.rest, choices);
   const restExp = c.rest.length ? c.rest.reduce((a, b) => a + b, 0) / c.rest.length : 0;
   return !win || Math.abs(st.d) > Math.abs(win.st.d) ? { axis: c.axis, row: c.row, st, restN: c.rest.length, restExp } : win;
 }
@@ -4983,9 +4995,24 @@ const CUT_SEED = 7717;
 // Leaks one: the scan that produced the hypothesis covered both directions.
 const CUT_NULL_DRAWS = 400;
 const CUT_NULL_SEED = 51001;
+// The bootstrap work below is written as generators that pause every CUT_SLICE
+// draws. Run straight through (runGen) they are the plain functions every test
+// pins, draw for draw; the Timing tab runs the same generators a few
+// milliseconds at a time (separabilityAsync), because at 10,000 trades one
+// candidate is over a second of work and used to freeze the window that long.
+const CUT_SLICE = 20000;
+function runGen<T>(g: Generator<void, T>): T {
+  let r = g.next();
+  while (!r.done) r = g.next();
+  return r.value;
+}
 function cutNoise(all: number[], m: number, choices: number): number {
+  return runGen(cutNoiseGen(all, m, choices));
+}
+function* cutNoiseGen(all: number[], m: number, choices: number): Generator<void, number> {
   const n = all.length;
   if (m <= 0 || m >= n) return Infinity;
+  let work = 0;
   let sumAll = 0;
   for (const r of all) sumAll += r;
   const meanAll = sumAll / n;
@@ -5009,6 +5036,8 @@ function cutNoise(all: number[], m: number, choices: number): number {
       }
       const d = Math.abs((sumAll - s) / (n - m) - meanAll);
       if (d > mx) mx = d;
+      work += m;
+      if (work >= CUT_SLICE) { work = 0; yield; }
     }
     best[b] = mx;
   }
@@ -5022,6 +5051,9 @@ function cutNoise(all: number[], m: number, choices: number): number {
 // hypothesis and applies no multiplicity correction; the app passes the real
 // count of the dropdown.
 export function cutStat(keptRs: number[], cutRs: number[], choices = 1): CutStat {
+  return runGen(cutStatGen(keptRs, cutRs, choices));
+}
+function* cutStatGen(keptRs: number[], cutRs: number[], choices = 1): Generator<void, CutStat> {
   const nk = keptRs.length, nc = cutRs.length, nb = nk + nc;
   const expKept = meanOf(keptRs);
   let sumB = 0;
@@ -5038,16 +5070,19 @@ export function cutStat(keptRs: number[], cutRs: number[], choices = 1): CutStat
   if (!nc || !nk) return base;
   const rnd = mulberry(CUT_SEED);
   const ds = new Array<number>(CUT_BOOT);
+  let work = 0;
   for (let b = 0; b < CUT_BOOT; b++) {
     let sk = 0, sc = 0;
     for (let i = 0; i < nk; i++) sk += keptRs[(rnd() * nk) | 0];
     for (let i = 0; i < nc; i++) sc += cutRs[(rnd() * nc) | 0];
     ds[b] = sk / nk - (sk + sc) / nb;
+    work += nb;
+    if (work >= CUT_SLICE) { work = 0; yield; }
   }
   ds.sort((a, b) => a - b);
   const lo = ds[Math.floor(CUT_BOOT * 0.05)], hi = ds[Math.min(CUT_BOOT - 1, Math.floor(CUT_BOOT * 0.95))];
   base.dLo = lo; base.dHi = hi;
-  base.noise = cutNoise(keptRs.concat(cutRs), nc, base.choices);
+  base.noise = yield* cutNoiseGen(keptRs.concat(cutRs), nc, base.choices);
   // BOTH bars. The band alone lets two thirds of pure noise through; the noise
   // floor alone would call a huge but wildly uncertain difference real.
   base.separable = (lo > 0 || hi < 0) && Math.abs(base.d) > base.noise;
