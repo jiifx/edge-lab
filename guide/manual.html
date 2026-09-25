@@ -365,11 +365,11 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <p>Any spreadsheet export works if it has a header row. Two columns are required: a <b>Date</b> and a result, either <b>R</b> or <b>P&amp;L</b> together with <b>Risk</b>. Column names are matched loosely, and comma, semicolon and tab separated files all read.</p>
 <table>
   <tr><th>Column</th><th>Also recognised as</th></tr>
-  <tr><td class="k">Date (required)</td><td>Datetime, Time, Open time, Entry time, Opened. <code>2025-03-04 09:31</code>, <code>03/04/2025 2:05 PM</code> and <code>4.3.25</code> all read.</td></tr>
+  <tr><td class="k">Date (required)</td><td>Datetime, Trade date, Open date, Open time, Entry time. <code>2025-03-04 09:31</code>, <code>03/04/2025 2:05 PM</code>, <code>2025.03.04</code>, <code>Mar 4, 2025</code>, <code>04-Mar-2025</code> and Excel serial numbers all read. A separate <b>Time</b> column is joined to a date-only Date column.</td></tr>
   <tr><td class="k">R</td><td>R multiple, Result R, Net R. Stored as a typed R.</td></tr>
   <tr><td class="k">P&amp;L</td><td>PnL, P/L, Profit, Net P&amp;L, Net profit. With <b>Risk</b>, R = P&amp;L &divide; Risk.</td></tr>
   <tr><td class="k">Risk</td><td>Risk $, Risk amount, 1R</td></tr>
-  <tr><td class="k">Optional</td><td>Exit time, Setup (or Tag, Strategy), Direction (long/short, buy/sell), Symbol, Account, Session, Notes, Fees</td></tr>
+  <tr><td class="k">Optional</td><td>Exit time (a bare clock time counts as the entry's day), Setup (or Tag, Strategy), Direction (long/short, buy/sell), Symbol, Account, Session, Notes, Fees. A unit in brackets is read: <code>P&amp;L (R)</code> is an R column.</td></tr>
 </table>
 <ul>
   <li><b>Day or month first?</b> Read off the whole file: a first number over 12 means day first. If every date could go either way, the app asks.</li>

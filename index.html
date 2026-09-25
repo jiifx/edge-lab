@@ -690,6 +690,7 @@
   body.noprop #firmEdit .fld:not(.keep),body.noprop #firmEdit .fnote{display:none;}
   body.noprop .tabs button[data-tab="challenge"],body.noprop .tabs button[data-tab="funded"],body.noprop .tabs button[data-tab="decision"]{display:none;}
   body.noprop #ruleGuard{display:none !important;}
+  body.noprop .proponly{display:none;}
   body.noprop .bar-head .seg[aria-label="display unit"]{display:none;}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
 </style>
@@ -929,7 +930,7 @@
       </div>
 
       <footer>
-        <p>Not financial advice. Firm rules change &mdash; verify before paying. See the <b>?</b> manual for how everything works.</p>
+        <p>Not financial advice.<span class="proponly"> Firm rules change &mdash; verify before paying.</span> See the <b>?</b> manual for how everything works.</p>
         <p class="mono" style="font-size:11px;letter-spacing:0.05em">Edge Lab <span id="appVer"></span> &mdash; produced by <b>jiidc</b> &middot; &copy; 2026 jiidc &middot; MIT licensed &middot; open source &middot; <button type="button" class="linkbtn" id="updBtn">Check for updates</button></p>
       </footer>
     </main>

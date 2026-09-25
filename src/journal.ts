@@ -4,7 +4,7 @@ import { S, F, money, Firm, setFirm, withFirm, withEdge, view } from "./state";
 import { computeR, computeRraw, plannedRR, hasRBasis, challengeStats, evalPass, fundedStats, payoutOdds, costToFund, wilson, profitPlateau, PAID_SIMS, PAY_CHUNK, yearSteps, TradeLike } from "./engine";
 import { Store, TAURI, Trade, JMeta, b64ToBlob } from "./store";
 import { bandOf, consWindows, DayR, PLATEAU_TOL } from "./plan";
-import { generateSample } from "./sample";
+import { generateSample, SAMPLE_ACCT } from "./sample";
 
 export let JT: Trade[] = [];
 export const JMETA: JMeta = { startBalance: null, accounts: ["Main"], balances: {} };
@@ -4447,7 +4447,8 @@ function sanitizeTrade(raw: unknown): Trade | null {
   const dir = r.direction === "short" ? "short" : "long";
   return {
     id,
-    account: safeStr(r.account, 80) || "Main",
+    // an account name becomes an object key (balances, rBasis, phases)
+    account: ((a) => (a && !isDangerousKey(a) ? a : "Main"))(safeStr(r.account, 80)),
     dateTime: safeStr(r.dateTime, 40),
     instrument: safeStr(r.instrument, 40),
     direction: dir,
@@ -4486,10 +4487,11 @@ function safeAssign<T>(dst: Record<string, T>, src: unknown, coerce: (v: unknown
 type ImportData = { meta?: { startBalance?: number | null }; trades?: Trade[]; images?: { id: string; w?: number; h?: number; dataUrl?: string }[] };
 function doImport(file: File) {
   if (!JLOADED) { toast("Journal is still loading - try again in a second."); return; }
-  if (file.size > 64 * 1024 * 1024) { toast("That backup is over 64 MB - too large to import safely."); return; }
+  if (file.size > 64 * 1024 * 1024) { toast("That file is over 64 MB - too large to import safely."); return; }
   const fr = new FileReader();
   fr.onload = () => {
-    const text = String(fr.result);
+    // a byte-order mark (Notepad, Excel) is not part of the content
+    const text = String(fr.result).replace(/^\uFEFF/, "");
     // a CSV is recognised by name or by not being JSON at all
     if (/\.(csv|txt|tsv)$/i.test(file.name) || !/^\s*[\[{]/.test(text)) { importCsv(text); return; }
     let data: ImportData;
@@ -4561,6 +4563,9 @@ function importData(data: ImportData, sample = false, extra = "") {
           normalizeMeta();
           renderAcctSel();
           Store.persistAll(JT, JMETA, () => {
+            // the sample is for looking around: show it, rather than an empty
+            // scoped account and a hint to go and find it
+            if (sample && ACCT !== "" && ACCT !== SAMPLE_ACCT) setScope(SAMPLE_ACCT);
             renderJournal();
             if ($i("useJournal").checked) applyJournalEdge();
             // name where the rows LANDED. With scope on account A, a backup
@@ -4601,7 +4606,8 @@ function importData(data: ImportData, sample = false, extra = "") {
 // question as a JSON backup. Ids are a hash of the row, so importing the same
 // file twice with Merge adds nothing the second time.
 const CSV_COLS: Record<string, string[]> = {
-  date: ["date", "datetime", "date/time", "date time", "time", "open time", "entry time", "opened", "open date", "entry date"],
+  // names that carry a DATE come before names that may carry only a clock
+  date: ["date", "datetime", "date/time", "date time", "trade date", "open date", "entry date", "opened", "open time", "entry time", "time"],
   exitTime: ["exit time", "close time", "closed", "exit date", "close date"],
   R: ["r", "r multiple", "r-multiple", "rmultiple", "result r", "r result", "net r"],
   pnl: ["pnl", "p&l", "p/l", "profit", "net pnl", "net p&l", "net profit", "profit/loss", "result $", "gain"],
@@ -4614,21 +4620,36 @@ const CSV_COLS: Record<string, string[]> = {
   notes: ["notes", "note", "comment", "comments"],
   fees: ["fees", "commission", "commissions", "fee"],
 };
+// a time-only column beside a date-only one ("Date" + "Time" is the most
+// common spreadsheet layout there is)
+const CSV_TIME_COLS = ["time", "open time", "entry time", "time opened"];
+function csvHead(h: string): { name: string; unit: string } {
+  const s = h.replace(/^\uFEFF/, "").trim().toLowerCase().replace(/_+/g, " ").replace(/\s+/g, " ");
+  const m = /^(.*?)\s*\(([^)]*)\)\s*$/.exec(s);
+  return m ? { name: m[1].trim(), unit: m[2].trim() } : { name: s, unit: "" };
+}
 export function parseCsvRows(text: string): string[][] {
-  const first = (text.split(/\r?\n/).find((l) => l.trim()) || "");
-  // the delimiter is whichever of these the header uses most
-  const delim = [",", ";", "\t", "|"].map((d) => [d, first.split(d).length] as [string, number]).sort((a, b) => b[1] - a[1])[0][0];
+  let body = text.replace(/^\uFEFF/, "");
+  // Excel writes "sep=;" as a first line to name the delimiter
+  let delim = "";
+  const sep = /^sep=(.)\r?\n/i.exec(body);
+  if (sep) { delim = sep[1]; body = body.slice(sep[0].length); }
+  if (!delim) {
+    const first = body.split(/\r?\n/).find((l) => l.trim()) || "";
+    // the delimiter is whichever of these the header uses most
+    delim = [",", ";", "\t", "|"].map((d) => [d, first.split(d).length] as [string, number]).sort((a, b) => b[1] - a[1])[0][0];
+  }
   const rows: string[][] = [];
   let row: string[] = [], cell = "", q = false;
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i];
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
     if (q) {
-      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      if (c === '"') { if (body[i + 1] === '"') { cell += '"'; i++; } else q = false; }
       else cell += c;
     } else if (c === '"') q = true;
     else if (c === delim) { row.push(cell); cell = ""; }
     else if (c === "\n" || c === "\r") {
-      if (c === "\r" && text[i + 1] === "\n") i++;
+      if (c === "\r" && body[i + 1] === "\n") i++;
       row.push(cell); cell = "";
       if (row.some((x) => x.trim())) rows.push(row);
       row = [];
@@ -4638,20 +4659,21 @@ export function parseCsvRows(text: string): string[][] {
   if (row.some((x) => x.trim())) rows.push(row);
   return rows;
 }
-// "1,234.50", "(120)", "$-80", "-1.5R", "1.234,50" -> numbers; anything else -> null
+// "1,234.50", "(120)", "$-80", "-1.5R", "1.234,50", "−2" -> numbers; anything else -> null
 export function csvNum(v: string | undefined): number | null {
   if (v == null) return null;
-  let s = v.trim().replace(/[$€£\s]/g, "").replace(/r$/i, "");
+  let s = v.trim().replace(/[\u2212\u2012\u2013]/g, "-").replace(/[$€£¥\s\u00a0']/g, "").replace(/r$/i, "");
   if (!s) return null;
   let neg = false;
   if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
   if (s.includes(",") && s.includes(".")) {
     // whichever comes last is the decimal point
     s = s.lastIndexOf(",") > s.lastIndexOf(".") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
-  } else if (/^-?\d{1,3}(,\d{3})+$/.test(s)) s = s.replace(/,/g, "");   // 1,234 grouping
-  else s = s.replace(",", ".");                                           // 1,5 decimal comma
+  } else if (/^[-+]?\d{1,3}(,\d{3})+$/.test(s)) s = s.replace(/,/g, "");  // 1,234 grouping
+  else s = s.replace(",", ".");                                            // 1,5 decimal comma
+  if (!/^[-+]?(\d+\.?\d*|\.\d+)(e[-+]?\d+)?$/i.test(s)) return null;
   const n = Number(s);
-  return s !== "" && isFinite(n) ? (neg ? -n : n) : null;
+  return isFinite(n) ? (neg ? -n : n) : null;
 }
 // the date order a slashed date uses, read off the whole column: a first part
 // over 12 can only be a day, a second part over 12 only a day. null = the file
@@ -4666,22 +4688,32 @@ export function csvDateOrder(vals: string[]): "dmy" | "mdy" | null {
   }
   return dmy && !mdy ? "dmy" : mdy && !dmy ? "mdy" : null;
 }
-// -> "YYYY-MM-DDTHH:MM", or "" when it is not a date
+const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+const monthOf = (w: string) => { const i = MONTHS.indexOf(w.slice(0, 3).toLowerCase()); return i < 0 ? 0 : i + 1; };
+const p2 = (x: number) => String(x).padStart(2, "0");
+// -> "YYYY-MM-DDTHH:MM", or "" when it is not a real date
 export function csvDate(v: string | undefined, order: "dmy" | "mdy"): string {
   if (!v) return "";
-  const s = v.trim();
-  const p2 = (x: number) => String(x).padStart(2, "0");
-  let y: number, mo: number, d: number, rest: string;
-  let m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(.*)$/.exec(s);
-  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; rest = m[4]; }
-  else {
-    m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(.*)$/.exec(s);
-    if (!m) return "";
-    y = +m[3]; if (y < 100) y += 2000;
+  // a leading weekday ("Tue, 4 Mar 2025") says nothing the date does not
+  const s = v.trim().replace(/^(mon|tue|wed|thu|fri|sat|sun)[a-z]*\.?,?\s+/i, "");
+  let y: number, mo: number, d: number, rest: string, m: RegExpExecArray | null;
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(.*)$/.exec(s))) { y = +m[1]; mo = +m[2]; d = +m[3]; rest = m[4]; }
+  else if ((m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(.*)$/.exec(s))) {
+    y = +m[3];
     [d, mo] = order === "dmy" ? [+m[1], +m[2]] : [+m[2], +m[1]];
     rest = m[4];
-  }
-  if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+  } else if ((m = /^([a-z]{3,9})\.?\s+(\d{1,2})(?:st|nd|rd|th)?,?\s+(\d{2,4})(.*)$/i.exec(s))) {   // Mar 4, 2025
+    mo = monthOf(m[1]); d = +m[2]; y = +m[3]; rest = m[4];
+  } else if ((m = /^(\d{1,2})[\s-]([a-z]{3,9})\.?[\s,-]+(\d{2,4})(.*)$/i.exec(s))) {             // 4 Mar 2025, 04-Mar-2025
+    d = +m[1]; mo = monthOf(m[2]); y = +m[3]; rest = m[4];
+  } else if ((m = /^(\d{5})(\.\d+)?$/.exec(s)) && +m[1] > 20000 && +m[1] < 80000) {
+    // an Excel serial date (days since 1899-12-30), exported unformatted
+    const t = new Date(Math.round((Number(s) - 25569) * 86400) * 1000);
+    return t.getUTCFullYear() + "-" + p2(t.getUTCMonth() + 1) + "-" + p2(t.getUTCDate()) + "T" + p2(t.getUTCHours()) + ":" + p2(t.getUTCMinutes());
+  } else return "";
+  if (y < 100) y += 2000;
+  // a real calendar day: 2025-02-31 is not "March 3rd", it is a typo
+  if (mo < 1 || mo > 12 || d < 1 || new Date(Date.UTC(y, mo - 1, d)).getUTCDate() !== d) return "";
   let hh = 0, mm = 0;
   const t = /(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?\s*(am|pm)?/i.exec(rest || "");
   if (t) {
@@ -4691,51 +4723,84 @@ export function csvDate(v: string | undefined, order: "dmy" | "mdy"): string {
   }
   return y + "-" + p2(mo) + "-" + p2(d) + "T" + p2(hh) + ":" + p2(mm);
 }
-function fnv(s: string): string {
-  let h = 0x811c9dc5;
+const hasClock = (s: string) => /\d{1,2}:\d{2}/.test(s);
+const onlyClock = (s: string) => /^\s*\d{1,2}:\d{2}(:\d{2}(\.\d+)?)?\s*(am|pm)?\s*$/i.test(s);
+// two independent 32-bit FNV-1a hashes: a collision needs both to collide,
+// so ids stay unique far past any real journal's size
+function fnv(s: string, seed: number): string {
+  let h = seed >>> 0;
   for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
   return (h >>> 0).toString(36);
 }
 export function csvToTrades(text: string, order: "dmy" | "mdy" | null, fallbackAcct: string):
   { trades?: Record<string, unknown>[]; error?: string; needOrder?: boolean; noR?: number; skipped?: number } {
-  const rows = parseCsvRows(text.replace(/^﻿/, ""));
+  const rows = parseCsvRows(text);
   if (rows.length < 2) return { error: "That CSV has no trade rows under a header row." };
-  const head = rows[0].map((h) => h.trim().toLowerCase().replace(/_+/g, " ").replace(/\s+/g, " "));
+  const head = rows[0].map(csvHead);
   const col: Record<string, number> = {};
   for (const k of Object.keys(CSV_COLS)) {
-    const i = head.findIndex((h) => CSV_COLS[k].includes(h));
-    if (i >= 0) col[k] = i;
+    // aliases in priority order, not header order: with "Time" left of "Date",
+    // Date must still win
+    for (const a of CSV_COLS[k]) {
+      // "P&L (R)" is an R column wearing a P&L name, and not a P&L column
+      const i = head.findIndex((h) => h.name === a && !(k === "pnl" && h.unit === "r"));
+      if (i >= 0) { col[k] = i; break; }
+    }
+    if (k === "R" && col.R == null) {
+      const i = head.findIndex((h) => h.unit === "r" && CSV_COLS.pnl.includes(h.name));
+      if (i >= 0) col.R = i;
+    }
   }
   if (col.date == null) return { error: "No date column found. Name one column Date." };
   if (col.R == null && col.pnl == null) return { error: "No result column found. Name one column R (or P&L, with a Risk column)." };
+  const timeCol = head.findIndex((h, i) => i !== col.date && CSV_TIME_COLS.includes(h.name));
+  const exitDateCol = head.findIndex((h, i) => i !== col.exitTime && (h.name === "exit date" || h.name === "close date"));
   const body = rows.slice(1);
-  const ord = order || csvDateOrder(body.map((r) => r[col.date] || ""));
-  if (!ord && body.some((r) => /^\s*\d{1,2}[/.-]\d{1,2}[/.-]/.test(r[col.date] || ""))) return { needOrder: true };
   const get = (r: string[], k: string) => (col[k] == null ? undefined : r[col[k]]);
-  const seen: Record<string, number> = {};
+  const dateCell = (r: string[]) => {
+    const d = (r[col.date] || "").trim();
+    return timeCol >= 0 && !hasClock(d) && r[timeCol] ? d + " " + r[timeCol].trim() : d;
+  };
+  const ord = order || csvDateOrder(body.map(dateCell));
+  if (!ord && body.some((r) => /^\s*\d{1,2}[/.-]\d{1,2}[/.-]/.test(dateCell(r)))) return { needOrder: true };
+  const seen: Record<string, number> = {}, used = new Set<string>();
   const trades: Record<string, unknown>[] = [];
   let skipped = 0, noR = 0;
   for (const r of body) {
-    const dateTime = csvDate(get(r, "date"), ord || "mdy");
+    const dateTime = csvDate(dateCell(r), ord || "mdy");
     const R = csvNum(get(r, "R")), pnl = csvNum(get(r, "pnl")), risk = csvNum(get(r, "riskAmt"));
     if (!dateTime || (R == null && pnl == null)) { skipped++; continue; }
     if (R == null && !(risk != null && risk > 0)) noR++;
     const dirRaw = (get(r, "direction") || "").trim().toLowerCase();
-    const direction = /^(s|short|sell)/.test(dirRaw) ? "short" : "long";
-    const account = (get(r, "account") || "").trim() || fallbackAcct;
-    const key = [dateTime, R, pnl, risk, get(r, "instrument"), get(r, "setup"), account].join("|");
+    const direction = /^(s|short|sell)\b/.test(dirRaw) ? "short" : "long";
+    let account = (get(r, "account") || "").trim() || fallbackAcct;
+    if (isDangerousKey(account)) account = fallbackAcct;
+    // an exit given as a bare clock time belongs to the entry's day (or the
+    // next one, when it reads earlier than the entry)
+    let exRaw = (get(r, "exitTime") || "").trim();
+    if (onlyClock(exRaw) && exitDateCol >= 0 && (r[exitDateCol] || "").trim()) exRaw = r[exitDateCol].trim() + " " + exRaw;
+    let exitTime = "";
+    if (onlyClock(exRaw)) {
+      exitTime = csvDate(dateTime.slice(0, 10) + " " + exRaw, "mdy");
+      if (exitTime && exitTime < dateTime) {
+        const n = new Date(Date.parse(dateTime.slice(0, 10) + "T00:00Z") + 86400000);
+        exitTime = n.toISOString().slice(0, 10) + exitTime.slice(10);
+      }
+    } else exitTime = csvDate(exRaw, ord || "mdy");
+    const instrument = (get(r, "instrument") || "").trim(), setup = (get(r, "setup") || "").trim();
+    const notes = (get(r, "notes") || "").trim(), session = (get(r, "session") || "").trim();
+    const key = [dateTime, exitTime, R, pnl, risk, instrument, setup, direction, session, account, notes].join("|");
     seen[key] = (seen[key] || 0) + 1;
-    const exitTime = csvDate(get(r, "exitTime"), ord || "mdy");
+    let id = "csv" + fnv(key, 0x811c9dc5) + fnv(key, 0x2f4a7c15) + (seen[key] > 1 ? "_" + seen[key] : "");
+    while (used.has(id)) id += "x";
+    used.add(id);
     trades.push({
-      id: "csv" + fnv(key) + (seen[key] > 1 ? "_" + seen[key] : ""),
-      account, dateTime, exitTime: exitTime || null,
-      instrument: (get(r, "instrument") || "").trim(), direction,
-      session: (get(r, "session") || "").trim(),
-      setup: (get(r, "setup") || "").trim(), entryModel: "",
+      id, account, dateTime, exitTime: exitTime || null,
+      instrument, direction, session, setup, entryModel: "",
       entry: null, stop: null, target: null, exit: null, size: null,
       riskAmt: risk != null && risk > 0 ? risk : null, pnl, fees: csvNum(get(r, "fees")),
       R, Rmanual: R != null, pnlManual: pnl != null,
-      followedPlan: true, planText: "", notes: (get(r, "notes") || "").trim(),
+      followedPlan: true, planText: "", notes,
       tags: { quality: "", mistake: [], condition: [] },
       emotionBefore: 0, emotionAfter: 0, imageIds: [],
     });

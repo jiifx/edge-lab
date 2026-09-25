@@ -55,7 +55,8 @@ to explore. The same record is in [`samples/sample-1000-trades.json`](samples/sa
 **Import** takes an Edge Lab backup (`.json`) or a **CSV** with a header row. Only two columns are
 needed: **Date** and a result, either **R** or **P&L** with a **Risk** column. Optional columns:
 Exit time, Setup, Direction (long/short, buy/sell), Symbol, Account, Session, Notes, Fees. Column names
-are matched loosely (`P&L`, `PnL`, `Profit` all work); comma, semicolon and tab files all read. When
+are matched loosely (`P&L`, `PnL`, `Profit` all work), a separate Time column is joined to the Date, and
+comma, semicolon and tab files all read. When
 every date could be day/month or month/day, the app asks instead of guessing. Re-importing the same file
 with **Merge** adds nothing twice.
 

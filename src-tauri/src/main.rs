@@ -269,12 +269,16 @@ fn export_journal(data: String, silent: Option<bool>) -> Result<String, String> 
 // "Save as image" on the Validate tab: a PNG the page drew, written beside the
 // JSON backups. Checked to BE a PNG, so this cannot be used to drop arbitrary
 // bytes into the data folder.
+fn is_png(bytes: &[u8]) -> bool {
+    bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) && bytes.len() <= 32 * 1024 * 1024
+}
+
 #[tauri::command]
 fn export_report(data: String) -> Result<String, String> {
     let bytes = base64::engine::general_purpose::STANDARD
         .decode(data)
         .map_err(|e| e.to_string())?;
-    if !bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) || bytes.len() > 32 * 1024 * 1024 {
+    if !is_png(&bytes) {
         return Err("not a PNG image".into());
     }
     let d = ensure_dirs()?;
@@ -418,6 +422,15 @@ fn main() {
 #[cfg(test)]
 mod storage_tests {
     use super::*;
+
+    #[test]
+    fn report_export_accepts_only_png() {
+        let png = [0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13];
+        assert!(is_png(&png));
+        assert!(!is_png(b"GIF89a"));
+        assert!(!is_png(b"MZ an exe"));
+        assert!(!is_png(&png[..4]));
+    }
 
     #[test]
     fn writable_detects_a_usable_dir() {

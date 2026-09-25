@@ -121,6 +121,13 @@ export function buildReport(): HTMLCanvasElement {
 }
 
 export function saveReport() {
+  // while Validate is still computing, the verdict is a loading bar and the
+  // drawdown chart still shows the PREVIOUS edge - an image of that would pair
+  // one edge's numbers with another's chart
+  if (!txt("vVerdict") || /Simulating/.test($("ddLadder").textContent || "")) {
+    toast("Still calculating. Try again in a moment.");
+    return;
+  }
   let url: string;
   try { url = buildReport().toDataURL("image/png"); } catch { toast("Could not draw the report in this environment."); return; }
   const name = "edge-lab-report-" + new Date().toISOString().slice(0, 10) + ".png";
