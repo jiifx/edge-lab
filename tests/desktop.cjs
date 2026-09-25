@@ -35,13 +35,22 @@ const ok = (m) => console.log('ok: ' + m);
     },
     stdio: 'ignore',
   });
+  let exited = null;
+  app.on('exit', (code) => { exited = code; });
   let b;
   try {
-    for (let i = 0; i < 40 && !b; i++) {
+    // a fresh WebView2 profile on a cold CI machine can take a while
+    for (let i = 0; i < 120 && !b && exited == null; i++) {
       await wait(500);
       try { b = await puppeteer.connect({ browserURL: 'http://127.0.0.1:' + PORT, defaultViewport: null }); } catch { /* not up yet */ }
     }
-    if (!b) throw new Error('could not reach the app on its debugging port');
+    if (!b) {
+      const wv = path.join(work, 'webview');
+      throw new Error('could not reach the app on its debugging port ' + PORT +
+        (exited != null ? ' - the app EXITED with code ' + exited : ' - the app is still running') +
+        '; webview profile ' + (fs.existsSync(wv) ? 'created: ' + fs.readdirSync(wv).join(',') : 'NOT created') +
+        '; data dir ' + (fs.existsSync(data) ? 'created' : 'not created'));
+    }
     let page;
     for (let i = 0; i < 20 && !page; i++) { page = (await b.pages()).find((p) => !/^devtools:/.test(p.url())); if (!page) await wait(300); }
     const errs = [];
