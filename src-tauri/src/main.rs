@@ -266,6 +266,39 @@ fn export_journal(data: String, silent: Option<bool>) -> Result<String, String> 
     Ok(f.to_string_lossy().into_owned())
 }
 
+// "Save as image" on the Validate tab: a PNG the page drew, written beside the
+// JSON backups. Checked to BE a PNG, so this cannot be used to drop arbitrary
+// bytes into the data folder.
+#[tauri::command]
+fn export_report(data: String) -> Result<String, String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(data)
+        .map_err(|e| e.to_string())?;
+    if !bytes.starts_with(&[0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a]) || bytes.len() > 32 * 1024 * 1024 {
+        return Err("not a PNG image".into());
+    }
+    let d = ensure_dirs()?;
+    let f = d.join("exports").join(format!("edge-lab-report-{}.png", now_stamp()));
+    fs::write(&f, bytes).map_err(|e| e.to_string())?;
+    reveal(&f, true);
+    Ok(f.to_string_lossy().into_owned())
+}
+
+// The app never goes online by itself. This opens the releases page in the
+// user's browser when they click "Check for updates" - a fixed URL, never one
+// supplied by the page.
+const RELEASES_URL: &str = "https://github.com/jiifx/edge-lab/releases";
+
+#[tauri::command]
+fn open_releases() {
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("explorer").arg(RELEASES_URL).spawn();
+    #[cfg(target_os = "macos")]
+    let _ = std::process::Command::new("open").arg(RELEASES_URL).spawn();
+    #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+    let _ = std::process::Command::new("xdg-open").arg(RELEASES_URL).spawn();
+}
+
 fn now_stamp() -> String {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -373,6 +406,8 @@ fn main() {
             data_dir_path,
             reveal_data_dir,
             open_manual,
+            export_report,
+            open_releases,
             storage_note,
             engine_odds
         ])

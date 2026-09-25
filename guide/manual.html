@@ -112,7 +112,7 @@
   <div class="g">Part 3 — Simulator</div>
   <div>16. Your edge: sliders or journal</div>
   <div>17. Leave out (what if I stop…)</div>
-  <div>18. The firm and its rules</div>
+  <div>18. Your account, and prop firm mode</div>
   <div>19. Validate</div>
   <div>20. Challenge</div>
   <div>21. Funded</div>
@@ -159,10 +159,12 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">?</td><td>Opens this manual.</td></tr>
   <tr><td class="k">&#8635; (reload)</td><td>Reloads the app (<span class="kbd">F5</span>). If a trade editor is open, it asks first.</td></tr>
   <tr><td class="k">&#9680; (colour scheme)</td><td>Picks a colour scheme: System (follows your OS), Daylight, Forest, Carbon, Midnight or Parchment.</td></tr>
+  <tr><td class="k">Check for updates</td><td>At the bottom of the Simulator, beside the version number. Opens the releases page in your browser. The app never goes online by itself.</td></tr>
 </table>
 <p>Both modes share a layout: a <b>rail</b> of controls on the left and the <b>results</b> on the right. Change something on the left and the right side recalculates.</p>
 
 <h3>4. Quick start</h3>
+<p><b>Just looking?</b> Open <span class="ui">Journal</span> and, on the empty journal, click <span class="ui">Load sample journal</span>: 1,000 made-up futures trades with a modest real edge, on an account called <b>Sample 50k</b>. Everything below works on it. Delete that account when you are done.</p>
 <ol class="steps">
   <li><b>Create an account.</b> In <span class="ui">Journal</span>, click <span class="ui">+ New</span> in Account scope. Name it after the trading account, e.g. "Futures 50k".</li>
   <li><b>Log your trades.</b> Click <span class="ui">+ New trade</span> (<span class="kbd">Ctrl+N</span>). At minimum: instrument, session, and a result (prices, or Risk $ plus P&amp;L, or an R value).</li>
@@ -356,7 +358,24 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <li><b>Desktop app:</b> the journal is <code>journal.db</code> (SQLite) plus screenshots in <code>images\</code>, inside <code>Documents\PropEdgeLab\</code>. <span class="ui">Open folder</span> in the rail reveals it.</li>
   <li><b>Browser version:</b> trades live in that browser only. Export backups often.</li>
   <li><span class="ui">Export backup</span> writes a JSON file of every trade and setting. The app also makes a silent weekly backup into <code>exports\</code>.</li>
-  <li><span class="ui">Import</span> reads one of those backup files. You choose to <b>Merge</b> with the current journal or <b>Replace</b> it.</li>
+  <li><span class="ui">Import</span> reads one of those backup files, or a CSV (below). If the journal already has trades, you choose to <b>Merge</b> or <b>Replace</b> it.</li>
+  <li><span class="ui">Load sample journal</span> appears on an empty journal. It imports the 1,000-trade sample.</li>
+</ul>
+<h4>Importing a CSV</h4>
+<p>Any spreadsheet export works if it has a header row. Two columns are required: a <b>Date</b> and a result, either <b>R</b> or <b>P&amp;L</b> together with <b>Risk</b>. Column names are matched loosely, and comma, semicolon and tab separated files all read.</p>
+<table>
+  <tr><th>Column</th><th>Also recognised as</th></tr>
+  <tr><td class="k">Date (required)</td><td>Datetime, Time, Open time, Entry time, Opened. <code>2025-03-04 09:31</code>, <code>03/04/2025 2:05 PM</code> and <code>4.3.25</code> all read.</td></tr>
+  <tr><td class="k">R</td><td>R multiple, Result R, Net R. Stored as a typed R.</td></tr>
+  <tr><td class="k">P&amp;L</td><td>PnL, P/L, Profit, Net P&amp;L, Net profit. With <b>Risk</b>, R = P&amp;L &divide; Risk.</td></tr>
+  <tr><td class="k">Risk</td><td>Risk $, Risk amount, 1R</td></tr>
+  <tr><td class="k">Optional</td><td>Exit time, Setup (or Tag, Strategy), Direction (long/short, buy/sell), Symbol, Account, Session, Notes, Fees</td></tr>
+</table>
+<ul>
+  <li><b>Day or month first?</b> Read off the whole file: a first number over 12 means day first. If every date could go either way, the app asks.</li>
+  <li><b>No Account column:</b> trades go to the account in scope (or the first account).</li>
+  <li><b>P&amp;L without Risk:</b> the trades import, but have no R until you set what 1R is worth for that account (Equity).</li>
+  <li>Importing the same file twice with <b>Merge</b> adds nothing the second time.</li>
 </ul>
 
 <!-- ============================ PART 3 ============================ -->
@@ -444,6 +463,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <li>Read the verdict: <b>Likely real</b>, <b>Promising, unproven</b>, <b>Not enough data</b> or <b>No edge</b>.</li>
   <li>Set the drawdown <b>Horizon</b> (how many trades ahead you plan for) and, optionally, your own <b>Account drawdown limit %</b> (0 = the firm's).</li>
   <li>Read the <b>largest risk per trade</b> box at the bottom.</li>
+  <li>To share the result, click <span class="ui">Save as image</span>: the verdict, its numbers and both charts on one PNG. The desktop app saves it in <code>exports\</code>; the browser version downloads it.</li>
 </ol>
 <h4>Reading the verdict</h4>
 <ul>
@@ -568,6 +588,10 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">Mixed targets — read the hits column</td><td>Trades aimed at different targets; lower rows use fewer trades.</td></tr>
   <tr><td class="k">n of m trades have no date / exit time</td><td>Those trades are missing from that Timing table.</td></tr>
   <tr><td class="k">Rules checked n days ago</td><td>Firm presets may be out of date. Verify on the firm's site.</td></tr>
+  <tr><td class="k">No date column found / No result column found</td><td>CSV import: rename a column to <b>Date</b>, and one to <b>R</b> (or <b>P&amp;L</b> plus <b>Risk</b>).</td></tr>
+  <tr><td class="k">The dates in this CSV could be read either way</td><td>Every date has a day of 12 or under. Pick Day / Month or Month / Day.</td></tr>
+  <tr><td class="k">n rows skipped</td><td>CSV rows with no readable date or no result were left out.</td></tr>
+  <tr><td class="k">n rows have P&amp;L but no R or Risk $</td><td>Set what 1R is worth for that account (Equity) so they count.</td></tr>
 </table>
 
 <h3>24. What the model assumes</h3>

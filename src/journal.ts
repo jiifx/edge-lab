@@ -4,6 +4,7 @@ import { S, F, money, Firm, setFirm, withFirm, withEdge, view } from "./state";
 import { computeR, computeRraw, plannedRR, hasRBasis, challengeStats, evalPass, fundedStats, payoutOdds, costToFund, wilson, profitPlateau, PAID_SIMS, PAY_CHUNK, yearSteps, TradeLike } from "./engine";
 import { Store, TAURI, Trade, JMeta, b64ToBlob } from "./store";
 import { bandOf, consWindows, DayR, PLATEAU_TOL } from "./plan";
+import { generateSample } from "./sample";
 
 export let JT: Trade[] = [];
 export const JMETA: JMeta = { startBalance: null, accounts: ["Main"], balances: {} };
@@ -1145,8 +1146,10 @@ function renderLog() {
   document.querySelectorAll<HTMLButtonElement>("button[data-dens]").forEach((b) =>
     b.setAttribute("aria-pressed", String((b.getAttribute("data-dens") === "compact") === LOG_DENSE)));
   if (!JT.length) {
-    el.innerHTML = '<div class="empty-state"><h3>Your journal is empty</h3><p>Log your first trade &mdash; numbers, setup tag, and a chart screenshot. Your real win rate and R stats build from here, and can drive the simulator.</p><p style="margin-top:14px"><button class="btn primary" id="emptyNew">+ Log a trade</button></p></div>';
+    el.innerHTML = '<div class="empty-state"><h3>Your journal is empty</h3><p>Log a trade, import a backup or a CSV, or look around with 1,000 sample trades first.</p><p style="margin-top:14px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><button class="btn primary" id="emptyNew">+ Log a trade</button><button class="btn" id="emptyImport">Import</button><button class="btn" id="emptySample">Load sample journal</button></p></div>';
     document.getElementById("emptyNew")?.addEventListener("click", () => openEditor(null));
+    document.getElementById("emptyImport")?.addEventListener("click", () => $i("jImportFile").click());
+    document.getElementById("emptySample")?.addEventListener("click", loadSample);
     return;
   }
   if (!list.length) {
@@ -4480,13 +4483,27 @@ function safeAssign<T>(dst: Record<string, T>, src: unknown, coerce: (v: unknown
   }
 }
 
+type ImportData = { meta?: { startBalance?: number | null }; trades?: Trade[]; images?: { id: string; w?: number; h?: number; dataUrl?: string }[] };
 function doImport(file: File) {
   if (!JLOADED) { toast("Journal is still loading - try again in a second."); return; }
   if (file.size > 64 * 1024 * 1024) { toast("That backup is over 64 MB - too large to import safely."); return; }
   const fr = new FileReader();
   fr.onload = () => {
-    let data: { meta?: { startBalance?: number | null }; trades?: Trade[]; images?: { id: string; w?: number; h?: number; dataUrl?: string }[] };
-    try { data = JSON.parse(String(fr.result)); } catch { toast("That file is not a valid journal backup."); return; }
+    const text = String(fr.result);
+    // a CSV is recognised by name or by not being JSON at all
+    if (/\.(csv|txt|tsv)$/i.test(file.name) || !/^\s*[\[{]/.test(text)) { importCsv(text); return; }
+    let data: ImportData;
+    try { data = JSON.parse(text); } catch { toast("That file is not a valid journal backup."); return; }
+    importData(data);
+  };
+  fr.readAsText(file);
+}
+// the sample journal goes through exactly the path a backup does
+export function loadSample() {
+  if (!JLOADED) { toast("Journal is still loading - try again in a second."); return; }
+  importData(generateSample(Date.now()) as unknown as ImportData, true);
+}
+function importData(data: ImportData, sample = false, extra = "") {
     if (!data || !Array.isArray(data.trades)) { toast("No trades found in that file."); return; }
     // Sanitize the whole payload up front, BEFORE anything is deleted or written,
     // so replace-mode never destroys the existing journal for a bad file (#7) and
@@ -4554,7 +4571,8 @@ function doImport(file: File) {
             trades.forEach((t) => { const a = accOf(t); if (dests.indexOf(a) < 0) dests.push(a); });
             const elsewhere = ACCT !== "" && dests.every((a) => a !== ACCT);
             toast("Imported " + trades.length + " trades into " + dests.join(", ") +
-              (elsewhere ? " — you are viewing " + ACCT + "; switch account scope to see them." : "."));
+              (elsewhere ? " — you are viewing " + ACCT + "; switch account scope to see them." : ".") +
+              (extra ? " " + extra + "." : ""));
           });
         };
         if (!pend) { writeTrades(); return; }
@@ -4567,14 +4585,181 @@ function doImport(file: File) {
       if (mode === "replace") { urlCache = {}; Store.clearAll(JMETA, writeAll); } else writeAll();
     };
     if (JT.length) {
-      ask("Import <b>" + imported.length + "</b> trades from backup.<br><br>Merge with your current journal, or replace it entirely?", [
+      ask("Import <b>" + imported.length + "</b> trades" + (sample ? " of sample data" : "") + ".<br><br>Merge with your current journal, or replace it entirely?", [
         { label: "Cancel", kind: "", value: "cancel" },
         { label: "Replace", kind: "danger", value: "replace" },
         { label: "Merge", kind: "primary", value: "merge" },
       ], run);
     } else run("replace");
-  };
-  fr.readAsText(file);
+}
+
+// ---------- CSV import ----------
+// A plain spreadsheet export: one row per trade, a header row naming the
+// columns. Only a date and a result are required - R, or P&L with a Risk $
+// column. Every row is turned into an ordinary backup record and handed to
+// importData, so it passes the same sanitizer and the same merge/replace
+// question as a JSON backup. Ids are a hash of the row, so importing the same
+// file twice with Merge adds nothing the second time.
+const CSV_COLS: Record<string, string[]> = {
+  date: ["date", "datetime", "date/time", "date time", "time", "open time", "entry time", "opened", "open date", "entry date"],
+  exitTime: ["exit time", "close time", "closed", "exit date", "close date"],
+  R: ["r", "r multiple", "r-multiple", "rmultiple", "result r", "r result", "net r"],
+  pnl: ["pnl", "p&l", "p/l", "profit", "net pnl", "net p&l", "net profit", "profit/loss", "result $", "gain"],
+  riskAmt: ["risk", "risk $", "risk$", "riskamt", "risk amount", "1r", "$ risk"],
+  setup: ["setup", "tag", "strategy", "playbook"],
+  direction: ["direction", "side", "type", "long/short", "buy/sell"],
+  instrument: ["instrument", "symbol", "ticker", "market", "asset", "contract"],
+  account: ["account", "acct"],
+  session: ["session"],
+  notes: ["notes", "note", "comment", "comments"],
+  fees: ["fees", "commission", "commissions", "fee"],
+};
+export function parseCsvRows(text: string): string[][] {
+  const first = (text.split(/\r?\n/).find((l) => l.trim()) || "");
+  // the delimiter is whichever of these the header uses most
+  const delim = [",", ";", "\t", "|"].map((d) => [d, first.split(d).length] as [string, number]).sort((a, b) => b[1] - a[1])[0][0];
+  const rows: string[][] = [];
+  let row: string[] = [], cell = "", q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+      else cell += c;
+    } else if (c === '"') q = true;
+    else if (c === delim) { row.push(cell); cell = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cell); cell = "";
+      if (row.some((x) => x.trim())) rows.push(row);
+      row = [];
+    } else cell += c;
+  }
+  row.push(cell);
+  if (row.some((x) => x.trim())) rows.push(row);
+  return rows;
+}
+// "1,234.50", "(120)", "$-80", "-1.5R", "1.234,50" -> numbers; anything else -> null
+export function csvNum(v: string | undefined): number | null {
+  if (v == null) return null;
+  let s = v.trim().replace(/[$€£\s]/g, "").replace(/r$/i, "");
+  if (!s) return null;
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  if (s.includes(",") && s.includes(".")) {
+    // whichever comes last is the decimal point
+    s = s.lastIndexOf(",") > s.lastIndexOf(".") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+  } else if (/^-?\d{1,3}(,\d{3})+$/.test(s)) s = s.replace(/,/g, "");   // 1,234 grouping
+  else s = s.replace(",", ".");                                           // 1,5 decimal comma
+  const n = Number(s);
+  return s !== "" && isFinite(n) ? (neg ? -n : n) : null;
+}
+// the date order a slashed date uses, read off the whole column: a first part
+// over 12 can only be a day, a second part over 12 only a day. null = the file
+// never says, and the user is asked rather than guessed for.
+export function csvDateOrder(vals: string[]): "dmy" | "mdy" | null {
+  let dmy = false, mdy = false;
+  for (const v of vals) {
+    const m = /^\s*(\d{1,2})[/.-](\d{1,2})[/.-](\d{2,4})/.exec(v);
+    if (!m) continue;
+    if (+m[1] > 12) dmy = true;
+    if (+m[2] > 12) mdy = true;
+  }
+  return dmy && !mdy ? "dmy" : mdy && !dmy ? "mdy" : null;
+}
+// -> "YYYY-MM-DDTHH:MM", or "" when it is not a date
+export function csvDate(v: string | undefined, order: "dmy" | "mdy"): string {
+  if (!v) return "";
+  const s = v.trim();
+  const p2 = (x: number) => String(x).padStart(2, "0");
+  let y: number, mo: number, d: number, rest: string;
+  let m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(.*)$/.exec(s);
+  if (m) { y = +m[1]; mo = +m[2]; d = +m[3]; rest = m[4]; }
+  else {
+    m = /^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2,4})(.*)$/.exec(s);
+    if (!m) return "";
+    y = +m[3]; if (y < 100) y += 2000;
+    [d, mo] = order === "dmy" ? [+m[1], +m[2]] : [+m[2], +m[1]];
+    rest = m[4];
+  }
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return "";
+  let hh = 0, mm = 0;
+  const t = /(\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?\s*(am|pm)?/i.exec(rest || "");
+  if (t) {
+    hh = +t[1]; mm = +t[2];
+    if (t[3]) { const pm = /pm/i.test(t[3]); if (hh === 12) hh = pm ? 12 : 0; else if (pm) hh += 12; }
+    if (hh > 23 || mm > 59) return "";
+  }
+  return y + "-" + p2(mo) + "-" + p2(d) + "T" + p2(hh) + ":" + p2(mm);
+}
+function fnv(s: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
+export function csvToTrades(text: string, order: "dmy" | "mdy" | null, fallbackAcct: string):
+  { trades?: Record<string, unknown>[]; error?: string; needOrder?: boolean; noR?: number; skipped?: number } {
+  const rows = parseCsvRows(text.replace(/^﻿/, ""));
+  if (rows.length < 2) return { error: "That CSV has no trade rows under a header row." };
+  const head = rows[0].map((h) => h.trim().toLowerCase().replace(/_+/g, " ").replace(/\s+/g, " "));
+  const col: Record<string, number> = {};
+  for (const k of Object.keys(CSV_COLS)) {
+    const i = head.findIndex((h) => CSV_COLS[k].includes(h));
+    if (i >= 0) col[k] = i;
+  }
+  if (col.date == null) return { error: "No date column found. Name one column Date." };
+  if (col.R == null && col.pnl == null) return { error: "No result column found. Name one column R (or P&L, with a Risk column)." };
+  const body = rows.slice(1);
+  const ord = order || csvDateOrder(body.map((r) => r[col.date] || ""));
+  if (!ord && body.some((r) => /^\s*\d{1,2}[/.-]\d{1,2}[/.-]/.test(r[col.date] || ""))) return { needOrder: true };
+  const get = (r: string[], k: string) => (col[k] == null ? undefined : r[col[k]]);
+  const seen: Record<string, number> = {};
+  const trades: Record<string, unknown>[] = [];
+  let skipped = 0, noR = 0;
+  for (const r of body) {
+    const dateTime = csvDate(get(r, "date"), ord || "mdy");
+    const R = csvNum(get(r, "R")), pnl = csvNum(get(r, "pnl")), risk = csvNum(get(r, "riskAmt"));
+    if (!dateTime || (R == null && pnl == null)) { skipped++; continue; }
+    if (R == null && !(risk != null && risk > 0)) noR++;
+    const dirRaw = (get(r, "direction") || "").trim().toLowerCase();
+    const direction = /^(s|short|sell)/.test(dirRaw) ? "short" : "long";
+    const account = (get(r, "account") || "").trim() || fallbackAcct;
+    const key = [dateTime, R, pnl, risk, get(r, "instrument"), get(r, "setup"), account].join("|");
+    seen[key] = (seen[key] || 0) + 1;
+    const exitTime = csvDate(get(r, "exitTime"), ord || "mdy");
+    trades.push({
+      id: "csv" + fnv(key) + (seen[key] > 1 ? "_" + seen[key] : ""),
+      account, dateTime, exitTime: exitTime || null,
+      instrument: (get(r, "instrument") || "").trim(), direction,
+      session: (get(r, "session") || "").trim(),
+      setup: (get(r, "setup") || "").trim(), entryModel: "",
+      entry: null, stop: null, target: null, exit: null, size: null,
+      riskAmt: risk != null && risk > 0 ? risk : null, pnl, fees: csvNum(get(r, "fees")),
+      R, Rmanual: R != null, pnlManual: pnl != null,
+      followedPlan: true, planText: "", notes: (get(r, "notes") || "").trim(),
+      tags: { quality: "", mistake: [], condition: [] },
+      emotionBefore: 0, emotionAfter: 0, imageIds: [],
+    });
+  }
+  if (!trades.length) return { error: "No row had both a readable date and a result." };
+  return { trades, noR, skipped };
+}
+function importCsv(text: string, order: "dmy" | "mdy" | null = null) {
+  const acct = ACCT || accounts()[0] || "Main";
+  const res = csvToTrades(text, order, acct);
+  if (res.needOrder) {
+    ask("The dates in this CSV could be read either way (every day is 12 or under). Which order are they in?", [
+      { label: "Cancel", kind: "", value: null },
+      { label: "Day / Month", kind: "", value: "dmy" },
+      { label: "Month / Day", kind: "primary", value: "mdy" },
+    ], (v) => { if (v) importCsv(text, v as "dmy" | "mdy"); });
+    return;
+  }
+  if (res.error || !res.trades) { toast(res.error || "That CSV could not be read."); return; }
+  const accts = Array.from(new Set(res.trades.map((t) => String(t.account))));
+  const notes: string[] = [];
+  if (res.skipped) notes.push(res.skipped + " rows skipped (no date or no result)");
+  if (res.noR) notes.push(res.noR + " rows have P&L but no R or Risk $ - set the account's R value so they count");
+  importData({ trades: res.trades as unknown as Trade[], meta: { accounts: accts } as { startBalance?: number | null } }, false, notes.join(". "));
 }
 
 // ---------- journal -> simulator ----------

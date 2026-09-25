@@ -43,6 +43,8 @@ export async function buildOnce(tag = "app") {
     `export { mulberry } from "${src}/util.ts";`,
     `export { stats, statsDeep, fmtDur, excursions, tradeR, trade$, resolvedRs, cutStat, cutOdds, CUT_MIN_N, JMETA } from "${src}/journal.ts";`,
     `export { dowOf, hourOf, hourLabel, durBucket, dayOrdinals, postLossGaps, timeBuckets, separability, dayCountRows, targetSweep } from "${src}/journal.ts";`,
+    `export { parseCsvRows, csvNum, csvDate, csvDateOrder, csvToTrades } from "${src}/journal.ts";`,
+    `export { generateSample, SAMPLE_ACCT } from "${src}/sample.ts";`,
   ].join("\n"));
   const outfile = join(outDir, tag + ".mjs");
   await esbuild.build({

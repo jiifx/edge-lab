@@ -38,6 +38,20 @@ jobs:
       # quietly broken the maths - which is exactly how a batch of them shipped.
       - run: npm test
 
+      # Everything else this repo tests, not just the unit suite. The browser
+      # suites drive the single-file build in headless Edge (preinstalled on
+      # windows runners) - they are what catches a UI regression such as a
+      # Select All that reaches trades nobody can see, which shipped once
+      # because only unit tests ran here.
+      - name: Web build (type check + single-file HTML)
+        run: npm run build
+
+      - name: Rust tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
+
+      - name: Browser tests (puppeteer + Edge)
+        run: npm run test:e2e
+
       - name: Build NSIS installer
         run: npx tauri build --bundles nsis
 
@@ -108,7 +122,7 @@ jobs:
         run: |
           cd "src-tauri/target/universal-apple-darwin/release/bundle/macos"
           APP="$(ls -d *.app | head -1)"
-          ditto -c -k --sequesterRsrc --keepParent "$APP" "PropEdgeLab-macos.app.zip"
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "Edge-Lab-macos.app.zip"
 
       - name: Verify the binary is really universal
         run: |
@@ -121,7 +135,7 @@ jobs:
           name: macos-bundle
           path: |
             src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg
-            src-tauri/target/universal-apple-darwin/release/bundle/macos/PropEdgeLab-macos.app.zip
+            src-tauri/target/universal-apple-darwin/release/bundle/macos/Edge-Lab-macos.app.zip
           if-no-files-found: error
 
   release:
@@ -136,9 +150,18 @@ jobs:
         with:
           path: dist
 
+      # the sample journal ships beside the installers: the release notes point
+      # people at it, and someone who only downloads an installer never sees samples/
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: samples
+          path: src
+
+      - run: cp src/samples/sample-1000-trades.json dist/
+
       - name: Checksums and release notes
         run: |
-          find dist -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' \) -print0 \
+          find dist -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name 'sample-*.json' \) -print0 \
             | xargs -0 -I{} sh -c 'cd "$(dirname "{}")" && sha256sum "$(basename "{}")"' \
             | tee SHA256SUMS.txt
           {
@@ -148,7 +171,7 @@ jobs:
             printf '### First run\n\nThe installers are not code-signed, so the OS warns the first time:\n\n'
             printf -- '- **Windows:** "Windows protected your PC" -> click **More info** -> **Run anyway**.\n'
             printf -- '- **macOS:** right-click the app -> **Open** -> **Open**.\n\n'
-            printf 'Try it with the 1,000-trade sample journal in `samples/` (Journal -> Import). Not financial advice.\n'
+            printf 'Try it with sample data: on an empty journal click **Load sample journal**, or import `sample-1000-trades.json` below. Your own trades import from a backup or a CSV (a Date column plus an R or P&L column). Not financial advice.\n'
           } > NOTES.md
 
       # gh is preinstalled on the runner: one less third-party action in the
@@ -159,7 +182,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
         run: |
-          find dist -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' \) -print0 \
+          find dist -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name 'sample-*.json' \) -print0 \
             | xargs -0 gh release create "$TAG" \
                 --repo "$GITHUB_REPOSITORY" \
                 --title "$TAG" \

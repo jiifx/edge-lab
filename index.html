@@ -78,6 +78,8 @@
   .mono{font-family:var(--mono);} b,strong{font-weight:700;} p{margin:0 0 14px;}
   h1{font-size:clamp(20px,2.4vw,26px);font-weight:800;letter-spacing:-0.02em;margin:0;}
   h2{font-size:22px;font-weight:800;letter-spacing:-0.01em;margin:0 0 6px;}
+  .h2row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+  .linkbtn{background:none;border:0;padding:0;font:inherit;letter-spacing:inherit;color:inherit;text-decoration:underline;cursor:pointer;}
   .muted{color:var(--muted);} .small{font-size:13.5px;}
   button{font-family:inherit;}
   button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--go);outline-offset:1px;}
@@ -793,7 +795,7 @@
       </div>
 
       <div class="panel" id="p-validate">
-        <h2>Is your edge real?</h2>
+        <div class="h2row"><h2>Is your edge real?</h2><button type="button" class="barbtn" id="vReport" title="Save the verdict, its numbers and both charts as one PNG">Save as image</button></div>
 
         <div class="note warn hide" id="vLooks"><p class="h">Multiple looks at one record</p><p class="nomarg" id="vLooksMsg"><span class="skel"></span></p></div>
         <div class="note warn hide" id="vPool"><p class="h">Pooled accounts</p><p class="nomarg" id="vPoolMsg"><span class="skel"></span></p></div>
@@ -928,7 +930,7 @@
 
       <footer>
         <p>Not financial advice. Firm rules change &mdash; verify before paying. See the <b>?</b> manual for how everything works.</p>
-        <p class="mono" style="font-size:11px;letter-spacing:0.05em">Edge Lab &mdash; produced by <b>jiidc</b> &middot; &copy; 2026 jiidc &middot; MIT licensed &middot; open source</p>
+        <p class="mono" style="font-size:11px;letter-spacing:0.05em">Edge Lab <span id="appVer"></span> &mdash; produced by <b>jiidc</b> &middot; &copy; 2026 jiidc &middot; MIT licensed &middot; open source &middot; <button type="button" class="linkbtn" id="updBtn">Check for updates</button></p>
       </footer>
     </main>
   </div>
@@ -940,7 +942,7 @@
         <button id="jExport">Export backup</button>
         <button id="jImport">Import</button>
       </div>
-      <input type="file" id="jImportFile" accept="application/json,.json" class="hide">
+      <input type="file" id="jImportFile" accept="application/json,.json,text/csv,.csv,.tsv,.txt" class="hide">
       <div class="dataloc hide" id="jDataLoc"><span id="jDataPath" title=""></span><button id="jReveal">Open folder</button></div>
 
       <div class="bar">

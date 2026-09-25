@@ -458,7 +458,16 @@ function ensureDD(): DDJob | null {
 // verdict is `expectancy interval stays above zero`; this draws exactly that,
 // zero is always in frame because the axis is built to include it, and the
 // shaded band IS the interval printed beside it - one number, one picture.
+// the last arguments each Validate chart was drawn with, so the report can
+// redraw the same chart at its own size (redrawValidateCharts)
+let lastBell: [number, number, number, number, number] | null = null;
+let lastDD: [DDJob, number, DDMethod] | null = null;
+export function redrawValidateCharts() {
+  if (lastBell) drawBell(...lastBell);
+  if (lastDD) drawDDCurve(...lastDD);
+}
 function drawBell(mu: number, se: number, lo: number, hi: number, conf: number) {
+  lastBell = [mu, se, lo, hi, conf];
   const g = fit($c("cBell")), ctx = g.ctx, W = g.w, H = g.h, pL = 10, pR = 10, pT = 14, pB = 26;
   ctx.clearRect(0, 0, W, H);
   if (!(se > 0)) return;
@@ -503,6 +512,7 @@ function drawBell(mu: number, se: number, lo: number, hi: number, conf: number) 
 // make it obvious that the number moves - a trader who reads "8R" once and
 // budgets for it forever is the reader this whole panel is for.
 function drawDDCurve(job: DDJob, h: number, method: DDMethod) {
+  lastDD = [job, h, method];
   const cv = $c("cDD"), g = fit(cv), ctx = g.ctx, W = g.w, H = g.h, pL = 40, pR = 12, pT = 14, pB = 30;
   ctx.clearRect(0, 0, W, H);
   const pts = (method === "block" ? job.block : job.iid).points;

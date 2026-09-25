@@ -15,14 +15,17 @@ const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 // The design height is pinned in data-h on first use. Never re-read the height ATTRIBUTE:
 // assigning cv.height rewrites it, which on Retina (DPR=2) doubled the canvas every render.
 export function fit(cv: HTMLCanvasElement) {
-  const w = cv.clientWidth;
+  // data-fw / data-fd: a forced width and pixel ratio, set only while the
+  // report (report.ts) redraws a chart off-screen at its own size
+  const w = cv.dataset.fw ? Number(cv.dataset.fw) : cv.clientWidth;
+  const dpr = cv.dataset.fd ? Number(cv.dataset.fd) : DPR;
   if (!cv.dataset.h) cv.dataset.h = cv.getAttribute("height") || "200";
   const h = Number(cv.dataset.h);
   cv.style.height = h + "px";
-  cv.width = w * DPR;
-  cv.height = h * DPR;
+  cv.width = w * dpr;
+  cv.height = h * dpr;
   const ctx = cv.getContext("2d")!;
-  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   return { ctx, w, h };
 }
 
@@ -156,7 +159,8 @@ export function toast(msg: string) {
   el.textContent = msg;
   el.style.display = "block";
   if (toastT) clearTimeout(toastT);
-  toastT = setTimeout(() => { el.style.display = "none"; }, 2800);
+  // long messages (an import with notes) stay up long enough to read
+  toastT = setTimeout(() => { el.style.display = "none"; }, Math.max(2800, msg.length * 45));
 }
 // a toast with one action (Undo). `onExpire` runs if the action is not taken
 // before the toast closes - that is where anything irreversible belongs.
