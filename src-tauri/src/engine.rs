@@ -118,7 +118,10 @@ const BOOT_N: usize = 24;
 const BOOT_SEED: u32 = 4242;
 const BOOT_CHAL_SIMS: usize = 500;
 const BOOT_FUND_SIMS: usize = 300;
+// sim counts the parity test pins (the firm scorer that used them in the app is gone)
+#[cfg(test)]
 const SCORE_CHAL_SIMS: usize = 1200;
+#[cfg(test)]
 const SCORE_FUND_SIMS: usize = 500;
 
 fn sample_r(rs: &[f64], rnd: &mut Rng) -> f64 {
@@ -136,6 +139,9 @@ pub enum Edge<'a> {
     // of DECIDED trades. One draw covers all three outcomes, and with s=0 the
     // comparison collapses to the old u < p exactly - identical streams. The
     // operation ORDER mirrors sampleR in src/engine.ts and must stay identical.
+    // the slider edge; only the parity tests construct it since the native firm
+    // scorer was removed, but it must stay draw-for-draw identical to sampleR
+    #[cfg_attr(not(test), allow(dead_code))]
     Coin { p: f64, b: f64, s: f64 },
 }
 impl<'a> Edge<'a> {
@@ -241,6 +247,7 @@ fn phase_walk(e: Edge, f: &Firm, target: f64, risk: f64, rnd: &mut Rng) -> (Walk
 pub struct ChalOut {
     pub pass: f64,
     pub mean_days_all: f64,
+    #[cfg_attr(not(test), allow(dead_code))]
     pub med_days: f64,
 }
 pub fn challenge_stats_e(e: Edge, f: &Firm, risk: f64, n: usize, seed: u32) -> ChalOut {
@@ -517,48 +524,6 @@ pub fn odds(rs: &[f64], f: &Firm, re: f64, rf: f64) -> Odds {
     }
 }
 
-// ---- native catalogue scoring ----
-//
-// Raw simulation outputs for one firm against one edge, at EXACTLY the sim
-// counts and seeds the TS suggester uses (CHAL_SIMS/FUND_SIMS/PAID_SIMS in
-// src/suggest.ts + src/engine.ts), so the desktop app's Firms table is
-// bit-identical to the browser build's. All the money math (cost, payout,
-// EV) stays on the TS side in ONE place - this returns nothing but sim facts.
-//
-// Why it exists: scoring 20 firms in TS is ~2s of main-thread Monte Carlo,
-// and on a Mac (WKWebView/JavaScriptCore) noticeably worse - the "Firms tab
-// lags" report. Native scoring turns that into milliseconds.
-#[derive(Serialize)]
-pub struct Score {
-    pub pass: f64,
-    pub mean_days_all: f64,
-    pub med_days: f64,
-    pub profit_pct: f64,
-    pub surv: f64,
-    pub paid: f64,
-    pub pay_days: f64,
-}
-
-pub fn score(e: Edge, f: &Firm, re: f64, rf: f64, instant: bool) -> Score {
-    // an instant-funded firm has no evaluation to simulate; the TS side would
-    // discard these numbers anyway, so skip the work rather than fake it
-    let chal = if instant {
-        ChalOut { pass: 1.0, mean_days_all: 0.0, med_days: 0.0 }
-    } else {
-        challenge_stats_e(e, f, re, SCORE_CHAL_SIMS, 12345)
-    };
-    let (profit_pct, surv) = funded_stats_e(e, f, rf, SCORE_FUND_SIMS, year_steps(f), 9931);
-    let (paid, pay_days) = first_payout_odds_days_e(e, f, rf, PAID_SIMS, year_steps(f), PAID_SEED);
-    Score {
-        pass: chal.pass,
-        mean_days_all: chal.mean_days_all,
-        med_days: chal.med_days,
-        profit_pct,
-        surv,
-        paid,
-        pay_days,
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -893,14 +858,17 @@ mod tests {
             min_days: 2, cons: 50.0, tpd: 5, split: 90.0, fee: 49.0,
             payout_min: 0.0, payout_every: 5, payout_first: 5, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0,
         };
-        let sc = score(Edge::Trades(&rs), &ts, 0.75, 0.5, false);
-        assert!((sc.pass - 0.3350).abs() < 0.005, "score pass {}", sc.pass);
-        assert!((sc.mean_days_all - 6.5317).abs() < 0.05, "score meanDays {}", sc.mean_days_all);
-        assert!((sc.med_days - 7.0).abs() < 0.5, "score medDays {}", sc.med_days);
-        assert!((sc.profit_pct - 3.6800).abs() < 0.05, "score profit {}", sc.profit_pct);
-        assert!(sc.surv < 0.0001, "score surv {}", sc.surv);
-        assert!((sc.paid - 0.3400).abs() < 0.005, "score paid {}", sc.paid);
-        assert!((sc.pay_days - 16.0).abs() < 0.5, "score payDays {}", sc.pay_days);
+        // (the same three walks the removed firm scorer ran, called directly)
+        let chal = challenge_stats_e(Edge::Trades(&rs), &ts, 0.75, SCORE_CHAL_SIMS, 12345);
+        let (profit_pct, surv) = funded_stats_e(Edge::Trades(&rs), &ts, 0.5, SCORE_FUND_SIMS, year_steps(&ts), 9931);
+        let (paid, pay_days) = first_payout_odds_days_e(Edge::Trades(&rs), &ts, 0.5, PAID_SIMS, year_steps(&ts), PAID_SEED);
+        assert!((chal.pass - 0.3350).abs() < 0.005, "pass {}", chal.pass);
+        assert!((chal.mean_days_all - 6.5317).abs() < 0.05, "meanDays {}", chal.mean_days_all);
+        assert!((chal.med_days - 7.0).abs() < 0.5, "medDays {}", chal.med_days);
+        assert!((profit_pct - 3.6800).abs() < 0.05, "profit {}", profit_pct);
+        assert!(surv < 0.0001, "surv {}", surv);
+        assert!((paid - 0.3400).abs() < 0.005, "paid {}", paid);
+        assert!((pay_days - 16.0).abs() < 0.5, "payDays {}", pay_days);
         // a 2-step's mean-days spans BOTH phases, washouts included
         let two = Firm {
             type_: "2step".into(), account: 50000.0, p1: 10.0, p2: 5.0, maxdd: 10.0,

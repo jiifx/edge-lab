@@ -101,6 +101,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     args: ['--no-sandbox', '--disable-gpu', '--allow-file-access-from-files', '--edge-skip-compat-layer-relaunch'],
   });
   const page = await browser.newPage();
+  await page.evaluateOnNewDocument(() => { try { if (localStorage.getItem('pel_prop') == null) localStorage.setItem('pel_prop', 'true'); } catch (e) { /* opaque origin */ } });  // these suites exercise prop-firm mode
   // deviceScaleFactor 2 so the screenshots stay sharp when placed at half size
   // on a printed page
   await page.setViewport({ width: 1340, height: 980, deviceScaleFactor: 2 });

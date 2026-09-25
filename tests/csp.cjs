@@ -60,6 +60,7 @@ function serve(csp) {
   const run = async (label, csp) => {
     const server = await serve(csp);
     const page = await browser.newPage();
+    await page.evaluateOnNewDocument(() => { try { if (localStorage.getItem('pel_prop') == null) localStorage.setItem('pel_prop', 'true'); } catch (e) { /* opaque origin */ } });  // these suites exercise prop-firm mode
     await page.setViewport({ width: 1400, height: 950 });
     await page.evaluateOnNewDocument(() => {
       window.__CSPV = [];

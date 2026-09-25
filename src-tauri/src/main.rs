@@ -335,27 +335,6 @@ fn engine_odds(rs: Vec<f64>, firm: engine::Firm, re: f64, rf: f64) -> Result<eng
     Ok(engine::odds(&rs, &firm, re, rf))
 }
 
-// One firm scored natively for the suggester/Firms table. `rs` empty means the
-// slider edge (p, b) - both arms are draw-for-draw identical to the TS engine,
-// so this returns the same numbers the browser build computes, just without the
-// ~100ms-per-firm main-thread stall (which is what "the Firms tab lags on Mac"
-// actually was: 20 firms x JavaScriptCore).
-#[tauri::command]
-fn engine_score(rs: Vec<f64>, p: f64, b: f64, s: f64, firm: engine::Firm, instant: bool, re: f64, rf: f64) -> Result<engine::Score, String> {
-    // any non-empty trade list is a Trades edge - the TS sampleR resamples from
-    // length >= 1, and the two engines must pick the same arm or the desktop
-    // and browser builds score different edges for the same input
-    let e = if !rs.is_empty() {
-        engine::Edge::Trades(&rs)
-    } else {
-        if !(0.0..=1.0).contains(&p) || !(0.0..=1.0).contains(&s) || !b.is_finite() {
-            return Err("need trades or a valid p/b/s edge".into());
-        }
-        engine::Edge::Coin { p, b, s }
-    };
-    Ok(engine::score(e, &firm, re, rf, instant))
-}
-
 const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS trades(id TEXT PRIMARY KEY, dateTime TEXT, data TEXT NOT NULL);
      CREATE TABLE IF NOT EXISTS meta(k TEXT PRIMARY KEY, v TEXT);";
 
@@ -395,8 +374,7 @@ fn main() {
             reveal_data_dir,
             open_manual,
             storage_note,
-            engine_odds,
-            engine_score
+            engine_odds
         ])
         .run(tauri::generate_context!())
         .expect("error while running Prop Edge Lab 2");

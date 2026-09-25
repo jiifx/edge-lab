@@ -35,7 +35,6 @@ export async function buildOnce(tag = "app") {
   writeFileSync(entry, [
     `export * from "${src}/engine.ts";`,
     `export * from "${src}/state.ts";`,
-    `export * from "${src}/suggest.ts";`,
     // named rather than `export *`: plan.ts deliberately re-states a couple of
     // the engine's names in a firm-scoped form, and a star re-export would drop
     // the collisions SILENTLY, leaving a test importing undefined
@@ -44,7 +43,6 @@ export async function buildOnce(tag = "app") {
     `export { mulberry } from "${src}/util.ts";`,
     `export { stats, statsDeep, fmtDur, excursions, tradeR, trade$, resolvedRs, cutStat, cutOdds, CUT_MIN_N, JMETA } from "${src}/journal.ts";`,
     `export { dowOf, hourOf, hourLabel, durBucket, dayOrdinals, postLossGaps, timeBuckets, separability, dayCountRows, targetSweep } from "${src}/journal.ts";`,
-    `export { CATALOG, catalogAgeDays } from "${src}/firms.ts";`,
   ].join("\n"));
   const outfile = join(outDir, tag + ".mjs");
   await esbuild.build({

@@ -14,6 +14,7 @@ const N = 1200;
     args: ['--no-sandbox','--disable-gpu','--allow-file-access-from-files', '--edge-skip-compat-layer-relaunch'],
   });
   const page = await browser.newPage();
+  await page.evaluateOnNewDocument(() => { try { if (localStorage.getItem('pel_prop') == null) localStorage.setItem('pel_prop', 'true'); } catch (e) { /* opaque origin */ } });  // these suites exercise prop-firm mode
   await page.setViewport({ width: 1500, height: 900 });
   page.on('pageerror', e => fail('pageerror: ' + e.message));
   await page.goto(APP, { waitUntil: 'load' });

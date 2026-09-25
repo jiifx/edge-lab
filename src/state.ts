@@ -247,7 +247,9 @@ export function payLabel(f: { payoutEvery?: number; payoutFirst?: number }): str
   return base + (f.payoutFirst ? ", first after " + f.payoutFirst + "d" : "");
 }
 
-export const view = { DISP: "$" as "$" | "%" };
+// PROP: prop-firm mode. Off, Edge Lab is a plain edge tool on your own account -
+// Challenge / Funded / Decision, the rule guard and the prop odds are hidden.
+export const view = { DISP: "$" as "$" | "%", PROP: true };
 
 export function money(d: number): string {
   const s = d < 0 ? "-" : "";

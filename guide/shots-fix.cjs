@@ -16,6 +16,7 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
     args: ['--no-sandbox', '--disable-gpu', '--allow-file-access-from-files', '--edge-skip-compat-layer-relaunch'],
   });
   const p = await b.newPage();
+  await p.evaluateOnNewDocument(() => { try { if (localStorage.getItem('pel_prop') == null) localStorage.setItem('pel_prop', 'true'); } catch (e) { /* opaque origin */ } });  // these suites exercise prop-firm mode
   await p.setViewport({ width: 1340, height: 980, deviceScaleFactor: 2 });
   p.on('pageerror', (e) => console.log('PAGEERROR: ' + e.message));
   await p.goto(APP, { waitUntil: 'load' });

@@ -258,7 +258,28 @@ function formToFirm() {
   clampFirm(F);
   syncP2();
 }
+// prop-firm mode on/off: body class drives the CSS; the tab in force has to be
+// one that exists in the mode
+export function applyPropMode() {
+  document.body.classList.toggle("noprop", !view.PROP);
+  $i("propMode").checked = view.PROP;
+  $("firmTitle").textContent = view.PROP ? "The firm" : "Your account";
+  $("firmToggle").textContent = view.PROP ? "Edit rules" : "Edit";
+  if (!view.PROP && TAB !== "validate") {
+    TAB = "validate";
+    document.querySelectorAll<HTMLButtonElement>(".tabs button[data-tab]").forEach((x) =>
+      x.setAttribute("aria-pressed", x.getAttribute("data-tab") === TAB ? "true" : "false"));
+    TABS.forEach((t) => $("p-" + t).classList.toggle("hide", t !== TAB));
+  }
+  sumFirm();
+}
 export function sumFirm() {
+  if (!view.PROP) {
+    $("firmSum").innerHTML = money(F.account) + " account &middot; max drawdown " + F.maxdd + "% (" +
+      money((F.maxdd / 100) * F.account) + ") &middot; " + F.tpd + " trade" + (F.tpd === 1 ? "" : "s") + " a day";
+    syncPresetSel();
+    return;
+  }
   // an instant firm has no target to hit - saying so HERE matters because this
   // line is the one place the loaded firm is summarised on every tab, and
   // instant flips the entire evaluation model (Decision prices the fee as a
@@ -686,7 +707,7 @@ function renderDD(n: number, nEff: number) {
   const lim = limRaw > 0 ? limRaw : F.maxdd;
   $("lDDLimSub").textContent = limRaw > 0
     ? money((lim / 100) * F.account) + " on " + money(F.account)
-    : "0 = firm's " + F.maxdd + "% (" + money((F.maxdd / 100) * F.account) + ")";
+    : "0 = " + (view.PROP ? "firm's " : "account's ") + F.maxdd + "% (" + money((F.maxdd / 100) * F.account) + ")";
 
   document.querySelectorAll<HTMLButtonElement>("button[data-ddm]").forEach((b) =>
     b.setAttribute("aria-pressed", String(b.getAttribute("data-ddm") === o.method)));
@@ -738,11 +759,12 @@ function renderDD(n: number, nEff: number) {
   $("ddRisk").innerHTML = maxR == null
     ? ""
     : '<div class="ddrisk"><div class="rk">Largest risk per trade that fits inside a ' + lim.toFixed(1) + '% account limit</div>' +
-      '<div class="rv ' + (maxR >= curRisk ? "cell-go" : "cell-stop") + '">' + maxR.toFixed(2) + "%</div>" +
-      '<div class="rs">p95 drawdown over ' + h + " trades: <b>" + pt.p95.toFixed(1) + "R</b> &middot; Funded tab risk <b>" + curRisk.toFixed(2) + "%</b>" +
-      (maxR >= curRisk
-        ? " &mdash; inside the limit"
-        : " &mdash; <b>" + ((pt.p95 * curRisk) / lim * 100).toFixed(0) + "% of the limit</b>") + "</div></div>";
+      '<div class="rv ' + (!view.PROP ? "" : maxR >= curRisk ? "cell-go" : "cell-stop") + '">' + maxR.toFixed(2) + "%</div>" +
+      '<div class="rs">p95 drawdown over ' + h + " trades: <b>" + pt.p95.toFixed(1) + "R</b>" +
+      (!view.PROP ? "" : " &middot; Funded tab risk <b>" + curRisk.toFixed(2) + "%</b>" +
+        (maxR >= curRisk
+          ? " &mdash; inside the limit"
+          : " &mdash; <b>" + ((pt.p95 * curRisk) / lim * 100).toFixed(0) + "% of the limit</b>")) + "</div></div>";
   void n; void nEff;
 }
 
@@ -1475,10 +1497,16 @@ function renderFunded() {
     const u = (sv - 0.5) / 0.35;
     return u >= 0.5 ? mixHex(bMid, bGo, (u - 0.5) * 2) : mixHex(bStop, bMid, u * 2);
   };
+  // the band tokens are pale on light schemes but deep on dark ones, where a
+  // full-strength fill read as a solid maroon block; halve it there
+  const pp = (css("--paper").trim().match(/^#?([0-9a-f]{6})$/i) || [])[1];
+  const darkBg = !!pp && (0.299 * parseInt(pp.slice(0, 2), 16) + 0.587 * parseInt(pp.slice(2, 4), 16) + 0.114 * parseInt(pp.slice(4, 6), 16)) < 90;
+  ctx.globalAlpha = darkBg ? 0.5 : 1;
   for (let i = 1; i < d.risks.length; i++) {
     ctx.fillStyle = bandAt(sm[i]);
     ctx.fillRect(X(d.risks[i - 1]), pT, X(d.risks[i]) - X(d.risks[i - 1]) + 0.6, H - pT - pB);
   }
+  ctx.globalAlpha = 1;
   ctx.strokeStyle = css("--ink"); ctx.lineWidth = 2.4; ctx.beginPath();
   d.risks.forEach((r, i) => { const x = X(r), y = Y(d.prof[i]); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
   ctx.stroke();

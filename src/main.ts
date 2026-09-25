@@ -1,6 +1,7 @@
 // bootstrap: wire modules, restore state, load journal, first render
 import { hooks, ask } from "./util";
-import { wireSim, render, saveSim, restoreSim, syncSliders, sumStrat, sumFirm, firmToForm, setMode, getMode } from "./sim";
+import { wireSim, render, saveSim, restoreSim, syncSliders, sumStrat, sumFirm, firmToForm, setMode, getMode, applyPropMode } from "./sim";
+import { view } from "./state";
 import { wireJournal, renderJournal, applyJournalEdge, clearJournalEdge, renderEdgeCut, loadTrades, maybeAutoBackup } from "./journal";
 import { Store, TAURI } from "./store";
 import { $, $i, LS, esc, applyShortcutLabels } from "./util";
@@ -63,9 +64,18 @@ if (TAURI) {
   }).catch(() => { /* older backend without the command */ });
 }
 
+// Prop-firm mode is opt-in for new users. An existing install (a saved
+// simulator state) keeps it on, so nothing it relied on disappears.
+view.PROP = LS.get<boolean>("pel_prop", LS.get<unknown>("pel_sim", null) != null);
+$i("propMode").addEventListener("change", () => {
+  view.PROP = $i("propMode").checked;
+  LS.set("pel_prop", view.PROP);
+  applyPropMode();
+  render(); saveSim(); renderJournal();
+});
 const wantJournalEdge = restoreSim();
 firmToForm();
-sumFirm();
+applyPropMode();
 syncSliders();
 sumStrat();
 

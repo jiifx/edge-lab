@@ -32,6 +32,7 @@ const ok = (m) => console.log('ok: ' + m);
     args: ['--no-sandbox', '--disable-gpu', '--allow-file-access-from-files', '--edge-skip-compat-layer-relaunch'],
   });
   const page = await browser.newPage();
+  await page.evaluateOnNewDocument(() => { try { if (localStorage.getItem('pel_prop') == null) localStorage.setItem('pel_prop', 'true'); } catch (e) { /* opaque origin */ } });  // these suites exercise prop-firm mode
   await page.setViewport({ width: 1200, height: 1400 });
   page.on('pageerror', e => fail('pageerror: ' + e.message));
   page.on('console', m => { if (m.type() === 'error') fail('console: ' + m.text()); });

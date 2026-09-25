@@ -15,6 +15,7 @@ function fail(m){ console.error('FAIL: ' + m); process.exitCode = 1; }
     args: ['--no-sandbox','--disable-gpu','--disable-dev-shm-usage','--edge-skip-compat-layer-relaunch'],
   });
   const page = await browser.newPage();
+  await page.evaluateOnNewDocument(() => { try { if (localStorage.getItem('pel_prop') == null) localStorage.setItem('pel_prop', 'true'); } catch (e) { /* opaque origin */ } });  // these suites exercise prop-firm mode
   await page.setViewport({ width: 1400, height: 950 });
   page.on('pageerror', e => fail('pageerror: ' + e.message));
   await page.goto(APP, { waitUntil: 'load' });

@@ -83,7 +83,7 @@
     The app itself shows only the numbers. The explanations are in this manual.
   </p>
   <div class="meta">
-    Version 2.17.0 &nbsp;·&nbsp; Windows and macOS &nbsp;·&nbsp; produced by jiidc &nbsp;·&nbsp; MIT licensed<br>
+    Version 2.18.0 &nbsp;·&nbsp; Windows and macOS &nbsp;·&nbsp; produced by jiidc &nbsp;·&nbsp; MIT licensed<br>
     Offline: no account, no telemetry, no network. Your journal stays on your machine.<br>
     Open this manual any time from the <b>?</b> button at the top right of the app.
   </div>
@@ -129,16 +129,17 @@
 <h2 class="part">Part 1 — Getting started</h2>
 
 <h3>1. What Edge Lab does</h3>
-<p>Edge Lab answers two questions a prop trader has to get right:</p>
+<p>Edge Lab answers two questions every trader has to get right, for any strategy and any market:</p>
 <ul>
   <li><b>Is my edge real?</b> Or is my record still explainable by luck?</li>
-  <li><b>How big should I trade?</b> What size passes this firm's evaluation, keeps the funded account alive, and pays me?</li>
+  <li><b>How much should I risk?</b> What drawdown should I plan for, and what size survives it?</li>
 </ul>
+<p>If you trade a funded account, <b>prop firm mode</b> adds a third: what size passes this firm's evaluation, keeps the funded account alive, and pays you? It is off until you turn it on (section 18).</p>
 <p>It has two modes, switched with the buttons at the top right:</p>
 <table>
   <tr><th>Mode</th><th>Use it to</th></tr>
-  <tr><td class="k">Journal</td><td>Log your trades, review them, and see what your record says: stats, strengths and leaks, timing, calendar, and how close each account is to its firm's rules.</td></tr>
-  <tr><td class="k">Simulator</td><td>Run your edge thousands of times against a firm's rules: whether the edge is real, your odds of passing, your payouts once funded, and whether the challenge is worth buying.</td></tr>
+  <tr><td class="k">Journal</td><td>Log your trades, review them, and see what your record says: stats, strengths and leaks, timing and calendar. In prop firm mode, also how close each account is to its firm's rules.</td></tr>
+  <tr><td class="k">Simulator</td><td>Run your edge thousands of times: whether it is real, and the drawdown to plan for. In prop firm mode, also your odds of passing, your payouts once funded, and whether the challenge is worth buying.</td></tr>
 </table>
 <p>The two modes connect through one switch, <span class="ui">Use my journal</span>. When it is on, the Simulator runs on your logged trades instead of the sliders.</p>
 
@@ -163,12 +164,12 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 
 <h3>4. Quick start</h3>
 <ol class="steps">
-  <li><b>Create an account.</b> In <span class="ui">Journal</span>, click <span class="ui">+ New</span> in Account scope. Name it after the prop account, e.g. "Apex 50k".</li>
+  <li><b>Create an account.</b> In <span class="ui">Journal</span>, click <span class="ui">+ New</span> in Account scope. Name it after the trading account, e.g. "Futures 50k".</li>
   <li><b>Log your trades.</b> Click <span class="ui">+ New trade</span> (<span class="kbd">Ctrl+N</span>). At minimum: instrument, session, and a result (prices, or Risk $ plus P&amp;L, or an R value).</li>
-  <li><b>Set the firm.</b> Switch to <span class="ui">Simulator</span>, click <span class="ui">Edit rules</span> in The firm, pick a preset and match every field to your firm.</li>
+  <li><b>Set your account.</b> Switch to <span class="ui">Simulator</span>, click <span class="ui">Edit</span> in Your account and enter its size and the most you can afford to lose (max drawdown).</li>
   <li><b>Turn on Use my journal.</b> It needs at least 10 resolved trades. The Simulator now runs on your record.</li>
-  <li><b>Read the four tabs in order:</b> Validate (is it real?) → Challenge (will it pass?) → Funded (will it pay?) → Decision (is it worth the fee?).</li>
-  <li><b>Bind the firm to the account.</b> Back in Journal, pick the account in Account scope and click <span class="ui">Bind sim firm</span> in Rule guard. The rule meters now track that account live.</li>
+  <li><b>Read Validate:</b> is the edge real, what drawdown to plan for, and the largest risk per trade that fits your limit.</li>
+  <li><b>Trading a prop firm?</b> Tick <span class="ui">Prop firm</span> in the same panel, set the firm's rules, then read Challenge → Funded → Decision. In Journal, pick the account and click <span class="ui">Bind sim firm</span> in Rule guard. The rule meters now track that account live.</li>
 </ol>
 
 <!-- ============================ PART 2 ============================ -->
@@ -239,7 +240,8 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <li>Click a trade to open its detail view.</li>
   <li><b>Detail view:</b> <span class="kbd">←</span> / <span class="kbd">→</span> steps through trades. <span class="ui">Edit</span> opens the editor. Click a screenshot to zoom: scroll to zoom, drag to pan, double-click to fit.</li>
   <li><b>Unit switch</b> (top right): show results in <span class="ui">R</span>, <span class="ui">P&amp;L</span> or <span class="ui">Both</span>. P&amp;L needs dollars turned on (section 9).</li>
-  <li><b>Bulk delete:</b> <span class="ui">Select</span>, tick trades or use <span class="ui">All</span>, then <span class="ui">Delete (n)</span>.</li>
+  <li><b>Bulk delete:</b> <span class="ui">Select</span>, tick trades or use <span class="ui">All</span>, then <span class="ui">Delete (n)</span>. <span class="ui">All</span> picks only the trades shown, not those inside folded days.</li>
+  <li><b>Undo:</b> after any delete, an <span class="ui">Undo</span> button shows for a few seconds and brings the trades back with their screenshots.</li>
 </ul>
 
 <h3>8. Filters</h3>
@@ -260,7 +262,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <p>Trades logged in R only are then priced at that value. Trades with a logged P&amp;L keep their own figure. The line under the inputs says how many trades are priced.</p>
 <p>On <i>All accounts</i>, combined dollars only work when every account has a balance and the same R value.</p>
 
-<h3>10. Rule guard</h3>
+<h3>10. Rule guard <span style="font-weight:400;font-size:10pt;color:#5C635A">(prop firm mode)</span></h3>
 <figure><img src="shots/22-rule-guard.png" class="small" alt="Rule guard"><figcaption>Rule guard on a bound account.</figcaption></figure>
 <p>Rule guard shows how far this account is from breaking its firm's rules. The drawdown and daily-loss bars show the <b>room left</b>: full and green when safe, shrinking and turning amber, then red, near the limit. The other bars fill as you progress. It covers drawdown headroom, today's loss against the daily limit, distance to target, min days and consistency.</p>
 <ol class="steps">
@@ -284,7 +286,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <li><b>The tile grid</b> adds trades, totals, balance, SQN, volatility, deepest drawdown, streaks, Kelly, recent form, best-day share and tail ratio. Each is defined in the glossary. These unlock at 8+ resolved trades.</li>
   <li><b>Best-day share</b> matters for consistency rules. Many firms cap one day's share of profit near 30–50%.</li>
 </ul>
-<h4>Prop odds</h4>
+<h4>Prop odds (prop firm mode)</h4>
 <p>Your journaled trades, resampled against the firm (the bound firm, or the Simulator's firm if none is bound), at the Decision tab's eval and funded risk. It shows pass odds, attempts and fees to fund, the chance to stay funded a year, the chance a purchase ends in a payout, expected payout, and sample quality. It needs 10 resolved trades. Under 50 trades, treat every range as directional.</p>
 <h4>Charts</h4>
 <ul>
@@ -360,7 +362,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <!-- ============================ PART 3 ============================ -->
 <h2 class="part">Part 3 — Simulator</h2>
 <figure><img src="shots/01-first-look.png" class="mid" alt="Simulator"><figcaption>The Simulator: your edge and the firm on the left, four tabs on the right.</figcaption></figure>
-<p>Every Simulator number comes from Monte Carlo: your edge is played trade by trade, thousands of times, against the firm's rules. Internally everything is in R, scaled by your risk per trade, then shown in dollars.</p>
+<p>Every Simulator number comes from Monte Carlo: your edge is played trade by trade, thousands of times (against the firm's rules, in prop firm mode). Internally everything is in R, scaled by your risk per trade, then shown in dollars.</p>
 
 <h3>16. Your edge: sliders or journal</h3>
 <figure><img src="shots/02-edge-bar.png" class="small" alt="Your edge"><figcaption>Your edge.</figcaption></figure>
@@ -391,7 +393,13 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 </ul>
 <p>Even "Stands out" is a hypothesis: you picked the segment by looking at these same trades. Trade it forward before believing it. Each segment you test is another look at the same record, so Validate widens its ranges for every look (see "Multiple looks" in section 23). Clearing the cut does not undo that. If the cut leaves fewer than 30 trades, it is not applied.</p>
 
-<h3>18. The firm and its rules</h3>
+<h3>18. Your account, and prop firm mode</h3>
+<p>The panel under <b>Use my journal</b> describes the account you trade. It has two modes, switched by the <span class="ui">Prop firm</span> tick box in its header:</p>
+<ul>
+  <li><b>Off (default): Your account.</b> Set the account size, the most you can lose (max drawdown) and how many trades you take a day. The Simulator shows the Validate tab only; the Journal hides the rule guard and prop odds.</li>
+  <li><b>On: The firm.</b> Every firm rule below becomes editable, the Challenge, Funded and Decision tabs appear, and the Journal adds the rule guard and prop odds.</li>
+</ul>
+<p>The rest of this section describes prop firm mode.</p>
 <figure><img src="shots/04-firm-editor.png" class="mid" alt="Firm editor"><figcaption>The firm editor.</figcaption></figure>
 <ol class="steps">
   <li>Click <span class="ui">Edit rules</span> in The firm.</li>
@@ -459,7 +467,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <li><b>Use realised loss sizes</b>: on = losses are resampled at the sizes you actually logged, so a stop that filled at &minus;1.4R can happen again. Off = every loss is your average loss. If all your logged losses are the same size, your journal records planned losses, not fills.</li>
 </ul>
 <h4>Largest risk per trade</h4>
-<p>The risk per trade at which the p95 drawdown over your horizon exactly fills the account limit. It is shown in green if the Funded tab's risk is inside it, red if not, with how much of the limit a 1-in-20 bad run would use. One run in twenty is still worse, so treat it as a ceiling, not a target.</p>
+<p>The risk per trade at which the p95 drawdown over your horizon exactly fills the account limit. In prop firm mode it is shown in green if the Funded tab's risk is inside it, red if not, with how much of the limit a 1-in-20 bad run would use. One run in twenty is still worse, so treat it as a ceiling, not a target.</p>
 <h4>Warnings on this tab</h4>
 <ul>
   <li><b>Multiple looks</b>: you have tested several subsets with Leave out, so ranges are widened (each is a stricter interval, so the whole family still carries 95%).</li>
@@ -467,7 +475,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <li><b>The full record, for comparison</b>: shown whenever a Leave-out cut is active.</li>
 </ul>
 
-<h3>20. Challenge — will it pass?</h3>
+<h3>20. Challenge — will it pass? <span style="font-weight:400;font-size:10pt;color:#5C635A">(prop firm mode)</span></h3>
 <figure><img src="shots/08-challenge.png" alt="Challenge"><figcaption>Challenge.</figcaption></figure>
 <ol class="steps">
   <li>Set <b>Risk per trade %</b> for the evaluation.</li>
@@ -489,7 +497,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">Phase 1/2 is the harder gate</td><td>Which phase kills most attempts on a 2-step firm.</td></tr>
 </table>
 
-<h3>21. Funded — will it pay?</h3>
+<h3>21. Funded — will it pay? <span style="font-weight:400;font-size:10pt;color:#5C635A">(prop firm mode)</span></h3>
 <figure><img src="shots/09-funded.png" alt="Funded"><figcaption>Funded.</figcaption></figure>
 <ol class="steps">
   <li>Set <b>Risk per trade %</b> for the funded account. Most traders size down after passing.</li>
@@ -510,7 +518,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <p>Up to 5% of the account is swept every 5 trading days, <b>never out of the drawdown cushion</b>. On a static or locked-trailing floor, a sweep only happens if the account stays a full max-drawdown above its floor afterwards: on $50,000 with a $2,000 drawdown, $2,000 stays in and the first withdrawal needs about $4,500 of profit. That retained cushion is most of what "Survival" measures. Keeping $500 less costs about 16 points of survival; $1,000 less costs about 51. If you sweep down to the firm's minimum, the survival figure does not describe you. On an <b>unlocked</b> trailing floor nothing is retained, because the floor follows the withdrawal down.</p>
 <p>Payout gates (buffer, % cap, $ cap, consistency, winning days) are applied exactly as the firm would. Payout <b>cadence</b> is shown but not priced. Trades are drawn independently: no tilt, no streaks, no sizing up after a loss.</p></div>
 
-<h3>22. Decision — is it worth buying?</h3>
+<h3>22. Decision — is it worth buying? <span style="font-weight:400;font-size:10pt;color:#5C635A">(prop firm mode)</span></h3>
 <figure><img src="shots/10-decision.png" alt="Decision"><figcaption>Decision.</figcaption></figure>
 <ol class="steps">
   <li>Set <b>Eval risk / trade %</b> and <b>Funded risk / trade %</b>. These two also drive the journal's prop odds.</li>
@@ -621,6 +629,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">R stats are empty</td><td>Trades need a stop, Risk $ or R override.</td></tr>
   <tr><td class="k">No dollars anywhere</td><td>Pick one account, <span class="ui">Show dollars</span>, set starting balance and what 1R is worth.</td></tr>
   <tr><td class="k">Use my journal won't turn on</td><td>Needs 10 resolved trades with an R basis in the Edge source.</td></tr>
+  <tr><td class="k">No Challenge / Funded / Decision tabs, no Rule guard</td><td>Prop firm mode is off. Tick <span class="ui">Prop firm</span> in the Your account panel.</td></tr>
   <tr><td class="k">Rule guard shows nothing</td><td>Pick one account (not All accounts) and click Bind sim firm.</td></tr>
   <tr><td class="k">Timing columns blank</td><td>Log exit times (holding time), planned R:R (RR/kept), MFE (ran to).</td></tr>
   <tr><td class="k">Numbers jump slightly on each change</td><td>Monte Carlo noise. Quick previews run while you drag; full numbers land a moment after you stop.</td></tr>

@@ -7,6 +7,7 @@ function fail(m){ console.error('FAIL: ' + m); process.exitCode = 1; }
 (async () => {
   const browser = await puppeteer.launch({ executablePath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', headless: 'new', userDataDir: path.resolve('./pel-test/profile-retina-' + Date.now()), args: ['--no-sandbox','--disable-gpu','--allow-file-access-from-files', '--edge-skip-compat-layer-relaunch'] });
   const page = await browser.newPage();
+  await page.evaluateOnNewDocument(() => { try { if (localStorage.getItem('pel_prop') == null) localStorage.setItem('pel_prop', 'true'); } catch (e) { /* opaque origin */ } });  // these suites exercise prop-firm mode
   await page.setViewport({ width: 1440, height: 900, deviceScaleFactor: 2 }); // Mac Retina
   page.on('pageerror', e => fail('pageerror: ' + e.message));
   await page.goto(APP, { waitUntil: 'load' });

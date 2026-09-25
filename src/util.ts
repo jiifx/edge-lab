@@ -158,6 +158,27 @@ export function toast(msg: string) {
   if (toastT) clearTimeout(toastT);
   toastT = setTimeout(() => { el.style.display = "none"; }, 2800);
 }
+// a toast with one action (Undo). `onExpire` runs if the action is not taken
+// before the toast closes - that is where anything irreversible belongs.
+export function toastAction(msg: string, label: string, onAction: () => void, onExpire: () => void, ms = 9000) {
+  const el = $("toast");
+  el.textContent = msg + " ";
+  const b = document.createElement("button");
+  b.type = "button"; b.className = "toastbtn"; b.textContent = label;
+  let done = false;
+  const finish = (acted: boolean) => {
+    if (done) return;
+    done = true;
+    if (toastT) { clearTimeout(toastT); toastT = null; }
+    el.style.display = "none";
+    if (acted) onAction(); else onExpire();
+  };
+  b.addEventListener("click", () => finish(true));
+  el.appendChild(b);
+  el.style.display = "block";
+  if (toastT) clearTimeout(toastT);
+  toastT = setTimeout(() => finish(false), ms);
+}
 
 export interface AskButton { label: string; kind: "" | "primary" | "danger"; value: unknown }
 export function ask(msgHtml: string, buttons: AskButton[], cb: (v: unknown) => void) {

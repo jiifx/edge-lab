@@ -120,9 +120,12 @@
   .sw-midnight .a{background:#0D1220;} .sw-midnight .b{background:#1C2438;} .sw-midnight .c{background:#52BC8E;}
   .sw-parchment .a{background:#F0E7D5;} .sw-parchment .b{background:#F6EEDD;} .sw-parchment .c{background:#2E7348;}
   .shell{display:grid;grid-template-columns:minmax(300px,340px) 1fr;gap:22px;align-items:start;padding:20px 0 10px;}
-  @media (max-width:980px){.shell{grid-template-columns:1fr;}}
+  /* keep the rail beside the results at the app's own minimum window (980px);
+     stacking there pushed every Simulator result below the first screen */
+  @media (max-width:1100px){.shell{grid-template-columns:272px minmax(0,1fr);gap:16px;}}
+  @media (max-width:760px){.shell{grid-template-columns:1fr;}}
   .rail{position:sticky;top:70px;max-height:calc(100vh - 80px);overflow:auto;display:flex;flex-direction:column;gap:14px;padding-right:2px;}
-  @media (max-width:980px){.rail{position:static;max-height:none;overflow:visible;}}
+  @media (max-width:760px){.rail{position:static;max-height:none;overflow:visible;}}
   .main{min-width:0;}
   .bar{border:2px solid var(--line-strong);background:var(--panel);}
   .bar-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:11px 14px;border-bottom:1.5px solid var(--line);background:var(--panel-2);}
@@ -589,6 +592,7 @@
   .gallery img.lead{max-height:none;width:100%;}
   .confirm-sheet{max-width:430px;}
   .confirm-sheet .sheet-body{padding:18px;font-size:14.5px;}
+  #toast .toastbtn{margin-left:12px;font:700 12px var(--mono);text-transform:uppercase;letter-spacing:0.06em;color:var(--paper);background:none;border:1.5px solid var(--paper);padding:3px 9px;cursor:pointer;}
   #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:95;background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:13px;padding:10px 16px;border:1.5px solid var(--line-strong);display:none;max-width:90vw;}
   #chartTip{position:fixed;z-index:99;display:none;pointer-events:none;background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:11.5px;line-height:1.5;padding:6px 9px;border:1.5px solid var(--line-strong);max-width:280px;white-space:nowrap;}
   #chartTip b{color:inherit;}
@@ -678,6 +682,13 @@
   .chip .skel{width:6em;background:currentColor;opacity:0.35;}
   @keyframes skel{from{opacity:0.35;}to{opacity:0.85;}}
   .statgrid.g3{grid-template-columns:repeat(3,minmax(0,1fr));}
+  /* personal (non-prop) mode: only the account-level fields and the Validate tab */
+  .propsw{display:inline-flex;align-items:center;gap:6px;font:700 10.5px var(--mono);text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);cursor:pointer;margin-left:auto;}
+  .propsw input{accent-color:var(--go);width:15px;height:15px;margin:0;cursor:pointer;}
+  body.noprop #firmEdit .fld:not(.keep),body.noprop #firmEdit .fnote{display:none;}
+  body.noprop .tabs button[data-tab="challenge"],body.noprop .tabs button[data-tab="funded"],body.noprop .tabs button[data-tab="decision"]{display:none;}
+  body.noprop #ruleGuard{display:none !important;}
+  body.noprop .bar-head .seg[aria-label="display unit"]{display:none;}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
 </style>
 </head>
@@ -721,7 +732,8 @@
 
       <div class="bar">
         <div class="bar-head">
-          <span class="t">The firm</span>
+          <span class="t" id="firmTitle">The firm</span>
+          <label class="propsw" title="Prop firm mode: evaluation, payout and rule-guard tools"><input type="checkbox" id="propMode"><span>Prop firm</span></label>
           <div class="seg" role="group" aria-label="display unit" title="Switches the firm summary and the Funded tab between dollars and % of account. Decision, Firms and Portfolio always quote dollars - each says so on the tab."><button data-disp="$" aria-pressed="true">$</button><button data-disp="%" aria-pressed="false">%</button></div>
           <button class="barbtn" id="firmToggle">Edit rules</button>
         </div>
@@ -730,7 +742,7 @@
           <div class="fgrid">
             <div class="fld wide"><label for="fPreset">Preset</label><select id="fPreset"></select>
               <div style="display:flex;gap:8px;margin-top:6px"><button class="barbtn" id="fSavePreset" type="button">Save as preset</button><button class="barbtn hide" id="fDelPreset" type="button">Delete preset</button></div></div>
-            <div class="fld wide"><label>Quick account size</label>
+            <div class="fld wide keep"><label>Quick account size</label>
               <div class="chipset" id="accChips" style="margin-bottom:0">
                 <button type="button" class="opt" data-acc="5000">$5k</button>
                 <button type="button" class="opt" data-acc="10000">$10k</button>
@@ -738,18 +750,18 @@
                 <button type="button" class="opt" data-acc="50000">$50k</button>
                 <button type="button" class="opt" data-acc="100000">$100k</button>
               </div></div>
-            <div class="fld"><label for="fAccount">Account size ($)</label><input type="number" id="fAccount" value="100000" step="1000" min="100" max="100000000"></div>
+            <div class="fld keep"><label for="fAccount">Account size ($)</label><input type="number" id="fAccount" value="100000" step="1000" min="100" max="100000000"></div>
             <div class="fld"><label for="fType">Structure</label><select id="fType"><option value="2step">2-step</option><option value="1phase">1-phase</option><option value="futures">Futures</option></select></div>
             <div class="fld"><label for="fInstant" title="Instant funding: the fee buys the funded account outright - there is no evaluation to pass, so the targets below do not apply and the Decision tab prices the fee as a certain cost instead of a gamble on passing. Some catalogue firms load with this on.">Instant funding</label><select id="fInstant"><option value="0">No &mdash; evaluation first</option><option value="1">Yes &mdash; fee buys the account</option></select></div>
             <div class="fld" id="wrapP1"><label for="fP1">Target phase 1 (%)</label><input type="number" id="fP1" value="10" step="0.5" min="0" max="1000"></div>
             <div class="fld" id="wrapP2"><label for="fP2">Target phase 2 (%)</label><input type="number" id="fP2" value="5" step="0.5" min="0" max="1000"></div>
-            <div class="fld"><label for="fMaxdd">Max drawdown (%)</label><input type="number" id="fMaxdd" value="10" step="0.5" min="0.01" max="100"></div>
+            <div class="fld keep"><label for="fMaxdd">Max drawdown (%)</label><input type="number" id="fMaxdd" value="10" step="0.5" min="0.01" max="100"></div>
             <div class="fld"><label for="fDdType">Drawdown type</label><select id="fDdType"><option value="static">Static (from start)</option><option value="trailing">Trailing intraday (peak tick)</option><option value="trailing-eod">Trailing end-of-day (daily close)</option></select></div>
             <div class="fld" id="wrapDdLock"><label for="fDdLock">Trailing locks at start</label><select id="fDdLock"><option value="1">Yes</option><option value="0">No</option></select></div>
             <div class="fld"><label for="fDaily">Daily loss limit (%)</label><input type="number" id="fDaily" value="5" step="0.5" min="0" max="100"></div>
             <div class="fld"><label for="fMinDays">Min trading days</label><input type="number" id="fMinDays" value="0" step="1" min="0" max="500"></div>
             <div class="fld"><label for="fCons" title="Max share of the total profit any single day may contribute">Consistency cap (%)</label><input type="number" id="fCons" value="0" step="5" min="0" max="100"></div>
-            <div class="fld"><label for="fTpd" title="How many trades you take in a trading day. This is the engine's day clock - it decides when a daily loss limit resets, how long a &quot;day&quot; is, and how many trades fit in the modelled year - so it changes almost every number in the app. Capped at 20: it multiplies the length of every simulation, and beyond that the app spends longer computing than the answer is worth.">Trades per day</label><input type="number" id="fTpd" value="5" step="1" min="1" max="20"></div>
+            <div class="fld keep"><label for="fTpd" title="How many trades you take in a trading day. This is the engine's day clock - it decides when a daily loss limit resets, how long a &quot;day&quot; is, and how many trades fit in the modelled year - so it changes almost every number in the app. Capped at 20: it multiplies the length of every simulation, and beyond that the app spends longer computing than the answer is worth.">Trades per day</label><input type="number" id="fTpd" value="5" step="1" min="1" max="20"></div>
             <div class="fld"><label for="fSplit">Profit split (%)</label><input type="number" id="fSplit" value="90" step="1" min="0" max="100"></div>
             <div class="fld"><label for="fTimeLimit" title="TRADING days allowed to finish the evaluation - the engine counts trading days, never weekends, so enter the firm's calendar limit converted (30 calendar days is about 21 trading days). 0 = no time limit, which several futures firms offer.">Time limit (trading days)</label><input type="number" id="fTimeLimit" value="0" step="1" min="0" max="500"></div>
             <div class="fld"><label for="fFeeMode" title="A monthly subscription keeps charging for every month the evaluation runs, passed or not">Fee type</label><select id="fFeeMode"><option value="once">One-time</option><option value="monthly">Monthly until passed</option></select></div>

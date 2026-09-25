@@ -1,6 +1,6 @@
 // Journal: log, editor, detail, stats (quant layer + prop odds + edge report), export/import.
-import { $, $i, $s, $c, css, fit, mulberry, esc, hasNum, LS, toast, ask, hooks, chartTip, wireTips, pctEst } from "./util";
-import { S, F, money, Firm, setFirm, withFirm, withEdge } from "./state";
+import { $, $i, $s, $c, css, fit, mulberry, esc, hasNum, LS, toast, toastAction, ask, hooks, chartTip, wireTips, pctEst } from "./util";
+import { S, F, money, Firm, setFirm, withFirm, withEdge, view } from "./state";
 import { computeR, computeRraw, plannedRR, hasRBasis, challengeStats, evalPass, fundedStats, payoutOdds, costToFund, wilson, profitPlateau, PAID_SIMS, PAY_CHUNK, yearSteps, TradeLike } from "./engine";
 import { Store, TAURI, Trade, JMeta, b64ToBlob } from "./store";
 import { bandOf, consWindows, DayR, PLATEAU_TOL } from "./plan";
@@ -786,7 +786,8 @@ function renderSummary() {
     }
   }
   renderEquityPanel();
-  const oc = ensureOdds();
+  // prop odds only in prop-firm mode (and only then is the Monte Carlo worth running)
+  const oc = view.PROP ? ensureOdds() : null;
   let basis = "";
   if (oc) {
     tiles.push(["Pass odds", Math.round(oc.pass * 100) + "%"]);
@@ -1132,15 +1133,17 @@ function wireSegChip(el: HTMLElement) {
 // by recency: on a long journal only the latest LOG_OPEN_DAYS start open.
 let LOG_DENSE = LS.get<boolean>("pel_log_dense", false);
 const DAY_OPEN = new Map<string, boolean>();
+let LOG_SHOWN = new Set<string>();        // ids actually drawn in the log right now
 const LOG_OPEN_DAYS = 15;
 function renderLog() {
   const list = filtered(), el = $("jv-log");
+  LOG_SHOWN = new Set<string>();
+  // recount now as well as after drawing: the empty-log paths below return
+  // early, and a selection the filter just hid must not stay armed on them
+  if (SELMODE) updateSelUI();
   el.classList.toggle("compact", LOG_DENSE);
   document.querySelectorAll<HTMLButtonElement>("button[data-dens]").forEach((b) =>
     b.setAttribute("aria-pressed", String((b.getAttribute("data-dens") === "compact") === LOG_DENSE)));
-  // the Delete button counts the VISIBLE selection, so it has to recount on
-  // every render - a filter change re-renders the log and can hide ticked rows
-  if (SELMODE) updateSelUI();
   if (!JT.length) {
     el.innerHTML = '<div class="empty-state"><h3>Your journal is empty</h3><p>Log your first trade &mdash; numbers, setup tag, and a chart screenshot. Your real win rate and R stats build from here, and can drive the simulator.</p><p style="margin-top:14px"><button class="btn primary" id="emptyNew">+ Log a trade</button></p></div>';
     document.getElementById("emptyNew")?.addEventListener("click", () => openEditor(null));
@@ -1184,6 +1187,7 @@ function renderLog() {
     html += '<div class="dayhead' + (open ? "" : " shut") + '" data-day="' + esc(curDay) + '" role="button" tabindex="0" aria-expanded="' + open + '"><span class="dl">' + esc(dayLabel(curDay)) + " &middot; " + dayList.length + " trade" + (dayList.length > 1 ? "s" : "") + '</span><span class="dr ' + (ds.sumR > 0.0001 ? "cell-go" : ds.sumR < -0.0001 ? "cell-stop" : "") + '">' + dayTxt + "</span></div>";
     // a folded day's cards are not built at all - that is most of the cost of a
     // long log; they render the moment the day is opened
+    if (open) dayList.forEach((t) => LOG_SHOWN.add(t.id));
     html += '<div class="daygrp' + (open ? "" : " shut") + '">' + (open ? dayList.map(tradeCard).join("") : "") + "</div>";
   };
   list.forEach((t) => {
@@ -1193,6 +1197,9 @@ function renderLog() {
   });
   flushDay();
   el.innerHTML = html;
+  // the Delete button counts the DRAWN selection, so it recounts after every
+  // render - a filter change or a folded day can hide ticked rows
+  if (SELMODE) updateSelUI();
   wireSegChip(el);
   el.querySelectorAll<HTMLElement>(".dayhead[data-day]").forEach((h) => {
     const flip = () => { DAY_OPEN.set(h.getAttribute("data-day")!, h.classList.contains("shut")); renderLog(); };
@@ -1557,7 +1564,7 @@ function renderStatsPerf(body: HTMLElement, list: Trade[]) {
   html += '<div class="vh" style="margin-top:16px">Rolling expectancy &mdash; is the edge drifting?</div><canvas id="cRolling" height="150"></canvas>';
   html += sec("Exits &amp; targets") + '<div id="exitEff"></div>';
   html += '<div class="vh">Target sweep &mdash; what should the R:R be?</div><div id="tgtSweep"></div>';
-  html += sec("Prop odds") + '<div class="vh" style="margin-top:0">Your journaled edge vs the firm</div><div class="statgrid" id="propOdds" style="margin-bottom:16px"></div>';
+  if (view.PROP) html += sec("Prop odds") + '<div class="vh" style="margin-top:0">Your journaled edge vs the firm</div><div class="statgrid" id="propOdds" style="margin-bottom:16px"></div>';
   body.innerHTML = html;
   drawEquity(list);
   drawRdist(dq.rs);
@@ -1868,7 +1875,37 @@ function coverageNote(rows: TimeRow[], uncovered: number, axis: string, total: n
 // running and does not inflate the count.
 const SEP_MIN_BUCKET = 4;
 interface SepRead { axis: string; row: TimeRow; st: CutStat; restN: number; restExp: number }
+let SEP_CACHE: { key: string; val: { best: SepRead | null; choices: number } } | null = null;
+let SEP_CANCEL: (() => void) | null = null;
+type SepCand = { axis: string; row: TimeRow; all: number[]; rest: number[] };
 export function separability(dims: { axis: string; rows: TimeRow[] }[]): { best: SepRead | null; choices: number } {
+  const { cands, choices } = sepCands(dims);
+  if (!cands.length || choices < 2) return { best: null, choices };
+  let win: SepRead | null = null;
+  cands.forEach((c) => { win = sepPick(win, c, choices); });
+  return { best: win, choices };
+}
+// The same verdict, one candidate per macrotask: each candidate's bootstrap and
+// noise floor is ~100ms on a 1,000-trade record, and doing all of them in one
+// block froze the window for half a second whenever the Timing tab opened.
+function separabilityAsync(dims: { axis: string; rows: TimeRow[] }[], done: (r: { best: SepRead | null; choices: number }) => void): () => void {
+  const { cands, choices } = sepCands(dims);
+  let cancelled = false, win: SepRead | null = null, i = 0;
+  if (!cands.length || choices < 2) { setTimeout(() => { if (!cancelled) done({ best: null, choices }); }, 0); return () => { cancelled = true; }; }
+  const step = () => {
+    if (cancelled) return;
+    win = sepPick(win, cands[i++], choices);
+    if (i < cands.length) setTimeout(step, 0); else done({ best: win, choices });
+  };
+  setTimeout(step, 0);
+  return () => { cancelled = true; };
+}
+function sepPick(win: SepRead | null, c: SepCand, choices: number): SepRead {
+  const st = cutStat(c.row.rs, c.rest, choices);
+  const restExp = c.rest.length ? c.rest.reduce((a, b) => a + b, 0) / c.rest.length : 0;
+  return !win || Math.abs(st.d) > Math.abs(win.st.d) ? { axis: c.axis, row: c.row, st, restN: c.rest.length, restExp } : win;
+}
+function sepCands(dims: { axis: string; rows: TimeRow[] }[]): { cands: SepCand[]; choices: number } {
   let choices = 0;
   const cands: { axis: string; row: TimeRow; all: number[]; rest: number[] }[] = [];
   dims.forEach((d) => {
@@ -1890,16 +1927,7 @@ export function separability(dims: { axis: string; rows: TimeRow[] }[]): { best:
     d.rows.forEach((r) => { if (r !== pick) rest.push(...r.rs); });
     cands.push({ axis: d.axis, row: pick, all, rest });
   });
-  if (!cands.length || choices < 2) return { best: null, choices };
-  let win: SepRead | null = null;
-  cands.forEach((c) => {
-    const st = cutStat(c.row.rs, c.rest, choices);
-    const restExp = c.rest.length ? c.rest.reduce((a, b) => a + b, 0) / c.rest.length : 0;
-    if (!win || Math.abs(st.d) > Math.abs(win.st.d)) {
-      win = { axis: c.axis, row: c.row, st, restN: c.rest.length, restExp };
-    }
-  });
-  return { best: win, choices };
+  return { cands, choices };
 }
 
 function sepBlockHtml(sep: { best: SepRead | null; choices: number }): string {
@@ -1997,16 +2025,23 @@ function renderStatsTiming(body: HTMLElement, list: Trade[]) {
   // just backwards. The test only belongs on axes you can choose BEFORE the
   // trade: which hour, which weekday, how many trades in already, how long you
   // waited after a loss. Holding time keeps its table and loses its verdict.
-  const sep = separability([
+  const sepDims = [
     { axis: "entry hour", rows: hours.rows },
     { axis: "weekday", rows: dows.rows },
     { axis: "trade of the day", rows: nths.rows },
     { axis: "wait after a loss", rows: lat.rows },
-  ]);
+  ];
+  // tables first; the verdict fills in when its (sliced) computation lands, and
+  // is cached on the record so reopening the tab is instant
+  let sumR = 0;
+  list.forEach((t) => { sumR += tradeR(t) || 0; });
+  const sepKey = ACCT + "|" + list.length + "|" + sumR.toFixed(4);
+  const sepHit = SEP_CACHE && SEP_CACHE.key === sepKey ? SEP_CACHE.val : null;
 
   const more = LS.get<boolean>("pel_time_more", false);
   let html = '<div class="tmorebar"><button type="button" class="barbtn" id="tMore" aria-pressed="' + more + '">' + (more ? "Fewer columns" : "More columns") + "</button></div>" +
-    '<div class="vh vh0">Does any of it hold up?</div>' + sepBlockHtml(sep);
+    '<div class="vh vh0">Does any of it hold up?</div><div id="sepBox">' +
+    (sepHit ? sepBlockHtml(sepHit) : '<div class="note"><p class="h">Testing&hellip;</p><p class="nomarg"><span class="skel"></span></p></div>') + "</div>";
 
   html += '<div class="vh">By entry hour &mdash; your clock</div>' +
     timeTableHtml(hours.rows, "hour") +
@@ -2039,6 +2074,15 @@ function renderStatsTiming(body: HTMLElement, list: Trade[]) {
 
   body.innerHTML = html;
   body.classList.toggle("tmore", more);
+  if (!sepHit) {
+    if (SEP_CANCEL) SEP_CANCEL();
+    SEP_CANCEL = separabilityAsync(sepDims, (r) => {
+      SEP_CANCEL = null;
+      SEP_CACHE = { key: sepKey, val: r };
+      const box = document.getElementById("sepBox");
+      if (box) box.innerHTML = sepBlockHtml(r);
+    });
+  }
   document.getElementById("tMore")?.addEventListener("click", () => { LS.set("pel_time_more", !more); renderStatsTiming(body, list); });
   wireTips(body);
 }
@@ -2645,7 +2689,7 @@ function renderModelTable(elId: string, list: Trade[]) {
       (r.s.n ? (r.s.exp >= 0 ? "+" : "") + r.s.exp.toFixed(2) : "--") + '</td><td class="' + cls + '">' +
       (r.s.sumR >= 0 ? "+" : "") + r.s.sumR.toFixed(1) + "</td></tr>";
   });
-  html += "</tbody></table><p class=\"small muted\" style=\"margin:6px 0 0\">RR = average winner &divide; average loser, in R. Resolved trades only; a row under 4 trades is noise.</p>";
+  html += "</tbody></table>";
   el.innerHTML = html;
   el.querySelectorAll<HTMLElement>("tr.modelrow").forEach((tr) =>
     tr.addEventListener("click", () => {
@@ -2788,7 +2832,7 @@ function renderEdgeReport(list: Trade[]) {
   let disc = "";
   if (dirty.length >= 3 && clean.length >= 3) {
     const ds = stats(dirty), cs = stats(clean);
-    disc = '<div class="note ' + (ds.sumR < 0 ? "warn" : "") + '" style="margin:0 0 14px"><p class="h">Discipline check</p><p style="margin:0">Clean trades: <b>' + fmtR(cs.sumR) + "</b> over " + clean.length + " &middot; trades with a tagged mistake: <b>" + fmtR(ds.sumR) + "</b> over " + dirty.length + ". " + (ds.sumR < 0 ? "Your mistakes are a direct, measurable leak &mdash; the rows below name them." : "Even your mistake trades are net positive &mdash; tighter is still better.") + "</p></div>";
+    disc = '<div class="note ' + (ds.sumR < 0 ? "warn" : "") + '" style="margin:0 0 14px"><p class="h">Discipline check</p><p style="margin:0">Clean trades: <b>' + fmtR(cs.sumR) + "</b> over " + clean.length + " &middot; trades with a tagged mistake: <b>" + fmtR(ds.sumR) + "</b> over " + dirty.length + "." + "</p></div>";
   }
   el.innerHTML = disc + '<div class="chartgrid">' +
     '<div><div class="vh" style="margin-top:0">Strengths &mdash; lean in</div><div class="scroll"><table class="breakdown">' + head + "<tbody>" + (strengths.map((s) => row(s, false)).join("") || '<tr><td colspan="5" class="muted">nothing with n&ge;4 and positive expectancy yet</td></tr>') + "</tbody></table></div></div>" +
@@ -3857,23 +3901,42 @@ function saveTrade() {
       if (++done === toWrite.length) { if (fail) toast(fail + " image(s) failed to save."); commit(); }
     }));
 }
+// Deleting is undoable. The trades leave the journal (and storage) at once, but
+// their screenshot files are only erased when the Undo window closes - so Undo
+// restores the trades with every image intact.
+function removeTrades(ids: string[], msg: string, after?: () => void) {
+  const gone = JT.filter((t) => ids.indexOf(t.id) >= 0);
+  JT = JT.filter((t) => ids.indexOf(t.id) < 0);
+  Store.persistAll(JT, JMETA, () => {
+    if (after) after();
+    renderJournal();
+    if ($i("useJournal").checked) applyJournalEdge();
+    toastAction(msg, "Undo", () => {
+      const have = new Set(JT.map((t) => t.id));
+      JT = JT.concat(gone.filter((t) => !have.has(t.id)));
+      JT.sort((a, b) => (b.dateTime || "").localeCompare(a.dateTime || ""));
+      Store.persistAll(JT, JMETA, () => {
+        renderJournal();
+        if ($i("useJournal").checked) applyJournalEdge();
+        toast("Restored " + gone.length + " trade" + (gone.length > 1 ? "s" : "") + ".");
+      });
+    }, () => {
+      gone.forEach((t) => (t.imageIds || []).forEach((iid) => { Store.deleteImage(iid); delete urlCache[iid]; }));
+    });
+  });
+}
 function deleteTrade(id: string) {
   const t = JT.find((x) => x.id === id);
   if (!t) return;
-  ask("Delete this trade permanently?" + (t.imageIds && t.imageIds.length ? " Its screenshots are removed too." : ""), [
+  ask("Delete this trade?" + (t.imageIds && t.imageIds.length ? " Its screenshots go with it." : ""), [
     { label: "Cancel", kind: "", value: false },
     { label: "Delete", kind: "danger", value: true },
   ], (yes) => {
     if (!yes) return;
-    (t.imageIds || []).forEach((iid) => { Store.deleteImage(iid); delete urlCache[iid]; });
-    JT = JT.filter((x) => x.id !== id);
-    Store.persistAll(JT, JMETA, () => {
+    removeTrades([id], "Trade deleted.", () => {
       $("editorOv").classList.add("hide");
       $("detailOv").classList.add("hide");
       EDIT_ID = null;
-      renderJournal();
-      if ($i("useJournal").checked) applyJournalEdge();
-      toast("Trade deleted.");
     });
   });
 }
@@ -3886,10 +3949,11 @@ function deleteTrade(id: string) {
 // named. Counting and deleting the intersection with filtered() makes the
 // button, the confirm and the visible log agree; a hidden tick is parked, not
 // armed, and reappears when the filter that hid it is lifted.
+// ...and "visible" means DRAWN: a trade inside a folded day passes the filter
+// but is not on screen, so it can be neither selected nor deleted from here.
 function visibleSel(): string[] {
   if (!SEL.size) return [];
-  const vis = new Set(filtered().map((t) => t.id));
-  return [...SEL].filter((id) => vis.has(id));
+  return [...SEL].filter((id) => LOG_SHOWN.has(id));
 }
 function updateSelUI() {
   const del = $("jDelSel");
@@ -3909,20 +3973,12 @@ function bulkDelete() {
   const ids = visibleSel();
   if (!ids.length) return;
   const withImgs = JT.filter((t) => ids.indexOf(t.id) >= 0 && t.imageIds && t.imageIds.length).length;
-  ask("Delete <b>" + ids.length + "</b> trade" + (ids.length > 1 ? "s" : "") + " permanently?" + (withImgs ? " Screenshots on " + withImgs + " of them are removed too." : ""), [
+  ask("Delete <b>" + ids.length + "</b> trade" + (ids.length > 1 ? "s" : "") + "?" + (withImgs ? " Screenshots on " + withImgs + " of them go too." : ""), [
     { label: "Cancel", kind: "", value: false },
     { label: "Delete " + ids.length, kind: "danger", value: true },
   ], (yes) => {
     if (!yes) return;
-    JT.filter((t) => ids.indexOf(t.id) >= 0).forEach((t) =>
-      (t.imageIds || []).forEach((iid) => { Store.deleteImage(iid); delete urlCache[iid]; }));
-    JT = JT.filter((t) => ids.indexOf(t.id) < 0);
-    Store.persistAll(JT, JMETA, () => {
-      setSelMode(false);
-      renderJournal();
-      if ($i("useJournal").checked) applyJournalEdge();
-      toast(ids.length + " trade" + (ids.length > 1 ? "s" : "") + " deleted.");
-    });
+    removeTrades(ids, ids.length + " trade" + (ids.length > 1 ? "s" : "") + " deleted.", () => { SELMODE = false; SEL.clear(); updateSelUI(); });
   });
 }
 
@@ -5342,7 +5398,7 @@ export function wireJournal() {
   $("jNewAcct").addEventListener("click", newAccountFlow);
   $("jDelAcct").addEventListener("click", deleteAccountFlow);
   $("jSelMode").addEventListener("click", () => setSelMode(!SELMODE));
-  $("jSelAll").addEventListener("click", () => { if (!SELMODE) return; filtered().forEach((t) => SEL.add(t.id)); updateSelUI(); renderLog(); });
+  $("jSelAll").addEventListener("click", () => { if (!SELMODE) return; LOG_SHOWN.forEach((id) => SEL.add(id)); updateSelUI(); renderLog(); });
   $("jDelSel").addEventListener("click", bulkDelete);
   $s("jEdgeAcct").addEventListener("change", function () {
     EDGE_ACCT = this.value;
