@@ -405,7 +405,18 @@ function segMatch(t: Trade, group: string, label: string): boolean {
     default: return true;
   }
 }
+// how many filter controls are doing something, shown on the collapsed header
+function fltCount(): number {
+  let n = MODELF.size + (SEGF ? 1 : 0);
+  ["fltText", "fltSetup", "fltOutcome", "fltDir", "fltSess", "fltMistake", "fltCond", "fltSym", "fltFrom", "fltTo"].forEach((id) => {
+    const el = document.getElementById(id) as HTMLInputElement | null;
+    if (el && el.value.trim() !== "") n++;
+  });
+  return n;
+}
 function filtered(): Trade[] {
+  const c = document.getElementById("fltCount");
+  if (c) { const k = fltCount(); c.textContent = k ? k + " on" : ""; }
   const f = activeFilter();
   let list = scoped().filter((t) => passFilter(t, f));
   if (SEGF) list = list.filter((t) => segMatch(t, SEGF!.group, SEGF!.label));
@@ -1117,8 +1128,16 @@ function segChipHtml(): string {
 function wireSegChip(el: HTMLElement) {
   el.querySelector("#segClear")?.addEventListener("click", () => { clearSeg(); renderJournal(); });
 }
+// log density and which days are folded. A day the user has not touched opens
+// by recency: on a long journal only the latest LOG_OPEN_DAYS start open.
+let LOG_DENSE = LS.get<boolean>("pel_log_dense", false);
+const DAY_OPEN = new Map<string, boolean>();
+const LOG_OPEN_DAYS = 15;
 function renderLog() {
   const list = filtered(), el = $("jv-log");
+  el.classList.toggle("compact", LOG_DENSE);
+  document.querySelectorAll<HTMLButtonElement>("button[data-dens]").forEach((b) =>
+    b.setAttribute("aria-pressed", String((b.getAttribute("data-dens") === "compact") === LOG_DENSE)));
   // the Delete button counts the VISIBLE selection, so it has to recount on
   // every render - a filter change re-renders the log and can hide ticked rows
   if (SELMODE) updateSelUI();
@@ -1143,6 +1162,8 @@ function renderLog() {
     return;
   }
   let html = segChipHtml(), curDay: string | null = null, dayList: Trade[] = [];
+  const nDays = new Set(list.map((t) => (t.dateTime || "").slice(0, 10) || "unknown")).size;
+  let dayIdx = 0;
   const flushDay = () => {
     if (curDay == null) return;
     const ds = stats(dayList);
@@ -1158,8 +1179,12 @@ function renderLog() {
     const dayTxt = U === "$" ? dayMoney
       : U === "R" ? (ds.sumR >= 0 ? "+" : "") + ds.sumR.toFixed(2) + "R"
         : (ds.sumR >= 0 ? "+" : "") + ds.sumR.toFixed(2) + "R  &middot;  " + dayMoney;
-    html += '<div class="dayhead"><span>' + esc(dayLabel(curDay)) + " &middot; " + dayList.length + " trade" + (dayList.length > 1 ? "s" : "") + '</span><span class="dr ' + (ds.sumR > 0.0001 ? "cell-go" : ds.sumR < -0.0001 ? "cell-stop" : "") + '">' + dayTxt + "</span></div>";
-    dayList.forEach((t) => { html += tradeCard(t); });
+    const open = DAY_OPEN.has(curDay) ? DAY_OPEN.get(curDay)! : (nDays <= 2 * LOG_OPEN_DAYS || dayIdx < LOG_OPEN_DAYS);
+    dayIdx++;
+    html += '<div class="dayhead' + (open ? "" : " shut") + '" data-day="' + esc(curDay) + '" role="button" tabindex="0" aria-expanded="' + open + '"><span class="dl">' + esc(dayLabel(curDay)) + " &middot; " + dayList.length + " trade" + (dayList.length > 1 ? "s" : "") + '</span><span class="dr ' + (ds.sumR > 0.0001 ? "cell-go" : ds.sumR < -0.0001 ? "cell-stop" : "") + '">' + dayTxt + "</span></div>";
+    // a folded day's cards are not built at all - that is most of the cost of a
+    // long log; they render the moment the day is opened
+    html += '<div class="daygrp' + (open ? "" : " shut") + '">' + (open ? dayList.map(tradeCard).join("") : "") + "</div>";
   };
   list.forEach((t) => {
     const d = (t.dateTime || "").slice(0, 10) || "unknown";
@@ -1169,6 +1194,11 @@ function renderLog() {
   flushDay();
   el.innerHTML = html;
   wireSegChip(el);
+  el.querySelectorAll<HTMLElement>(".dayhead[data-day]").forEach((h) => {
+    const flip = () => { DAY_OPEN.set(h.getAttribute("data-day")!, h.classList.contains("shut")); renderLog(); };
+    h.addEventListener("click", flip);
+    h.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); flip(); } });
+  });
   const setChecked = (c: HTMLElement, id: string, on: boolean) => {
     if (on) SEL.add(id); else SEL.delete(id);
     c.classList.toggle("checked", on);
@@ -1509,16 +1539,25 @@ function renderStatsPerf(body: HTMLElement, list: Trade[]) {
     } else tiles.push(tileH("Best-day share", "n/a"));
     tiles.push(tileH("Tail ratio", dq.tail != null ? dq.tail.toFixed(1) + "x" : "n/a", dq.tail != null ? "worst vs avg loss" : ""));
   }
-  let html = renderHeroes(st, dq, deep);
-  html += '<div class="statgrid">' + tiles.join("") + "</div>";
-  html += deep ? '<div style="height:12px"></div>'
-    : '<p class="small muted" style="margin:2px 0 16px">More stats at 8+ resolved trades.</p>';
-  html += '<div class="vh" style="margin-top:0">Prop odds &mdash; your journaled edge vs the firm</div><div class="statgrid" id="propOdds" style="margin-bottom:16px"></div>';
+  // One long wall of equal-weight boxes gave the eye nowhere to land. The same
+  // tiles, split into labelled sections: what the edge is, what it has made,
+  // what it costs to hold, the curves, the exits - and the prop odds last,
+  // because they only matter to someone trading a firm's account.
+  const RISK = ["&sigma; per trade", "Deepest drawdown", "Streaks", "Kelly", "Best-day share", "Tail ratio"];
+  const isRisk = (t: string) => RISK.some((k) => t.indexOf(">" + k) >= 0);
+  const sec = (t: string, first?: boolean) => '<div class="psec' + (first ? " first" : "") + '">' + t + "</div>";
+  let html = sec("Edge", true) + renderHeroes(st, dq, deep);
+  html += sec("Results") + '<div class="statgrid g3">' + tiles.filter((t) => !isRisk(t)).join("") + "</div>";
+  const riskTiles = tiles.filter(isRisk);
+  if (riskTiles.length) html += sec("Risk") + '<div class="statgrid g3">' + riskTiles.join("") + "</div>";
+  if (!deep) html += '<p class="small muted" style="margin:2px 0 16px">More stats at 8+ resolved trades.</p>';
+  html += sec("Equity &amp; distribution");
   html += '<div class="chartgrid"><div><div class="vh" style="margin-top:0">Equity curve (R, oldest &rarr; newest)</div><canvas id="cEquity" height="200"></canvas></div>' +
     '<div><div class="vh" style="margin-top:0">R-multiple distribution</div><canvas id="cRdist" height="200"></canvas></div></div>';
   html += '<div class="vh" style="margin-top:16px">Rolling expectancy &mdash; is the edge drifting?</div><canvas id="cRolling" height="150"></canvas>';
-  html += '<div id="exitEff"></div>';
+  html += sec("Exits &amp; targets") + '<div id="exitEff"></div>';
   html += '<div class="vh">Target sweep &mdash; what should the R:R be?</div><div id="tgtSweep"></div>';
+  html += sec("Prop odds") + '<div class="vh" style="margin-top:0">Your journaled edge vs the firm</div><div class="statgrid" id="propOdds" style="margin-bottom:16px"></div>';
   body.innerHTML = html;
   drawEquity(list);
   drawRdist(dq.rs);
@@ -1757,15 +1796,15 @@ function timeTableHtml(rows: TimeRow[], firstCol: string): string {
   const anyMfe = rows.some((r) => r.mfeN > 0);
   let html = '<div class="scroll"><table class="breakdown"><thead><tr><th>' + esc(firstCol) +
     "</th><th>n</th><th>win%</th><th>RR</th><th>exp</th><th>R</th>" +
-    (anyDur ? "<th>held</th><th>win / loss held</th>" : "") +
-    (anyPlan ? "<th>planned RR</th><th>kept</th>" : "") +
+    (anyDur ? '<th class="x2">held</th><th class="x2">win / loss held</th>' : "") +
+    (anyPlan ? '<th class="x2">planned RR</th><th class="x2">kept</th>' : "") +
     // MFE - how far price got in your favour before the trade ended - split by
     // outcome and never pooled. WON answers "when it worked, where did price
     // actually get to", which is the question a fixed target is answered by.
     // LOST answers "how close did the failures get", which is the other half:
     // losers dying at 1.2R against a 1.5R target is a different problem from
     // losers dying at 0.3R, and only one of them is about the target.
-    (anyMfe ? "<th>ran to (won)</th><th>ran to (lost)</th>" : "") +
+    (anyMfe ? '<th class="x2">ran to (won)</th><th class="x2">ran to (lost)</th>' : "") +
     '<th class="tw">expectancy &plusmn;' + scale.toFixed(2) + "R</th></tr></thead><tbody>";
   rows.forEach((r) => {
     const cls = r.sumR > 0.0001 ? "cell-go" : r.sumR < -0.0001 ? "cell-stop" : "";
@@ -1777,25 +1816,25 @@ function timeTableHtml(rows: TimeRow[], firstCol: string): string {
       (r.exp >= 0 ? "+" : "") + r.exp.toFixed(2) + '</td><td class="' + cls + '">' +
       (r.sumR >= 0 ? "+" : "") + r.sumR.toFixed(1) + "</td>" +
       (anyDur
-        ? "<td>" + (r.durMed == null ? "--" : esc(fmtDur(r.durMed))) + "</td><td>" +
+        ? '<td class="x2">' + (r.durMed == null ? "--" : esc(fmtDur(r.durMed))) + '</td><td class="x2">' +
           (r.winDurMed == null && r.lossDurMed == null ? "--"
             : (r.winDurMed == null ? "--" : esc(fmtDur(r.winDurMed))) + " / " +
               (r.lossDurMed == null ? "--" : esc(fmtDur(r.lossDurMed)))) + "</td>"
         : "") +
       (anyPlan
-        ? "<td>" + (r.planRR == null ? "--" : r.planRR.toFixed(2)) + "</td><td>" +
+        ? '<td class="x2">' + (r.planRR == null ? "--" : r.planRR.toFixed(2)) + '</td><td class="x2">' +
           (r.capW == null ? "--" : Math.round(r.capW * 100) + "%") + "</td>"
         : "") +
       (anyMfe
         // green only when the winners ran materially past the target you set:
         // that is a target question, and it is the one cell on this row that
         // points at a change you can actually make
-        ? '<td class="' + (r.mfeWinMed != null && r.planRR != null && r.mfeWinMed > r.planRR * 1.25 ? "cell-go" : "") + '">' +
+        ? '<td class="x2 ' + (r.mfeWinMed != null && r.planRR != null && r.mfeWinMed > r.planRR * 1.25 ? "cell-go" : "") + '">' +
           (r.mfeWinMed == null ? "--" : r.mfeWinMed.toFixed(2) + "R") + "</td>" +
           // amber when the losers were dying close to the target: those are the
           // trades a SMALLER target would have converted, and the two columns
           // together are the whole trade-off
-          '<td class="' + (r.mfeLossMed != null && r.planRR != null && r.mfeLossMed > r.planRR * 0.66 ? "cell-caution" : "") + '">' +
+          '<td class="x2 ' + (r.mfeLossMed != null && r.planRR != null && r.mfeLossMed > r.planRR * 0.66 ? "cell-caution" : "") + '">' +
           (r.mfeLossMed == null ? "--" : r.mfeLossMed.toFixed(2) + "R") + "</td>"
         : "") +
       '<td class="tw">' + expMeter(r.exp, scale) + "</td></tr>";
@@ -1965,7 +2004,9 @@ function renderStatsTiming(body: HTMLElement, list: Trade[]) {
     { axis: "wait after a loss", rows: lat.rows },
   ]);
 
-  let html = '<div class="vh vh0">Does any of it hold up?</div>' + sepBlockHtml(sep);
+  const more = LS.get<boolean>("pel_time_more", false);
+  let html = '<div class="tmorebar"><button type="button" class="barbtn" id="tMore" aria-pressed="' + more + '">' + (more ? "Fewer columns" : "More columns") + "</button></div>" +
+    '<div class="vh vh0">Does any of it hold up?</div>' + sepBlockHtml(sep);
 
   html += '<div class="vh">By entry hour &mdash; your clock</div>' +
     timeTableHtml(hours.rows, "hour") +
@@ -1997,6 +2038,8 @@ function renderStatsTiming(body: HTMLElement, list: Trade[]) {
 
 
   body.innerHTML = html;
+  body.classList.toggle("tmore", more);
+  document.getElementById("tMore")?.addEventListener("click", () => { LS.set("pel_time_more", !more); renderStatsTiming(body, list); });
   wireTips(body);
 }
 
@@ -2013,10 +2056,15 @@ function renderStatsCal(body: HTMLElement, list: Trade[]) {
   $("calNext").addEventListener("click", () => { calMonth = shiftMonth(calMonth!, 1); renderCalendar(filtered()); });
 }
 
+// a round gridline step giving roughly `n` lines over `range`
+function niceStep(range: number, n: number): number {
+  const raw = Math.max(range, 1e-9) / n, p = Math.pow(10, Math.floor(Math.log10(raw))), f = raw / p;
+  return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * p;
+}
 function drawEquity(list: Trade[]) {
   const cv = document.getElementById("cEquity") as HTMLCanvasElement | null;
   if (!cv) return;
-  const g = fit(cv), ctx = g.ctx, W = g.w, H = g.h, pL = 42, pR = 12, pT = 12, pB = 20;
+  const g = fit(cv), ctx = g.ctx, W = g.w, H = g.h, pL = 42, pR = 12, pT = 12, pB = 26;
   ctx.clearRect(0, 0, W, H);
   // Resolved AND carrying a risk basis - the contract statsDeep states ("the
   // equity curve, drawdown, SQN, histogram and rolling window skip the
@@ -2037,16 +2085,36 @@ function drawEquity(list: Trade[]) {
   if (mx - mn < 1) { mx += 1; mn -= 1; }
   const X = (i: number) => pL + (pts.length < 2 ? 0 : i / (pts.length - 1)) * (W - pL - pR);
   const Y = (v: number) => pT + (1 - (v - mn) / (mx - mn)) * (H - pT - pB);
+  // gridlines + R scale, so a value can be read off the curve
+  const stp = niceStep(mx - mn, 4);
+  ctx.font = "10px " + css("--mono"); ctx.textAlign = "right"; ctx.lineWidth = 1;
+  for (let v = Math.ceil(mn / stp) * stp; v <= mx + 1e-9; v += stp) {
+    const y = Y(v);
+    ctx.strokeStyle = css("--line"); ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(W - pR, y); ctx.stroke();
+    ctx.fillStyle = css("--muted"); ctx.fillText((v > 0 ? "+" : "") + (Math.round(v * 10) / 10) + "R", pL - 5, y + 3);
+  }
   const zy = Y(0);
   ctx.strokeStyle = css("--line-strong"); ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
   ctx.beginPath(); ctx.moveTo(pL, zy); ctx.lineTo(W - pR, zy); ctx.stroke(); ctx.setLineDash([]);
+  // drawdowns: the gap between the running peak and the curve, shaded
+  ctx.fillStyle = css("--stop"); ctx.globalAlpha = 0.16; ctx.beginPath();
+  let pk = pts[0];
+  const peaks = pts.map((v) => (pk = Math.max(pk, v)));
+  peaks.forEach((v, i) => { const x = X(i), y = Y(v); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
+  for (let i = pts.length - 1; i >= 0; i--) ctx.lineTo(X(i), Y(pts[i]));
+  ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1;
+  // dates under the curve: first, middle, last trade
+  ctx.fillStyle = css("--muted"); ctx.font = "10px " + css("--mono");
+  const dAt = (i: number) => (arr[Math.max(0, Math.min(arr.length - 1, i - 1))].dateTime || "").slice(0, 10);
+  if (arr.length > 1) {
+    ctx.textAlign = "left"; ctx.fillText(dAt(1), pL, H - 8);
+    ctx.textAlign = "center"; ctx.fillText(dAt(Math.round(pts.length / 2)), (pL + W - pR) / 2, H - 8);
+    ctx.textAlign = "right"; ctx.fillText(dAt(pts.length - 1), W - pR, H - 8);
+  }
   ctx.strokeStyle = cum >= 0 ? css("--go") : css("--stop"); ctx.lineWidth = 2.4; ctx.beginPath();
   pts.forEach((v, i) => { const x = X(i), y = Y(v); if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y); });
   ctx.stroke();
   ctx.fillStyle = css("--ink"); ctx.beginPath(); ctx.arc(X(pts.length - 1), Y(cum), 3.5, 0, 7); ctx.fill();
-  ctx.fillStyle = css("--muted"); ctx.font = "10px " + css("--mono"); ctx.textAlign = "right";
-  ctx.fillText(mx.toFixed(1) + "R", pL - 4, pT + 8);
-  ctx.fillText(mn.toFixed(1) + "R", pL - 4, H - pB);
   ctx.textAlign = "left";
   ctx.fillStyle = cum >= 0 ? css("--go-ink") : css("--stop-ink");
   ctx.font = "700 11px " + css("--mono");
@@ -2065,7 +2133,7 @@ function drawEquity(list: Trade[]) {
 function drawRdist(rs: number[]) {
   const cv = document.getElementById("cRdist") as HTMLCanvasElement | null;
   if (!cv) return;
-  const g = fit(cv), ctx = g.ctx, W = g.w, H = g.h, pL = 8, pR = 8, pT = 10, pB = 20;
+  const g = fit(cv), ctx = g.ctx, W = g.w, H = g.h, pL = 30, pR = 8, pT = 10, pB = 20;
   ctx.clearRect(0, 0, W, H);
   if (!rs.length) {
     // a blank box reads as a rendering fault; say what is missing
@@ -2077,6 +2145,14 @@ function drawRdist(rs: number[]) {
   const counts = new Array(nb).fill(0) as number[];
   rs.forEach((r) => { const c = Math.max(lo, Math.min(hi - 0.001, r)); counts[Math.floor((c - lo) / step)]++; });
   const cmax = Math.max(...counts) || 1, bw = (W - pL - pR) / nb;
+  // trade-count scale on the left, so a bar's height is a number
+  const cs = Math.max(1, niceStep(cmax, 4));
+  ctx.font = "10px " + css("--mono"); ctx.textAlign = "right"; ctx.lineWidth = 1;
+  for (let c = cs; c <= cmax + 1e-9; c += cs) {
+    const y = H - pB - (c / cmax) * (H - pT - pB);
+    ctx.strokeStyle = css("--line"); ctx.beginPath(); ctx.moveTo(pL, y); ctx.lineTo(W - pR, y); ctx.stroke();
+    ctx.fillStyle = css("--muted"); ctx.fillText(String(Math.round(c)), pL - 5, y + 3);
+  }
   for (let i = 0; i < nb; i++) {
     const mid = lo + (i + 0.5) * step, bh = (counts[i] / cmax) * (H - pT - pB);
     ctx.fillStyle = mid > 0.0001 ? css("--go") : mid < -0.0001 ? css("--stop") : css("--muted");
@@ -2086,7 +2162,7 @@ function drawRdist(rs: number[]) {
   ctx.strokeStyle = css("--line-strong"); ctx.setLineDash([4, 4]);
   ctx.beginPath(); ctx.moveTo(zx, pT); ctx.lineTo(zx, H - pB); ctx.stroke(); ctx.setLineDash([]);
   ctx.fillStyle = css("--muted"); ctx.font = "10px " + css("--mono"); ctx.textAlign = "center";
-  ctx.fillText("-5R", pL + bw * 0.5, H - 6); ctx.fillText("0", zx, H - 6); ctx.fillText("+5R", W - pR - bw * 0.5, H - 6);
+  for (let v = -4; v <= 4; v += 2) ctx.fillText(v === 0 ? "0" : (v > 0 ? "+" : "") + v + "R", pL + ((v - lo) / (hi - lo)) * (W - pL - pR), H - 6);
   cv.classList.add("tippable");
   chartTip(cv, (x, _y, w) => {
     const i = Math.floor(((x - pL) / Math.max(1, w - pL - pR)) * nb);
@@ -4977,6 +5053,7 @@ function setJView(v: string) {
   document.querySelectorAll<HTMLButtonElement>(".subnav button[data-jview]").forEach((x) =>
     x.setAttribute("aria-pressed", x.getAttribute("data-jview") === v ? "true" : "false"));
   $("jv-log").classList.toggle("hide", v !== "log");
+  $("jSummary").classList.toggle("hide", v !== "log");
   $("jv-stats").classList.toggle("hide", v !== "stats");
   $("logTools").style.display = v === "log" ? "flex" : "none";
   syncUnitSeg();
@@ -5184,6 +5261,13 @@ export function wireJournal() {
   };
   ["fltText", "fltSym", "fltFrom", "fltTo"].forEach((id) => $(id).addEventListener("input", filterTyped));
   ["fltSetup", "fltOutcome", "fltDir", "fltSess", "fltMistake", "fltCond"].forEach((id) => $(id).addEventListener("input", () => renderJournal()));
+  const fltOpen = (o: boolean) => {
+    $("fltBar").classList.toggle("open", o);
+    $("fltToggle").setAttribute("aria-expanded", String(o));
+    LS.set("pel_flt_open", o);
+  };
+  fltOpen(LS.get<boolean>("pel_flt_open", false));
+  $("fltToggle").addEventListener("click", () => fltOpen(!$("fltBar").classList.contains("open")));
   $("jClearFilter").addEventListener("click", () => {
     ["fltText", "fltSetup", "fltOutcome", "fltDir", "fltSess", "fltMistake", "fltCond", "fltSym", "fltFrom", "fltTo"].forEach((id) => { ($(id) as HTMLInputElement).value = ""; });
     MODELF.clear();
@@ -5191,6 +5275,8 @@ export function wireJournal() {
     renderJournal();
   });
   $("jReveal").addEventListener("click", () => { if (TAURI) TAURI("reveal_data_dir"); });
+  document.querySelectorAll<HTMLButtonElement>("button[data-dens]").forEach((b) =>
+    b.addEventListener("click", () => { LOG_DENSE = b.getAttribute("data-dens") === "compact"; LS.set("pel_log_dense", LOG_DENSE); renderLog(); }));
   $("rgBind").addEventListener("click", bindFirm);
   $("rgUnbind").addEventListener("click", unbindFirm);
   $("rgPhaseEval").addEventListener("click", () => { if (ACCT !== "") setPhase(ACCT, "eval"); });

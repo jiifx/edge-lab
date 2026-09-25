@@ -210,7 +210,11 @@ const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   await shot(page, '20-journal-log', 980);
   await shot(page, '21-account-scope', '.bar:has(#jAcct)');
   await shot(page, '22-rule-guard', '#ruleGuard');
+  // the filter starts collapsed; open it for its close-up, then fold it back
+  await page.evaluate(() => { const b = document.getElementById('fltBar'); if (!b.classList.contains('open')) document.getElementById('fltToggle').click(); });
+  await wait(300);
   await shot(page, '24-filters', '.bar:has(#fltText)');
+  await page.evaluate(() => document.getElementById('fltToggle').click());
   await shot(page, '31-equity', '.bar:has(#jEqLine)');
 
   // the trade editor

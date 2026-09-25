@@ -817,7 +817,7 @@ function ensureBands(re: number, rf: number): EdgeBands | null {
 // the sub-line every banded headline carries, or a quiet "still measuring"
 function bandSub(b: Band | null, fmt: (v: number) => string, pending: string): string {
   if (!bandable()) return "";
-  if (!b) return '<div class="sub">' + pending + "</div>";
+  if (!b) { void pending; return '<div class="sub"><span class="skel"></span></div>'; }
   return '<div class="sub">' + bandText(b, fmt) + "</div>";
 }
 

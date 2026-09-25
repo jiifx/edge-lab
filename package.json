@@ -1,7 +1,7 @@
 {
   "name": "edge-lab",
   "private": true,
-  "version": "2.16.0",
+  "version": "2.17.0",
   "description": "Edge Lab - trading journal + edge simulator: is your edge real, and how much should you risk on it? Offline, file-based, open source.",
   "author": "jiidc",
   "license": "MIT",

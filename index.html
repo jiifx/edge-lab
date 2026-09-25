@@ -283,7 +283,22 @@
   .railbtns button:hover{border-color:var(--go);}
   .filters{padding:12px 14px;}
   .filters .fld{margin-bottom:10px;}
-  .sumtiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+  /* the log's headline strip, above the trades (it used to stack two-wide in the
+     rail, where it doubled the rail's height and repeated the Stats cards) */
+  .sumtiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:8px;margin:0 0 16px;}
+  .sumtiles .tile[style*="grid-column"]{padding:7px 12px;}
+  /* Performance tab sections */
+  .psec{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:0.16em;text-transform:uppercase;color:var(--go-ink);
+    border-top:1.5px solid var(--line);padding-top:16px;margin:26px 0 12px;}
+  .psec.first{border-top:none;padding-top:0;margin-top:4px;}
+  /* the filter collapses to one header line; the count says whether it is doing anything */
+  .fltToggle{display:flex;align-items:center;gap:8px;background:none;border:none;padding:0;cursor:pointer;color:inherit;font:inherit;}
+  .fcount{font-family:var(--mono);font-size:10px;font-weight:700;color:var(--go-ink);background:var(--go-bg);border:1.5px solid var(--go);padding:1px 6px;}
+  .fcount:empty{display:none;}
+  .fltToggle .chev{width:7px;height:7px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(-45deg);transition:transform .15s;}
+  .fltbar.open .fltToggle .chev{transform:rotate(45deg);}
+  .fltbar:not(.open) #fltBody{display:none;}
+  .fltbar:not(.open) .bar-head{border-bottom:none;}
   .sumtiles .tile{background:var(--panel);border:1.5px solid var(--line-strong);padding:10px 12px;min-width:0;}
   .sumtiles .tile .k{font-family:var(--mono);font-size:9.5px;text-transform:uppercase;letter-spacing:0.05em;color:var(--muted);}
   .sumtiles .tile .v{font-family:var(--mono);font-size:17px;font-weight:700;line-height:1.2;margin-top:2px;}
@@ -295,6 +310,20 @@
   .subnav button:last-child{border-right:none;} .subnav button[aria-pressed="true"]{background:var(--ink);color:var(--paper);}
   .dayhead{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:0.05em;margin:18px 0 8px;padding-bottom:5px;border-bottom:1.5px solid var(--line);}
   .dayhead:first-child{margin-top:0;}
+  /* day headers fold their trades away; long journals open with only the recent days showing */
+  .dayhead{cursor:pointer;user-select:none;}
+  .dayhead .dl{display:flex;align-items:center;gap:8px;}
+  .dayhead .dl::before{content:"";width:6px;height:6px;border-right:2px solid var(--muted);border-bottom:2px solid var(--muted);transform:rotate(45deg);margin:0 2px 3px 1px;transition:transform .15s;}
+  .dayhead.shut .dl::before{transform:rotate(-45deg);margin-bottom:0;}
+  .dayhead:hover .dl{color:var(--ink);}
+  .daygrp.shut{display:none;}
+  /* compact log: one line per trade */
+  #jv-log.compact .tradecard{grid-template-columns:1fr auto;padding:6px 12px;margin-bottom:4px;gap:10px;}
+  #jv-log.compact .tradecard.selmode{grid-template-columns:24px 1fr auto;}
+  #jv-log.compact .tradecard .thumb,#jv-log.compact .tradecard .thumbwrap,#jv-log.compact .tradecard .tags{display:none;}
+  #jv-log.compact .tradecard .sym{font-size:13px;}
+  #jv-log.compact .tradecard:hover{transform:none;}
+  #jv-log.compact .rpill{padding:3px 9px;font-size:12px;}
   .dayhead .dr{font-weight:700;text-transform:none;letter-spacing:0;font-size:12.5px;}
   .tradecard{display:grid;grid-template-columns:64px 1fr auto;gap:12px;align-items:center;border:1.5px solid var(--line-strong);background:var(--panel);padding:10px 12px;margin-bottom:8px;cursor:pointer;transition:border-color 0.12s, transform 0.12s;}
   .tradecard.selmode{grid-template-columns:24px 64px 1fr auto;}
@@ -629,6 +658,26 @@
   .segchip button{border:none;background:none;color:inherit;font-family:inherit;font-weight:700;cursor:pointer;font-size:13px;padding:0 2px;}
   .iconbtn:disabled,.btn:disabled{opacity:0.4;cursor:default;}
   .iconbtn:disabled:hover{border-color:var(--line-strong);}
+  /* ---- calmer frames (2.17): containers drop to 1px and inner boxes to the soft
+     line colour, so structure comes from spacing rather than stacked borders.
+     Controls (buttons, inputs, segmented switches) keep their stronger edge -
+     they are the things meant to look pressable. ---- */
+  .bar,.panel,.tabs,.hero,.verdictbox,.lswrap,.ddrisk,.plan-head,.sheet{border-width:1px;}
+  .statgrid .tile,.sumtiles .tile,.tradecard,.sessbw .sbx{border:1px solid var(--line);}
+  .statgrid .tile{padding:13px 14px;}
+  .statgrid{gap:10px;}
+  canvas{border:1px solid var(--line);}
+  .tradecard:hover{border-color:var(--go);}
+  .ddlad .tile.anchor{border-color:var(--go);}
+  /* Timing: secondary columns live behind "More columns" */
+  #st-body:not(.tmore) .x2{display:none;}
+  .tmorebar{display:flex;justify-content:flex-end;margin:0 0 -6px;}
+  /* loading: a faint pulsing bar where a number is still being computed, instead of a raw "--" */
+  .skel{display:inline-block;width:5em;max-width:100%;height:0.75em;background:var(--line);vertical-align:middle;animation:skel 1.1s ease-in-out infinite alternate;}
+  .big .skel{width:2.6em;height:0.6em;}
+  .chip .skel{width:6em;background:currentColor;opacity:0.35;}
+  @keyframes skel{from{opacity:0.35;}to{opacity:0.85;}}
+  .statgrid.g3{grid-template-columns:repeat(3,minmax(0,1fr));}
   @media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important;}}
 </style>
 </head>
@@ -653,7 +702,7 @@
     <aside class="rail">
       <div class="bar" id="edgeBar">
         <div class="bar-head"><span class="t">Your edge</span><span class="jtag">from journal</span></div>
-        <div class="bar-sum" id="sbSum">--</div>
+        <div class="bar-sum" id="sbSum"><span class="skel"></span></div>
         <div class="sb-ctrl"><div class="row"><span>Win rate %</span><input type="number" class="numin" id="nwr" min="0" max="100" step="1" value="55" aria-label="Win rate value"></div><input type="range" id="swr" min="0" max="100" step="1" value="55" aria-label="Win rate"></div>
         <div class="sb-ctrl"><div class="row"><span id="lpaylbl">Reward to risk (R)</span><input type="number" class="numin" id="npay" min="0.5" max="6" step="0.05" value="1" aria-label="Payoff value"></div><input type="range" id="spay" min="0.5" max="6" step="0.05" value="1" aria-label="Payoff">
           <div style="margin-top:8px"><div class="seg" role="group" aria-label="payoff type"><button data-pm="rr" aria-pressed="true">R:R</button><button data-pm="pf" aria-pressed="false">Profit factor</button></div></div></div>
@@ -676,7 +725,7 @@
           <div class="seg" role="group" aria-label="display unit" title="Switches the firm summary and the Funded tab between dollars and % of account. Decision, Firms and Portfolio always quote dollars - each says so on the tab."><button data-disp="$" aria-pressed="true">$</button><button data-disp="%" aria-pressed="false">%</button></div>
           <button class="barbtn" id="firmToggle">Edit rules</button>
         </div>
-        <div class="bar-sum" id="firmSum">--</div>
+        <div class="bar-sum" id="firmSum"><span class="skel"></span></div>
         <div class="firm-edit" id="firmEdit">
           <div class="fgrid">
             <div class="fld wide"><label for="fPreset">Preset</label><select id="fPreset"></select>
@@ -734,45 +783,45 @@
       <div class="panel" id="p-validate">
         <h2>Is your edge real?</h2>
 
-        <div class="note warn hide" id="vLooks"><p class="h">Multiple looks at one record</p><p class="nomarg" id="vLooksMsg">--</p></div>
-        <div class="note warn hide" id="vPool"><p class="h">Pooled accounts</p><p class="nomarg" id="vPoolMsg">--</p></div>
+        <div class="note warn hide" id="vLooks"><p class="h">Multiple looks at one record</p><p class="nomarg" id="vLooksMsg"><span class="skel"></span></p></div>
+        <div class="note warn hide" id="vPool"><p class="h">Pooled accounts</p><p class="nomarg" id="vPoolMsg"><span class="skel"></span></p></div>
         <div class="grid2">
           <div>
-            <div class="big" id="vVerdict">--</div>
-            <div class="vchipwrap"><span class="chip" id="vChip">--</span></div>
-            <p class="small vread" id="vRead">--</p>
+            <div class="big" id="vVerdict"><span class="skel"></span></div>
+            <div class="vchipwrap"><span class="chip" id="vChip"><span class="skel"></span></span></div>
+            <p class="small vread" id="vRead"><span class="skel"></span></p>
             <div class="kv">
-              <div class="r"><div class="k" title="Wins as a share of DECIDED trades - a 0R scratch is neither a win nor a loss, so it sits outside this rate and outside its interval. Same definition as the journal's Stats tab.">Win rate, decided</div><div class="v" id="vWR">--</div></div>
-              <div class="r"><div class="k" title="Average R per trade across every resolved trade, scratches included - a 0R is real data worth exactly zero.">Expectancy</div><div class="v" id="vEV">--</div></div>
-              <div class="r"><div class="k">Profit factor</div><div class="v" id="vPF">--</div></div>
-              <div class="r"><div class="k" title="Trades logged, and how many INDEPENDENT observations they amount to. Trades sharing a day, a setup or an account are not separate draws, and every interval on this screen is computed from the effective figure rather than the raw count.">Sample</div><div class="v" id="vN">--</div></div>
+              <div class="r"><div class="k" title="Wins as a share of DECIDED trades - a 0R scratch is neither a win nor a loss, so it sits outside this rate and outside its interval. Same definition as the journal's Stats tab.">Win rate, decided</div><div class="v" id="vWR"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="Average R per trade across every resolved trade, scratches included - a 0R is real data worth exactly zero.">Expectancy</div><div class="v" id="vEV"><span class="skel"></span></div></div>
+              <div class="r"><div class="k">Profit factor</div><div class="v" id="vPF"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="Trades logged, and how many INDEPENDENT observations they amount to. Trades sharing a day, a setup or an account are not separate draws, and every interval on this screen is computed from the effective figure rather than the raw count.">Sample</div><div class="v" id="vN"><span class="skel"></span></div></div>
             </div>
-            <p class="small muted vcap" id="vNNote">--</p>
+            <p class="small muted vcap" id="vNNote"><span class="skel"></span></p>
           </div>
           <div><div class="vh vh0">Where your true expectancy could be</div><canvas id="cBell" height="220"></canvas>
-            <p class="small muted vcap" id="vBellCap">--</p></div>
+            <p class="small muted vcap" id="vBellCap"><span class="skel"></span></p></div>
         </div>
 
         <div class="vh">Drawdown to plan for</div>
 
         <div class="grid2">
           <div class="controls">
-            <div class="ctrl"><div class="row"><span title="How many trades ahead you are planning for. Drawdown is a maximum over a run, so it grows with the length of the run - the same edge draws about 5R over 100 trades and 9R over 1,000.">Horizon (trades)</span><input type="number" class="numin" id="nHz" min="50" max="2000" step="50" value="250" aria-label="Drawdown horizon"></div><input type="range" id="sHz" min="50" max="2000" step="50" value="250" aria-label="Drawdown horizon slider"><div class="sub" id="lHzSub">--</div></div>
-            <div class="ctrl"><div class="row"><span title="How much of the account one full loss costs. Only used to turn the R figures into a percentage of the account and to answer the sizing question below.">Account drawdown limit %</span><input type="number" class="numin" id="nDDLim" min="0" max="50" step="0.5" value="0" aria-label="Account drawdown limit"></div><div class="sub" id="lDDLimSub">--</div></div>
+            <div class="ctrl"><div class="row"><span title="How many trades ahead you are planning for. Drawdown is a maximum over a run, so it grows with the length of the run - the same edge draws about 5R over 100 trades and 9R over 1,000.">Horizon (trades)</span><input type="number" class="numin" id="nHz" min="50" max="2000" step="50" value="250" aria-label="Drawdown horizon"></div><input type="range" id="sHz" min="50" max="2000" step="50" value="250" aria-label="Drawdown horizon slider"><div class="sub" id="lHzSub"><span class="skel"></span></div></div>
+            <div class="ctrl"><div class="row"><span title="How much of the account one full loss costs. Only used to turn the R figures into a percentage of the account and to answer the sizing question below.">Account drawdown limit %</span><input type="number" class="numin" id="nDDLim" min="0" max="50" step="0.5" value="0" aria-label="Account drawdown limit"></div><div class="sub" id="lDDLimSub"><span class="skel"></span></div></div>
             <div class="fld"><label>Resampling</label>
               <div class="seg" role="group" aria-label="Resampling method"><button type="button" data-ddm="block" aria-pressed="true" title="Stationary block bootstrap: keeps runs of consecutive trades intact, so clustered losses survive the resampling. The block length is fitted from your own record's autocorrelation.">Block (fitted)</button><button type="button" data-ddm="iid" aria-pressed="false" title="Plain bootstrap: every trade drawn independently. Destroys any serial structure, and therefore understates drawdown on a record with clustered losses.">Independent</button></div>
-              <div class="sub" id="lDDMethod">--</div></div>
+              <div class="sub" id="lDDMethod"><span class="skel"></span></div></div>
             <div class="fld"><label class="ddcheck"><input type="checkbox" id="cbOvershoot" checked> <span title="On: losses are resampled at the magnitudes you actually logged, so a stop that filled at -1.4R can happen again. Off: every loss is drawn at your average loss exactly. The model never invents a tail - if your logged losses are all the same size, this changes nothing and says so.">Use realised loss sizes</span></label>
-              <div class="sub" id="lOvershoot">--</div></div>
+              <div class="sub" id="lOvershoot"><span class="skel"></span></div></div>
           </div>
           <div>
             <div class="statgrid" id="ddLadder"></div>
             <canvas id="cDD" height="210"></canvas>
-            <p class="small muted vcap" id="ddCurveCap">--</p>
+            <p class="small muted vcap" id="ddCurveCap"><span class="skel"></span></p>
           </div>
         </div>
         <div id="ddRisk"></div>
-        <div class="note hide" id="vBaseline"><p class="h">The full record, for comparison</p><p class="nomarg" id="vBaselineMsg">--</p></div>
+        <div class="note hide" id="vBaseline"><p class="h">The full record, for comparison</p><p class="nomarg" id="vBaselineMsg"><span class="skel"></span></p></div>
       </div>
 
       <div class="panel hide" id="p-challenge">
@@ -780,17 +829,17 @@
 
         <div class="grid2">
           <div class="controls">
-            <div class="ctrl"><div class="row"><span>Risk per trade %</span><input type="number" class="numin" id="nrc" min="0.1" max="3" step="0.05" value="0.75" aria-label="Challenge risk value"></div><input type="range" id="src" min="0.1" max="3" step="0.05" value="0.75" aria-label="Challenge risk per trade"><div class="sub" id="lrcSub">--</div></div>
-            <div class="big" id="cPass">--<span class="u">chance to pass</span></div>
+            <div class="ctrl"><div class="row"><span>Risk per trade %</span><input type="number" class="numin" id="nrc" min="0.1" max="3" step="0.05" value="0.75" aria-label="Challenge risk value"></div><input type="range" id="src" min="0.1" max="3" step="0.05" value="0.75" aria-label="Challenge risk per trade"><div class="sub" id="lrcSub"><span class="skel"></span></div></div>
+            <div class="big" id="cPass"><span class="skel"></span><span class="u">chance to pass</span></div>
             <div class="mono bandline" id="cPassBand"></div>
             <div class="meter"><i id="cMeter"></i></div>
-            <span class="chip" id="cChip">--</span>
+            <span class="chip" id="cChip"><span class="skel"></span></span>
             <div class="kv" style="margin-top:12px">
-              <div class="r" id="cRowP1"><div class="k" title="Of every attempt started, the share that clears the first target without breaching a rule.">Pass phase 1</div><div class="v" id="cP1">--</div></div>
-              <div class="r" id="cRowP2"><div class="k" title="Of the attempts that GET to phase 2, the share that clear it. Phase 2 starts from a fresh balance with the full drawdown room again, so it is a second independent gate - which is why the two multiply into the headline rather than averaging.">Then pass phase 2</div><div class="v" id="cP2">--</div></div>
-              <div class="r"><div class="k" title="Trading days, not calendar days, and for a 2-step firm it is the TOTAL across both phases. The time limit is applied per phase, so this total can exceed it without any rule being broken.">Typical trading days to pass</div><div class="v" id="cDays">--</div></div>
+              <div class="r" id="cRowP1"><div class="k" title="Of every attempt started, the share that clears the first target without breaching a rule.">Pass phase 1</div><div class="v" id="cP1"><span class="skel"></span></div></div>
+              <div class="r" id="cRowP2"><div class="k" title="Of the attempts that GET to phase 2, the share that clear it. Phase 2 starts from a fresh balance with the full drawdown room again, so it is a second independent gate - which is why the two multiply into the headline rather than averaging.">Then pass phase 2</div><div class="v" id="cP2"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="Trading days, not calendar days, and for a 2-step firm it is the TOTAL across both phases. The time limit is applied per phase, so this total can exceed it without any rule being broken.">Typical trading days to pass</div><div class="v" id="cDays"><span class="skel"></span></div></div>
             </div>
-            <p class="small muted" id="cRead" style="margin-top:10px">--</p>
+            <p class="small muted" id="cRead" style="margin-top:10px"><span class="skel"></span></p>
           </div>
           <div>
             <div class="vh" style="display:flex;justify-content:space-between;align-items:baseline;gap:8px"><span id="cPathsTitle">simulated attempts</span>
@@ -814,18 +863,18 @@
 
         <div class="grid2">
           <div class="controls">
-            <div class="ctrl"><div class="row"><span>Risk per trade %</span><input type="number" class="numin" id="nrf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk value"></div><input type="range" id="srf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk per trade"><div class="sub" id="lrfSub">--</div></div>
+            <div class="ctrl"><div class="row"><span>Risk per trade %</span><input type="number" class="numin" id="nrf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk value"></div><input type="range" id="srf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk per trade"><div class="sub" id="lrfSub"><span class="skel"></span></div></div>
             <div class="ctrl"><div class="row"><span id="lGoalLbl" title="What you want this account to pay you. The model withdraws in fixed 5%-of-account chunks, so the slider moves in whole payouts. 0 = off.">Payout goal $</span><input type="number" class="numin" id="nGoal" min="0" step="250" value="0" aria-label="Payout goal in dollars"></div><input type="range" id="sGoal" min="0" max="24" step="1" value="0" aria-label="Payout goal in whole payouts">
               <div style="margin-top:8px"><div class="seg" role="group" aria-label="Goal period"><button type="button" data-goalp="mo" aria-pressed="false">Per month</button><button type="button" data-goalp="yr" aria-pressed="true">Per year</button></div></div>
               <div class="sub" id="lGoalSub">0 = off</div></div>
             <div class="kv" style="margin-top:6px">
-              <div class="r"><div class="k" title="Chance a funded account reaches at least one withdrawal inside the year. This one DOES price the firm's first-payout waiting period and minimum, so it matches the Decision tab.">Chance of a payout</div><div class="v" id="fPayAny">--</div></div>
-              <div class="r"><div class="k" title="How many withdrawals land in a year, assuming the app's uniform sweep habit. Median is the typical account; the mean is dragged up by the long-lived ones.">Payouts / year</div><div class="v" id="fPays">--</div></div>
-              <div class="r"><div class="k" title="Cash actually withdrawn over the year, averaged across every account including the ones that blew up. Whatever is left sitting in the account at the end is collateral, not payout, so it is not counted.">Profit / year</div><div class="v" id="fProfit">--</div></div>
-              <div class="r"><div class="k" title="Share of accounts still alive after a full trading year - 252 trading days at your trades-per-day setting - without hitting the drawdown floor or the daily loss limit.">Survival</div><div class="v" id="fSurv">--</div></div>
-              <div class="r hide" id="fFateRow"><div class="k" title="The Profit/year figure above is a mean over every account, and at low survival it is carried by a minority of long-lived ones. This is the median cash an account that BREACHES inside the year has already withdrawn before it dies - the money the likely outcome actually pays you - beside what a surviving account banks over the year.">Breached banks</div><div class="v" id="fFate">--</div></div>
-              <div class="r"><div class="k" title="The largest size whose profit is within 3% of the best AND where at least 85 accounts in 100 still survive the year. Sizes inside the flat top pay the same but do NOT survive the same - profit is flat across it, risk of ruin is not, which is why this picks the survivable end rather than the profitable one.">Best size</div><div class="v" id="fPeak">--</div></div>
-              <div class="r hide" id="fGoalRow"><div class="k" title="The SMALLEST size whose odds of reaching your goal are within 3% of the best size's odds. Smaller means more survival for the same shot at the goal.">Smallest size for goal</div><div class="v" id="fGoal">--</div></div>
+              <div class="r"><div class="k" title="Chance a funded account reaches at least one withdrawal inside the year. This one DOES price the firm's first-payout waiting period and minimum, so it matches the Decision tab.">Chance of a payout</div><div class="v" id="fPayAny"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="How many withdrawals land in a year, assuming the app's uniform sweep habit. Median is the typical account; the mean is dragged up by the long-lived ones.">Payouts / year</div><div class="v" id="fPays"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="Cash actually withdrawn over the year, averaged across every account including the ones that blew up. Whatever is left sitting in the account at the end is collateral, not payout, so it is not counted.">Profit / year</div><div class="v" id="fProfit"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="Share of accounts still alive after a full trading year - 252 trading days at your trades-per-day setting - without hitting the drawdown floor or the daily loss limit.">Survival</div><div class="v" id="fSurv"><span class="skel"></span></div></div>
+              <div class="r hide" id="fFateRow"><div class="k" title="The Profit/year figure above is a mean over every account, and at low survival it is carried by a minority of long-lived ones. This is the median cash an account that BREACHES inside the year has already withdrawn before it dies - the money the likely outcome actually pays you - beside what a surviving account banks over the year.">Breached banks</div><div class="v" id="fFate"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="The largest size whose profit is within 3% of the best AND where at least 85 accounts in 100 still survive the year. Sizes inside the flat top pay the same but do NOT survive the same - profit is flat across it, risk of ruin is not, which is why this picks the survivable end rather than the profitable one.">Best size</div><div class="v" id="fPeak"><span class="skel"></span></div></div>
+              <div class="r hide" id="fGoalRow"><div class="k" title="The SMALLEST size whose odds of reaching your goal are within 3% of the best size's odds. Smaller means more survival for the same shot at the goal.">Smallest size for goal</div><div class="v" id="fGoal"><span class="skel"></span></div></div>
             </div>
           </div>
           <div><div class="vh">Profit per year vs size (your edge, this firm)</div><canvas id="cGrowth" height="230"></canvas>
@@ -838,26 +887,26 @@
 
         <div class="grid2">
           <div class="controls">
-            <div class="ctrl"><div class="row"><span title="How much of the account you lose when ONE trade during the evaluation hits its stop. Everything on this tab is computed at this size.">Eval risk / trade %</span><input type="number" class="numin" id="nrde" min="0.1" max="3" step="0.05" value="0.75" aria-label="Eval risk value"></div><input type="range" id="srde" min="0.1" max="3" step="0.05" value="0.75" aria-label="Eval risk"><div class="sub" id="lrdeSub">--</div></div>
-            <div class="ctrl"><div class="row"><span title="The same thing once funded. Most traders size down after passing; the payout figures here run at this size.">Funded risk / trade %</span><input type="number" class="numin" id="nrdf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk value"></div><input type="range" id="srdf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk"><div class="sub" id="lrdfSub">--</div></div>
+            <div class="ctrl"><div class="row"><span title="How much of the account you lose when ONE trade during the evaluation hits its stop. Everything on this tab is computed at this size.">Eval risk / trade %</span><input type="number" class="numin" id="nrde" min="0.1" max="3" step="0.05" value="0.75" aria-label="Eval risk value"></div><input type="range" id="srde" min="0.1" max="3" step="0.05" value="0.75" aria-label="Eval risk"><div class="sub" id="lrdeSub"><span class="skel"></span></div></div>
+            <div class="ctrl"><div class="row"><span title="The same thing once funded. Most traders size down after passing; the payout figures here run at this size.">Funded risk / trade %</span><input type="number" class="numin" id="nrdf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk value"></div><input type="range" id="srdf" min="0.1" max="3" step="0.05" value="0.5" aria-label="Funded risk"><div class="sub" id="lrdfSub"><span class="skel"></span></div></div>
             <div class="kv" style="margin-top:6px">
-              <div class="r"><div class="k">Chance to pass</div><div class="v" id="dPass">--</div></div>
-              <div class="r"><div class="k">Expected fees to fund</div><div class="v" id="dFees">--</div></div>
-              <div class="r"><div class="k" title="The eval size that reaches a funded account for the least money, measured on this firm rather than assumed &mdash; and where a range of sizes costs the same, the quickest of them. The cost already prices re-attempting until you pass, so a size that washes out more often shows up here as a bigger number. Under a time limit or a min-days rule a SMALLER size costs more, not less: slower attempts run out of room before they reach the target.">Best eval size</div><div class="v" id="dEvalSize">--</div></div>
-              <div class="r"><div class="k">First-year payout</div><div class="v" id="dPayout">--</div></div>
-              <div class="r"><div class="k" title="Chance one purchase ends with money actually withdrawn: passing every phase AND reaching a first payout inside the funded year.">Pass &rarr; paid</div><div class="v" id="dPaid">--</div></div>
-              <div class="r"><div class="k" title="Where you stand the day you take your first withdrawal: the odds a funded account gets there, times one withdrawal after the split, minus the cost to get funded. That cost already prices re-attempting until you pass, so this uses the odds once funded rather than the end-to-end figure.">Net @ 1st payout</div><div class="v" id="dEvFirst">--</div></div>
+              <div class="r"><div class="k">Chance to pass</div><div class="v" id="dPass"><span class="skel"></span></div></div>
+              <div class="r"><div class="k">Expected fees to fund</div><div class="v" id="dFees"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="The eval size that reaches a funded account for the least money, measured on this firm rather than assumed &mdash; and where a range of sizes costs the same, the quickest of them. The cost already prices re-attempting until you pass, so a size that washes out more often shows up here as a bigger number. Under a time limit or a min-days rule a SMALLER size costs more, not less: slower attempts run out of room before they reach the target.">Best eval size</div><div class="v" id="dEvalSize"><span class="skel"></span></div></div>
+              <div class="r"><div class="k">First-year payout</div><div class="v" id="dPayout"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="Chance one purchase ends with money actually withdrawn: passing every phase AND reaching a first payout inside the funded year.">Pass &rarr; paid</div><div class="v" id="dPaid"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="Where you stand the day you take your first withdrawal: the odds a funded account gets there, times one withdrawal after the split, minus the cost to get funded. That cost already prices re-attempting until you pass, so this uses the odds once funded rather than the end-to-end figure.">Net @ 1st payout</div><div class="v" id="dEvFirst"><span class="skel"></span></div></div>
             </div>
           </div>
           <div>
             <div class="verdictbox">
               <div class="vh" style="margin:0 0 6px">Net expected value of buying in</div>
-              <div class="big" id="dEV">--</div>
+              <div class="big" id="dEV"><span class="skel"></span></div>
               <div class="mono bandline" id="dEVBand"></div>
-              <div style="margin-top:8px"><span class="chip" id="dChip">--</span></div>
-              <p class="small" id="dRead" style="margin:10px 0 0">--</p>
+              <div style="margin-top:8px"><span class="chip" id="dChip"><span class="skel"></span></span></div>
+              <p class="small" id="dRead" style="margin:10px 0 0"><span class="skel"></span></p>
             </div>
-            <div class="note" id="dEdgeNote"><p class="h">Reminder</p><p style="margin:0" id="dEdgeMsg">--</p></div>
+            <div class="note" id="dEdgeNote"><p class="h">Reminder</p><p style="margin:0" id="dEdgeMsg"><span class="skel"></span></p></div>
           </div>
         </div>
         <div class="vh" style="margin-top:18px">Budget to funded</div>
@@ -907,9 +956,9 @@
         </div>
       </div>
 
-      <div class="bar">
-        <div class="bar-head"><span class="t">Filter</span><button class="barbtn" id="jClearFilter">Reset</button></div>
-        <div class="filters">
+      <div class="bar fltbar" id="fltBar">
+        <div class="bar-head"><button type="button" class="fltToggle" id="fltToggle" aria-expanded="false" aria-controls="fltBody"><span class="t">Filter</span><span class="fcount" id="fltCount"></span><span class="chev" aria-hidden="true"></span></button><button class="barbtn" id="jClearFilter">Reset</button></div>
+        <div class="filters" id="fltBody">
           <div class="fld"><label for="fltText">Search notes &amp; plan</label><input type="text" id="fltText" placeholder="anything you wrote..."></div>
           <div class="fld"><label for="fltSetup">Setup</label><select id="fltSetup"><option value="">All setups</option></select></div>
           <div class="fld" id="fltModelWrap"><label>Entry model <span class="muted" id="fltModelHint"></span></label><div class="chipset mini" id="fltModelBox"></div><p class="small muted mono" id="fltModelStat" style="margin:0;font-size:11px;line-height:1.5"></p></div>
@@ -924,7 +973,6 @@
         </div>
       </div>
 
-      <div class="sumtiles" id="jSummary"></div>
       <p class="small muted" id="jStorageNote" style="margin:2px 2px 0"></p>
       <p class="mono muted" style="margin:2px 2px 0;font-size:10.5px;letter-spacing:0.05em">produced by <b>jiidc</b> &middot; &copy; 2026 jiidc &middot; MIT</p>
     </aside>
@@ -942,12 +990,14 @@
             <button data-unit="both" aria-pressed="false" title="Show both">Both</button>
           </span>
           <span id="logTools" style="display:flex;gap:8px">
+          <span class="seg" role="group" aria-label="Log density"><button type="button" data-dens="cards" aria-pressed="true">Cards</button><button type="button" data-dens="compact" aria-pressed="false">Compact</button></span>
           <button class="barbtn" id="jSelMode">Select</button>
           <button class="barbtn hide" id="jSelAll">All</button>
           <button class="barbtn hide" id="jDelSel" style="border-color:var(--stop);color:var(--stop-ink)">Delete (0)</button>
           </span>
         </div>
       </div>
+      <div class="sumtiles" id="jSummary"></div>
       <div id="jv-log"></div>
       <div class="hide" id="jv-stats"></div>
     </main>

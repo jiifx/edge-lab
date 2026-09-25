@@ -83,7 +83,7 @@
     The app itself shows only the numbers. The explanations are in this manual.
   </p>
   <div class="meta">
-    Version 2.16.0 &nbsp;·&nbsp; Windows and macOS &nbsp;·&nbsp; produced by jiidc &nbsp;·&nbsp; MIT licensed<br>
+    Version 2.17.0 &nbsp;·&nbsp; Windows and macOS &nbsp;·&nbsp; produced by jiidc &nbsp;·&nbsp; MIT licensed<br>
     Offline: no account, no telemetry, no network. Your journal stays on your machine.<br>
     Open this manual any time from the <b>?</b> button at the top right of the app.
   </div>
@@ -233,7 +233,10 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 
 <h3>7. The trade log</h3>
 <ul>
-  <li>Trades are grouped by day with a daily total. Click a trade to open its detail view.</li>
+  <li>The strip above the log shows the scope's headline numbers: trades, win rate, expectancy, profit factor, totals, balance and, when a firm applies, the prop odds.</li>
+  <li>Trades are grouped by day with a daily total. <b>Click a day header to fold or unfold it.</b> On a long journal only the 15 most recent days start open.</li>
+  <li><span class="ui">Cards</span> / <span class="ui">Compact</span>: cards show the screenshot and tags; compact shows one line per trade.</li>
+  <li>Click a trade to open its detail view.</li>
   <li><b>Detail view:</b> <span class="kbd">←</span> / <span class="kbd">→</span> steps through trades. <span class="ui">Edit</span> opens the editor. Click a screenshot to zoom: scroll to zoom, drag to pan, double-click to fit.</li>
   <li><b>Unit switch</b> (top right): show results in <span class="ui">R</span>, <span class="ui">P&amp;L</span> or <span class="ui">Both</span>. P&amp;L needs dollars turned on (section 9).</li>
   <li><b>Bulk delete:</b> <span class="ui">Select</span>, tick trades or use <span class="ui">All</span>, then <span class="ui">Delete (n)</span>.</li>
@@ -241,7 +244,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 
 <h3>8. Filters</h3>
 <figure><img src="shots/24-filters.png" class="small" alt="Filters"><figcaption>The Filter panel.</figcaption></figure>
-<p>Filters narrow the log <b>and every Stats tab</b>. Combine any of: text search (notes and plan), setup, entry model, outcome, direction, session, mistake tag, market condition, instrument, date range.
+<p>The Filter panel is folded by default: click <span class="ui">Filter</span> to open it. When filters are on, the header shows how many (e.g. <b>2 on</b>). Filters narrow the log <b>and every Stats tab</b>. Combine any of: text search (notes and plan), setup, entry model, outcome, direction, session, mistake tag, market condition, instrument, date range.
 <span class="ui">Reset</span> clears them all.</p>
 <p>Clicking a row in the Edge report adds a <b>segment filter</b> chip above the log. Click its &times; to remove it.</p>
 
@@ -259,7 +262,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 
 <h3>10. Rule guard</h3>
 <figure><img src="shots/22-rule-guard.png" class="small" alt="Rule guard"><figcaption>Rule guard on a bound account.</figcaption></figure>
-<p>Rule guard shows how far this account is from breaking its firm's rules: drawdown headroom, today's loss against the daily limit, distance to target, min days and consistency.</p>
+<p>Rule guard shows how far this account is from breaking its firm's rules. The drawdown and daily-loss bars show the <b>room left</b>: full and green when safe, shrinking and turning amber, then red, near the limit. The other bars fill as you progress. It covers drawdown headroom, today's loss against the daily limit, distance to target, min days and consistency.</p>
 <ol class="steps">
   <li>Set the firm's rules in the Simulator (section 18).</li>
   <li>In Journal, pick <b>one</b> account in Account scope.</li>
@@ -275,6 +278,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <figure><img src="shots/26-stats-performance.png" alt="Performance"><figcaption>Stats → Performance.</figcaption></figure>
 <h4>How to read it</h4>
 <ul>
+  <li>The page is in sections: <b>Edge</b>, <b>Results</b>, <b>Risk</b>, <b>Equity &amp; distribution</b>, <b>Exits &amp; targets</b> and, last, <b>Prop odds</b>.</li>
   <li><b>The four headline cards</b> are the edge: Expectancy, Win rate, Reward : risk, Profit factor. Expectancy is the one that grows the account. Win rate and reward:risk only mean something together.</li>
   <li><b>Bands</b> (95% CI) under a number show how sure the sample is. If the expectancy band touches 0, luck is not ruled out yet.</li>
   <li><b>The tile grid</b> adds trades, totals, balance, SQN, volatility, deepest drawdown, streaks, Kelly, recent form, best-day share and tail ratio. Each is defined in the glossary. These unlock at 8+ resolved trades.</li>
@@ -284,7 +288,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <p>Your journaled trades, resampled against the firm (the bound firm, or the Simulator's firm if none is bound), at the Decision tab's eval and funded risk. It shows pass odds, attempts and fees to fund, the chance to stay funded a year, the chance a purchase ends in a payout, expected payout, and sample quality. It needs 10 resolved trades. Under 50 trades, treat every range as directional.</p>
 <h4>Charts</h4>
 <ul>
-  <li><b>Equity curve</b> in R, oldest to newest. <b>R-multiple distribution</b>: red losses, green wins.</li>
+  <li><b>Equity curve</b> in R, oldest to newest, with dates along the bottom. The red shading is each drawdown below the running peak. <b>R-multiple distribution</b>: trade counts per half-R bucket, red losses, green wins.</li>
   <li><b>Rolling expectancy</b> over a 30-trade window. A falling line means the edge is drifting or the market changed.</li>
 </ul>
 <h4>Exit management (needs MFE/MAE on 30+ trades)</h4>
@@ -324,6 +328,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <p>The box at the top tests whether any one bucket really differs from the rest. It needs 30+ trades on an axis in 2+ buckets of 4+. It reports the most striking bucket, its gap against the rest, and the <b>noise floor</b>: the gap that picking the best of that many buckets produces on a record with no timing edge at all. <b>Stands out</b> means the gap cleared both the 90% band and the noise floor. <b>Nothing stands out yet</b> means it didn't. Log more trades in the thin buckets rather than changing your trading.</p>
 <p>Even when a bucket stands out, an hour is <i>when</i> you traded, not <i>what</i>. Check the setup, session and direction mix inside it on the Edge report before changing anything.</p>
 <h4>Columns</h4>
+<p>Each table shows n, win%, RR, expectancy and total R by default. <span class="ui">More columns</span> adds holding times, planned R:R, kept, and ran-to.</p>
 <table>
   <tr><td class="k">win% (small range)</td><td>Win rate and its range.</td></tr>
   <tr><td class="k">RR</td><td>Average winner ÷ average loser, in R.</td></tr>
@@ -372,7 +377,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <li>Turn on <span class="ui">Use my journal</span>. It needs 10+ resolved trades with an R basis.</li>
   <li>Pick the <b>Edge source</b>: one account, or all.</li>
 </ol>
-<p>Every tab now resamples your real trades instead of the sliders. Trades without a stop or Risk $ are left out; the line under the switch says how many.</p>
+<p>Every tab now resamples your real trades instead of the sliders. The panel shows a <b>FROM JOURNAL</b> tag and its inputs lock, showing your record's numbers. Trades without a stop or Risk $ are left out; the line under the switch says how many.</p>
 <div class="note tip"><p class="h">Several accounts, one signal</p>
 <p>If you fire the same trades into several accounts, pooling them counts one decision two or three times and makes every range look more certain than it is. Set Edge source to a single account. Validate flags pooled and mirrored trades.</p></div>
 
