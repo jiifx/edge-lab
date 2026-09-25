@@ -888,7 +888,18 @@ export function computeRraw(t: TradeLike): number {
 // ±1R, which collapses Kelly's payoff ratio to exactly 1.0 and lets the prop-odds
 // Monte Carlo resample fabricated payoffs. Broker CSVs hit this on every row,
 // since they carry no stop and no per-trade risk.
+// An R past this is not a measurement: it is a typo (an extra zero in Risk $),
+// or a stop a hair's width from the entry. One such row used to turn the
+// Performance ranges into -Infinity..+Infinity, print $NaN, and freeze the
+// simulator outright. It is excluded from the R statistics exactly like a
+// trade with no stop, and counted as such on screen.
+export const R_MAX = 1000;
 export function hasRBasis(t: TradeLike): boolean {
+  if (!hasRBasisRaw(t)) return false;
+  const r = computeR(t);
+  return isFinite(r) && Math.abs(r) <= R_MAX;
+}
+function hasRBasisRaw(t: TradeLike): boolean {
   if (hasNum(t.R) && (t.Rmanual || t.Rmanual === undefined)) return true;
   if (hasNum(t.riskAmt) && Number(t.riskAmt) > 0 && hasNum(t.pnl)) return true;
   if (hasNum(t.entry) && hasNum(t.stop) && hasNum(t.exit)) {

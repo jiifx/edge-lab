@@ -55,6 +55,12 @@ jobs:
       - name: Build NSIS installer
         run: npx tauri build --bundles nsis
 
+      # The real desktop app, not the browser build: the bundled manual, Save as
+      # image, Check for updates, the backup-before-Replace and its Undo, backup
+      # pruning. Runs the exe just built against a throwaway data folder.
+      - name: Desktop app test (Tauri + WebView2)
+        run: node tests/desktop.cjs
+
       # winget resolves the silent uninstall from QuietUninstallString, which
       # Tauri's template does not write - src-tauri/windows/hooks.nsh adds it.
       # Silent-install and read the key back: the real behaviour, not a byte scan.

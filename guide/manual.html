@@ -185,7 +185,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <li><b>Create:</b> <span class="ui">+ New</span>, type a name, confirm.</li>
   <li><b>Switch:</b> pick it in the Account scope dropdown. The log, stats, filters, equity and odds all follow the scope.</li>
   <li><b>All accounts:</b> combines everything. Useful for overall stats. Rule guard needs a single account.</li>
-  <li><b>Delete:</b> select the account, click <span class="ui">Delete</span>, confirm. Its trades and screenshots are removed <b>permanently</b>. Export a backup first.</li>
+  <li><b>Delete:</b> select the account, click <span class="ui">Delete</span>, confirm. Its trades go at once; click <span class="ui">Undo</span> in the message that appears to bring the account back. When the message closes, its trades and screenshots are gone for good (unless you have a backup).</li>
 </ul>
 
 <h3>6. Logging a trade</h3>
@@ -357,9 +357,24 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <ul>
   <li><b>Desktop app:</b> the journal is <code>journal.db</code> (SQLite) plus screenshots in <code>images\</code>, inside <code>Documents\PropEdgeLab\</code>. <span class="ui">Open folder</span> in the rail reveals it.</li>
   <li><b>Browser version:</b> trades live in that browser only. Export backups often.</li>
-  <li><span class="ui">Export backup</span> writes a JSON file of every trade and setting. The app also makes a silent weekly backup into <code>exports\</code>.</li>
-  <li><span class="ui">Import</span> reads one of those backup files, or a CSV (below). If the journal already has trades, you choose to <b>Merge</b> or <b>Replace</b> it.</li>
+  <li><span class="ui">Export backup</span> writes a JSON file of every trade, setting and screenshot. The desktop app also makes a silent weekly backup into <code>exports\</code>.</li>
+  <li><span class="ui">Import</span> reads one of those backup files, or a CSV (below). If the journal already has trades, you choose:
+    <ul>
+      <li><b>Merge</b> adds the file's trades to yours. Trades you already have are skipped, and your accounts' settings (starting balance, R value, phase) are kept; the file only adds settings for accounts you do not have.</li>
+      <li><b>Replace</b> removes your trades and keeps only the file's. A copy of your current journal is saved <b>first</b> (desktop: <code>exports\before-replace-&hellip;.json</code>; browser: a download). If that copy cannot be saved, nothing is replaced. For 20 seconds afterwards, <span class="ui">Undo</span> puts your journal back.</li>
+    </ul></li>
   <li><span class="ui">Load sample journal</span> appears on an empty journal. It imports the 1,000-trade sample.</li>
+</ul>
+<h4>The exports folder</h4>
+<table>
+  <tr><th>File</th><th>Written by</th><th>Kept</th></tr>
+  <tr><td class="k"><code>prop-edge-lab-journal-&hellip;.json</code></td><td>Export backup</td><td>Always. The app never deletes these.</td></tr>
+  <tr><td class="k"><code>auto-backup-&hellip;.json</code></td><td>The weekly automatic backup</td><td>The newest 8</td></tr>
+  <tr><td class="k"><code>before-replace-&hellip;.json</code></td><td>Import &rarr; Replace, before it changes anything</td><td>The newest 20</td></tr>
+  <tr><td class="k"><code>edge-lab-report-&hellip;.png</code></td><td>Validate &rarr; Save as image</td><td>Always</td></tr>
+</table>
+<p>To restore any of them: <span class="ui">Import</span>, pick the file, then <b>Merge</b> (adds back what is missing) or <b>Replace</b>.</p>
+<ul>
 </ul>
 <h4>Importing a CSV</h4>
 <p>Any spreadsheet export works if it has a header row. Two columns are required: a <b>Date</b> and a result, either <b>R</b> or <b>P&amp;L</b> together with <b>Risk</b>. Column names are matched loosely, and comma, semicolon and tab separated files all read.</p>
@@ -565,6 +580,8 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">Needs 10 resolved trades</td><td>Use my journal, prop odds: log more trades with a stop or Risk $.</td></tr>
   <tr><td class="k">More stats at 8+ resolved trades</td><td>The quant tiles (ranges, SQN, Kelly, streaks) unlock at 8.</td></tr>
   <tr><td class="k">No R basis</td><td>No trade in view has a stop, Risk $ or R override. Add one.</td></tr>
+  <tr><td class="k">n excluded for having no Risk $ or stop (or an R past &plusmn;1000)</td><td>Those trades have no measurable R. An R beyond &plusmn;1000 is treated as a typo (an extra zero in Risk $, or a stop almost on the entry) and left out of every R statistic. Fix the trade to bring it back.</td></tr>
+  <tr><td class="k">Replace cancelled: a copy of your current journal could not be saved first</td><td>Nothing was changed. Check that the data folder (or the browser's downloads) can be written to, then try again.</td></tr>
   <tr><td class="k">Too few trades to judge. Aim for 100+.</td><td>Validate won't call an edge real under 30 trades.</td></tr>
   <tr><td class="k">Multiple looks</td><td>You've tested several Leave-out subsets; ranges are widened for it.</td></tr>
   <tr><td class="k">Pooled accounts / mirrored</td><td>Same signal in several accounts. Pick one account as Edge source.</td></tr>

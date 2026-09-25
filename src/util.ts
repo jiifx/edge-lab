@@ -29,6 +29,14 @@ export function fit(cv: HTMLCanvasElement) {
   return { ctx, w, h };
 }
 
+// today's date where the user IS. toISOString() is the UTC date: east of UTC it
+// is still yesterday in the morning (a report made at 7am in UTC+8 was dated
+// the day before).
+export function localDate(): string {
+  const d = new Date(), p = (n: number) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
 // mulberry32 - deterministic PRNG (bit-identical to the Rust port)
 export function mulberry(seed: number): () => number {
   let s = seed | 0;

@@ -704,3 +704,16 @@ test("clampFirm heals a poisoned saved firm instead of propagating it", () => {
   assert.equal(poisoned.winDays, 365);
   assert.ok(poisoned.maxdd > 0, "a zero drawdown floor would divide by nothing");
 });
+
+test("an R past R_MAX is not a measurement: it is excluded like a trade with no stop", () => {
+  const { hasRBasis, R_MAX } = E;
+  assert.equal(R_MAX, 1000);
+  assert.equal(hasRBasis({ R: 999, Rmanual: true }), true);
+  assert.equal(hasRBasis({ R: 1e308, Rmanual: true }), false);
+  assert.equal(hasRBasis({ R: -5000, Rmanual: true }), false);
+  // a stop a hair off the entry derives R ~ 500,000
+  assert.equal(hasRBasis({ entry: 100, stop: 99.99999, exit: 105 }), false);
+  assert.equal(hasRBasis({ entry: 100, stop: 99, exit: 105 }), true);
+  // an extra zero in Risk $ the other way (P&L 250 on a $0.10 risk)
+  assert.equal(hasRBasis({ riskAmt: 0.1, pnl: 250 }), false);
+});

@@ -105,7 +105,6 @@ export interface StoreApi {
   putImage(rec: ImageRec, cb?: (ok: boolean) => void): void;
   getImage(id: string, cb: (rec: ImageRec | null) => void): void;
   deleteImage(id: string, cb?: () => void): void;
-  clearAll(meta: JMeta, cb?: () => void): void;
   exportJson?(json: string, cb: (path: string | null, err?: unknown) => void): void;
 }
 
@@ -139,9 +138,6 @@ function tauriStore(invoke: TauriInvoke): StoreApi {
     },
     deleteImage(id, cb) {
       invoke("delete_image", { id }).then(() => cb && cb()).catch(() => cb && cb());
-    },
-    clearAll(meta, cb) {
-      this.persistAll([], meta, () => cb && cb());
     },
     exportJson(json, cb) {
       invoke("export_journal", { data: json }).then((p) => cb(String(p))).catch((e) => cb(null, e));
@@ -207,16 +203,6 @@ function idbStore(): StoreApi {
         const r = os("images", "readwrite").delete(id);
         r.onsuccess = () => cb && cb();
         r.onerror = () => cb && cb();
-      } catch { cb && cb(); }
-    },
-    clearAll(_meta, cb) {
-      if (!DB) { cb && cb(); return; }
-      try {
-        const tx = DB.transaction(["trades", "images"], "readwrite");
-        tx.objectStore("trades").clear();
-        tx.objectStore("images").clear();
-        tx.oncomplete = () => cb && cb();
-        tx.onerror = () => cb && cb();
       } catch { cb && cb(); }
     },
   };

@@ -1,5 +1,5 @@
 // Journal: log, editor, detail, stats (quant layer + prop odds + edge report), export/import.
-import { $, $i, $s, $c, css, fit, mulberry, esc, hasNum, LS, toast, toastAction, ask, hooks, chartTip, wireTips, pctEst } from "./util";
+import { $, $i, $s, $c, css, fit, mulberry, localDate, esc, hasNum, LS, toast, toastAction, ask, hooks, chartTip, wireTips, pctEst } from "./util";
 import { S, F, money, Firm, setFirm, withFirm, withEdge, view } from "./state";
 import { computeR, computeRraw, plannedRR, hasRBasis, challengeStats, evalPass, fundedStats, payoutOdds, costToFund, wilson, profitPlateau, PAID_SIMS, PAY_CHUNK, yearSteps, TradeLike } from "./engine";
 import { Store, TAURI, Trade, JMeta, b64ToBlob } from "./store";
@@ -340,7 +340,7 @@ export function noRBasisCount(list: Trade[]): number {
 // explains the gap between "trades logged" and "trades measurable in R"
 function noRNote(list: Trade[]): string {
   const n = noRBasisCount(list);
-  return n ? " &mdash; " + n + " excluded for having no Risk $ or stop, so their R cannot be measured" : "";
+  return n ? " &mdash; " + n + " excluded for having no Risk $ or stop (or an R past &plusmn;1000), so their R cannot be measured" : "";
 }
 
 // ---------- filters ----------
@@ -4079,12 +4079,15 @@ function deleteAccountFlow() {
   if (ACCT === "") return;
   const name = ACCT;
   const doomed = JT.filter((t) => accOf(t) === name);
-  ask("Delete account <b>" + esc(name) + "</b> and its <b>" + doomed.length + "</b> logged trade" + (doomed.length === 1 ? "" : "s") + "?<br><br>Trades and their screenshots are removed permanently. Export a backup first if you are not sure.", [
+  ask("Delete account <b>" + esc(name) + "</b> and its <b>" + doomed.length + "</b> logged trade" + (doomed.length === 1 ? "" : "s") + "?<br><br>You can Undo for a few seconds afterwards. After that, trades and screenshots are gone unless you have a backup.", [
     { label: "Cancel", kind: "", value: false },
     { label: "Delete account", kind: "danger", value: true },
   ], (yes) => {
     if (!yes) return;
-    doomed.forEach((t) => (t.imageIds || []).forEach((iid) => { Store.deleteImage(iid); delete urlCache[iid]; }));
+    // Undo, like every other delete: the account's trades and settings are
+    // held until the toast closes, and its screenshots are erased only then
+    const beforeMeta = JSON.parse(JSON.stringify(JMETA)) as JMeta;
+    const beforeEdge = EDGE_ACCT;
     JT = JT.filter((t) => accOf(t) !== name);
     JMETA.accounts = accounts().filter((a) => a !== name);
     if (!JMETA.accounts.length) JMETA.accounts = ["Main"];
@@ -4097,7 +4100,21 @@ function deleteAccountFlow() {
     Store.persistAll(JT, JMETA, () => {
       if (!TAURI) LS.set("pel_jmeta", JMETA);
       setScope("");
-      toast('Account "' + name + '" deleted (' + doomed.length + " trades removed).");
+      toastAction('Account "' + name + '" deleted (' + doomed.length + " trades removed).", "Undo", () => {
+        const have = new Set(JT.map((t) => t.id));
+        JT = JT.concat(doomed.filter((t) => !have.has(t.id)));
+        JT.sort((a, b) => (b.dateTime || "").localeCompare(a.dateTime || ""));
+        for (const k of Object.keys(JMETA)) delete (JMETA as unknown as Record<string, unknown>)[k];
+        Object.assign(JMETA, beforeMeta);
+        if (beforeEdge === name) { EDGE_ACCT = name; LS.set("pel_edge_acct", EDGE_ACCT); }
+        Store.persistAll(JT, JMETA, () => {
+          if (!TAURI) LS.set("pel_jmeta", JMETA);
+          setScope(name);
+          toast('Account "' + name + '" restored (' + doomed.length + " trades).");
+        });
+      }, () => {
+        doomed.forEach((t) => (t.imageIds || []).forEach((iid) => { Store.deleteImage(iid); delete urlCache[iid]; }));
+      });
     });
   });
 }
@@ -4356,7 +4373,7 @@ function doExport() {
   if (!JT.length && !hasMeta) { toast("Nothing to export yet."); return; }
   if (!JT.length) toast("No trades yet — exporting your accounts and settings.");
   buildExportJson((json) => {
-    const name = "prop-edge-lab-journal-" + new Date().toISOString().slice(0, 10) + ".json";
+    const name = "prop-edge-lab-journal-" + localDate() + ".json";
     if (Store.exportJson) {
       Store.exportJson(json, (p, err) => {
         if (p) { toast("Backup written: " + p); JMETA.lastAutoBackup = Date.now(); saveMeta(); }
@@ -4394,7 +4411,7 @@ export function maybeAutoBackup() {
   const inv = TAURI;
   if (inv && Store.exportJson) {
     buildExportJson((json) => {
-      inv("export_journal", { data: json, silent: true }).then((p) => {
+      inv("export_journal", { data: json, silent: true, kind: "auto" }).then((p) => {
         JMETA.lastAutoBackup = Date.now();
         saveMeta();
         toast("Weekly auto-backup written: " + String(p));
@@ -4475,10 +4492,14 @@ function sanitizeTrade(raw: unknown): Trade | null {
   };
 }
 // copy own string-keyed entries while skipping prototype-polluting keys
-function safeAssign<T>(dst: Record<string, T>, src: unknown, coerce: (v: unknown) => T | null) {
+// keepExisting: a MERGE fills in accounts the journal does not have yet, and
+// never rewrites the settings of one it does (a months-old backup merged in
+// used to reset today's starting balance, R value and phase to the old ones)
+function safeAssign<T>(dst: Record<string, T>, src: unknown, coerce: (v: unknown) => T | null, keepExisting = false) {
   if (!src || typeof src !== "object") return;
   for (const k of Object.keys(src as object)) {
     if (isDangerousKey(k)) continue;
+    if (keepExisting && Object.prototype.hasOwnProperty.call(dst, k)) continue;
     const v = coerce((src as Record<string, unknown>)[k]);
     if (v != null) dst[k] = v;
   }
@@ -4520,6 +4541,56 @@ function importData(data: ImportData, sample = false, extra = "") {
     const referenced: Record<string, 1> = {};
     imported.forEach((t) => t.imageIds.forEach((iid) => { referenced[iid] = 1; }));
 
+    // Replace erases the journal, so it is never the only copy: the current
+    // journal is written out FIRST (desktop: exports/before-replace-*.json;
+    // browser: a download), and only a successful copy lets Replace go ahead.
+    // Undo then restores it in place; screenshots of the replaced trades are
+    // kept until the Undo window closes.
+    let before: { trades: Trade[]; meta: JMeta } | null = null;
+    let savedTo = "";
+    const snapshotThen = (next: () => void) => {
+      before = { trades: JT.slice(), meta: JSON.parse(JSON.stringify(JMETA)) as JMeta };
+      buildExportJson((json) => {
+        if (TAURI) {
+          TAURI("export_journal", { data: json, silent: true, kind: "before-replace" })
+            .then((p) => { savedTo = String(p); next(); })
+            .catch((e: unknown) => { before = null; toast("Replace cancelled: a copy of your current journal could not be saved first (" + String(e) + "). Nothing was changed."); });
+          return;
+        }
+        try {
+          const u = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+          const a = document.createElement("a");
+          a.href = u; a.download = "edge-lab-before-replace-" + localDate() + ".json";
+          document.body.appendChild(a); a.click(); a.remove();
+          setTimeout(() => URL.revokeObjectURL(u), 1500);
+          savedTo = "your downloads";
+          next();
+        } catch { before = null; toast("Replace cancelled: a copy of your current journal could not be saved first. Nothing was changed."); }
+      });
+    };
+    const undoReplace = (snap: { trades: Trade[]; meta: JMeta }, newTrades: Trade[]) => {
+      const keepImg = new Set<string>();
+      snap.trades.forEach((t) => (t.imageIds || []).forEach((i) => keepImg.add(i)));
+      newTrades.forEach((t) => (t.imageIds || []).forEach((i) => { if (!keepImg.has(i)) { Store.deleteImage(i); delete urlCache[i]; } }));
+      JT = snap.trades;
+      for (const k of Object.keys(JMETA)) delete (JMETA as unknown as Record<string, unknown>)[k];
+      Object.assign(JMETA, snap.meta);
+      if (!TAURI) LS.set("pel_jmeta", JMETA);
+      normalizeMeta();
+      renderAcctSel();
+      Store.persistAll(JT, JMETA, () => {
+        renderJournal();
+        if ($i("useJournal").checked) applyJournalEdge();
+        toast("Restored your journal (" + JT.length + " trades).");
+      });
+    };
+    // after the Undo window: screenshots only the replaced trades used can go
+    const dropOldImages = (snap: { trades: Trade[] }) => {
+      const live = new Set<string>();
+      JT.forEach((t) => (t.imageIds || []).forEach((i) => live.add(i)));
+      snap.trades.forEach((t) => (t.imageIds || []).forEach((i) => { if (!live.has(i)) { Store.deleteImage(i); delete urlCache[i]; } }));
+    };
+
     const run = (mode: unknown) => {
       if (mode === "cancel") return;
       const writeAll = () => {
@@ -4546,18 +4617,19 @@ function importData(data: ImportData, sample = false, extra = "") {
               JMETA.accounts = merged.length ? merged : ["Main"];
             }
             JMETA.balances = JMETA.balances || {};
-            safeAssign(JMETA.balances, im.balances, (v) => { const n = safeNum(v); return n == null ? null : n; });
+            const keep = mode === "merge";
+            safeAssign(JMETA.balances, im.balances, (v) => { const n = safeNum(v); return n == null ? null : n; }, keep);
             JMETA.accountFirms = JMETA.accountFirms || {};
-            safeAssign(JMETA.accountFirms, im.accountFirms, (v) => (v && typeof v === "object" ? v as Firm : null));
+            safeAssign(JMETA.accountFirms, im.accountFirms, (v) => (v && typeof v === "object" ? v as Firm : null), keep);
             JMETA.accountPhase = JMETA.accountPhase || {};
             safeAssign(JMETA.accountPhase, (im as { accountPhase?: unknown }).accountPhase, (v) => {
               const o = v as { phase?: string; since?: string };
               return o && (o.phase === "eval" || o.phase === "funded")
                 ? { phase: o.phase, ...(typeof o.since === "string" ? { since: o.since } : {}) }
                 : null;
-            });
+            }, keep);
             JMETA.rBasis = JMETA.rBasis || {};
-            safeAssign(JMETA.rBasis, (im as { rBasis?: unknown }).rBasis, sanitizeRBasis);
+            safeAssign(JMETA.rBasis, (im as { rBasis?: unknown }).rBasis, sanitizeRBasis, keep);
             if (!TAURI) LS.set("pel_jmeta", JMETA);
           }
           normalizeMeta();
@@ -4575,9 +4647,14 @@ function importData(data: ImportData, sample = false, extra = "") {
             const dests: string[] = [];
             trades.forEach((t) => { const a = accOf(t); if (dests.indexOf(a) < 0) dests.push(a); });
             const elsewhere = ACCT !== "" && dests.every((a) => a !== ACCT);
-            toast("Imported " + trades.length + " trades into " + dests.join(", ") +
+            const msg = "Imported " + trades.length + " trades into " + dests.join(", ") +
               (elsewhere ? " — you are viewing " + ACCT + "; switch account scope to see them." : ".") +
-              (extra ? " " + extra + "." : ""));
+              (extra ? " " + extra + "." : "");
+            const snap = before;
+            if (snap) {
+              toastAction("Replaced your " + snap.trades.length + " trades. " + msg + " The old journal was saved to " + savedTo + ".", "Undo",
+                () => undoReplace(snap, trades), () => dropOldImages(snap), 20000);
+            } else toast(msg);
           });
         };
         if (!pend) { writeTrades(); return; }
@@ -4587,10 +4664,13 @@ function importData(data: ImportData, sample = false, extra = "") {
           else if (--pend <= 0) writeTrades();
         });
       };
-      if (mode === "replace") { urlCache = {}; Store.clearAll(JMETA, writeAll); } else writeAll();
+      if (mode === "replace" && JT.length) snapshotThen(writeAll);
+      else writeAll();
     };
     if (JT.length) {
-      ask("Import <b>" + imported.length + "</b> trades" + (sample ? " of sample data" : "") + ".<br><br>Merge with your current journal, or replace it entirely?", [
+      ask("Import <b>" + imported.length + "</b> trades" + (sample ? " of sample data" : "") + ".<br><br>" +
+        "<b>Merge</b> adds them to your " + JT.length + " trades. <b>Replace</b> removes your " + JT.length + " trades and keeps only these " +
+        "(a copy of your current journal is saved first" + (TAURI ? ", in exports" : " as a download") + ").", [
         { label: "Cancel", kind: "", value: "cancel" },
         { label: "Replace", kind: "danger", value: "replace" },
         { label: "Merge", kind: "primary", value: "merge" },

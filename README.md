@@ -60,6 +60,10 @@ comma, semicolon and tab files all read. When
 every date could be day/month or month/day, the app asks instead of guessing. Re-importing the same file
 with **Merge** adds nothing twice.
 
+**Replace** never leaves you without a copy: the current journal is saved first (desktop:
+`exports\before-replace-*.json`, browser: a download), and Undo puts it back. Merge keeps your existing
+accounts' settings. Deleting trades or a whole account can be undone too.
+
 ## Build
 
 Prerequisites: Node 20+, Rust stable (MSVC on Windows) and the

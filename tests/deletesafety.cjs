@@ -62,6 +62,55 @@ const ok = (m) => console.log('ok: ' + m);
   if ((await count()) !== '1000') fail('the undone delete did not survive a reload: ' + (await count()));
   else ok('the restored trades survive a reload');
 
+  // ---------- 3. Import -> Replace downloads a copy first, and Undo restores ----------
+  const fs = require('fs');
+  const dl = path.resolve('./pel-test/delsafe-dl-' + process.pid);
+  fs.mkdirSync(dl, { recursive: true });
+  const cdp = await page.createCDPSession();
+  await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: dl });
+  const three = path.join(dl, 'three.csv');
+  fs.writeFileSync(three, 'Date,R\n2025-01-02 09:30,1\n2025-01-03 09:30,-1\n2025-01-06 09:30,2\n');
+  const clickAsk = (re) => page.evaluate((src) => { const x = [...document.querySelectorAll('#askBtns button')].find((e) => new RegExp(src, 'i').test(e.textContent)); if (x) x.click(); return !!x; }, re.source);
+  await (await page.$('#jImportFile')).uploadFile(three);
+  await wait(600);
+  await clickAsk(/replace/);
+  await wait(2500);
+  let snap = null;
+  for (let i = 0; i < 20 && !snap; i++) { snap = fs.readdirSync(dl).find((f) => /^edge-lab-before-replace-.*\.json$/.test(f)); if (!snap) await wait(250); }
+  if (!snap) fail('Replace did not download a copy of the journal first');
+  else {
+    const n = JSON.parse(fs.readFileSync(path.join(dl, snap), 'utf-8')).trades.length;
+    if (n !== 1000) fail('the copy saved before Replace holds ' + n + ' trades');
+    else ok('Replace downloaded the old journal first (' + n + ' trades)');
+  }
+  if ((await count()) !== '3') fail('after Replace the journal holds ' + (await count()));
+  const u3 = await page.$('#toast .toastbtn');
+  if (!u3) fail('no Undo after Replace');
+  else { await u3.click(); await wait(1500); if ((await count()) !== '1000') fail('Undo after Replace restored ' + (await count())); else ok('Undo after Replace restored all 1000'); }
+
+  // ---------- 4. deleting an account can be undone ----------
+  await page.evaluate(() => { const s = document.getElementById('jAcct'); s.value = [...s.options].find((o) => /Sample 50k/.test(o.textContent)).value; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await wait(500);
+  await page.evaluate(() => document.getElementById('jDelAcct').click());
+  await wait(300);
+  await clickAsk(/delete account/);
+  await wait(1500);
+  const u4 = await page.$('#toast .toastbtn');
+  if (!u4) fail('no Undo after deleting an account');
+  else { await u4.click(); await wait(1500); if ((await count()) !== '1000') fail('account Undo restored ' + (await count())); else ok('deleting an account can be undone'); }
+
+  // ---------- 5. Merge never rewrites an existing account's settings ----------
+  const other = path.join(dl, 'other.json');
+  fs.writeFileSync(other, JSON.stringify({ meta: { accounts: ['Sample 50k'], balances: { 'Sample 50k': 1 }, rBasis: { 'Sample 50k': { mode: 'fixed', v: 7 } } },
+    trades: [{ id: 'mergeprobe1', account: 'Sample 50k', dateTime: '2025-01-02T09:30', R: 1, Rmanual: true }] }));
+  await (await page.$('#jImportFile')).uploadFile(other);
+  await wait(600);
+  await clickAsk(/merge/);
+  await wait(1500);
+  const bal = await page.evaluate(() => { const i = document.querySelector('#jStartBal, #jBal, input[id*="Bal"]'); return i ? i.value : null; });
+  if (bal === '1') fail('Merge overwrote the account starting balance with the backup\'s');
+  else ok('Merge kept the existing starting balance (' + bal + ')');
+
   if (errs.length) fail('page errors: ' + errs.join(' | '));
   await b.close();
   console.log(process.exitCode ? 'DELETESAFETY: FAILURES' : 'DELETESAFETY: ALL PASS');

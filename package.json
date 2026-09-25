@@ -1,7 +1,7 @@
 {
   "name": "edge-lab",
   "private": true,
-  "version": "2.18.2",
+  "version": "2.18.3",
   "description": "Edge Lab - trading journal + edge simulator: is your edge real, and how much should you risk on it? Offline, file-based, open source.",
   "author": "jiidc",
   "license": "MIT",
@@ -11,7 +11,8 @@
     "build": "npm test && tsc --noEmit && vite build && node scripts/singlefile.mjs",
     "tauri": "tauri",
     "test": "node --test \"tests/unit/*.test.mjs\"",
-    "test:e2e": "node tests/journal-e2e.cjs && node tests/combo.cjs && node tests/sharehtml.cjs && node tests/sweepui.cjs && node tests/scratch.cjs && node tests/macux.cjs && node tests/macstats.cjs && node tests/funded.cjs && node tests/multiacct.cjs && node tests/rvalue.cjs && node tests/pnlrecalc.cjs && node tests/security-import.cjs && node tests/evalsize.cjs && node tests/validate.cjs && node tests/phases.cjs && node tests/bands.cjs && node tests/counterfactual.cjs && node tests/csp.cjs && node tests/scanfixes.cjs && node tests/perftest.cjs && node tests/retina.cjs && node tests/propmode.cjs && node tests/deletesafety.cjs && node tests/newuser.cjs"
+    "test:e2e": "node tests/journal-e2e.cjs && node tests/combo.cjs && node tests/sharehtml.cjs && node tests/sweepui.cjs && node tests/scratch.cjs && node tests/macux.cjs && node tests/macstats.cjs && node tests/funded.cjs && node tests/multiacct.cjs && node tests/rvalue.cjs && node tests/pnlrecalc.cjs && node tests/security-import.cjs && node tests/evalsize.cjs && node tests/validate.cjs && node tests/phases.cjs && node tests/bands.cjs && node tests/counterfactual.cjs && node tests/csp.cjs && node tests/scanfixes.cjs && node tests/perftest.cjs && node tests/retina.cjs && node tests/propmode.cjs && node tests/deletesafety.cjs && node tests/newuser.cjs && node tests/fuzzscreens.cjs && node tests/scale.cjs",
+    "test:desktop": "node tests/desktop.cjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

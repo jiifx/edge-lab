@@ -47,6 +47,14 @@ fn writable(dir: &Path) -> bool {
 fn data_dir() -> PathBuf {
     DATA_DIR
         .get_or_init(|| {
+            // For testing the real desktop app against a throwaway folder
+            // (tests/desktop.cjs), never the user's journal. Unset in normal use.
+            if let Some(p) = std::env::var_os("EDGE_LAB_DATA_DIR").map(PathBuf::from) {
+                let _ = fs::create_dir_all(&p);
+                if writable(&p) {
+                    return p;
+                }
+            }
             if let Some(p) = dirs::document_dir().map(|d| d.join("PropEdgeLab")) {
                 if writable(&p) {
                     return p;
@@ -254,12 +262,52 @@ fn reveal(path: &Path, select_file: bool) {
     }
 }
 
+// Backups come in three kinds, told apart by file name:
+// - manual ("Export backup"): prop-edge-lab-journal-<stamp>.json, never pruned
+// - auto (weekly, silent): auto-backup-<stamp>.json, the newest AUTO_KEEP kept
+// - before-replace (written by Import -> Replace BEFORE it erases anything):
+//   before-replace-<stamp>.json, the newest SNAP_KEEP kept
+// Pruning only ever touches its own kind, so a manual backup is never removed.
+const AUTO_KEEP: usize = 8;
+const SNAP_KEEP: usize = 20;
+
+fn backup_name(kind: &str, stamp: &str) -> (String, Option<(&'static str, usize)>) {
+    match kind {
+        "auto" => (format!("auto-backup-{stamp}.json"), Some(("auto-backup-", AUTO_KEEP))),
+        "before-replace" => (format!("before-replace-{stamp}.json"), Some(("before-replace-", SNAP_KEEP))),
+        _ => (format!("prop-edge-lab-journal-{stamp}.json"), None),
+    }
+}
+
+// delete all but the newest `keep` files named <prefix>*.json. The stamp in the
+// name sorts chronologically, so name order is age order.
+fn prune(dir: &Path, prefix: &str, keep: usize) {
+    let Ok(rd) = fs::read_dir(dir) else { return };
+    let mut names: Vec<String> = rd
+        .filter_map(|e| e.ok())
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|n| n.starts_with(prefix) && n.ends_with(".json"))
+        .collect();
+    names.sort();
+    if names.len() > keep {
+        for n in &names[..names.len() - keep] {
+            let _ = fs::remove_file(dir.join(n));
+        }
+    }
+}
+
 #[tauri::command]
-fn export_journal(data: String, silent: Option<bool>) -> Result<String, String> {
-    let d = ensure_dirs()?;
-    let f = d.join("exports").join(format!("prop-edge-lab-journal-{}.json", now_stamp()));
+fn export_journal(data: String, silent: Option<bool>, kind: Option<String>) -> Result<String, String> {
+    let d = ensure_dirs()?.join("exports");
+    // an old frontend calls with silent=true and no kind: that was the weekly one
+    let kind = kind.unwrap_or_else(|| if silent.unwrap_or(false) { "auto".into() } else { "manual".into() });
+    let (name, rule) = backup_name(&kind, &now_stamp());
+    let f = d.join(name);
     fs::write(&f, data).map_err(|e| e.to_string())?;
-    // silent = weekly auto-backup: write without popping the file manager
+    if let Some((prefix, keep)) = rule {
+        prune(&d, prefix, keep);
+    }
+    // silent = written without popping the file manager
     if !silent.unwrap_or(false) {
         reveal(&f, true);
     }
@@ -422,6 +470,36 @@ fn main() {
 #[cfg(test)]
 mod storage_tests {
     use super::*;
+
+    #[test]
+    fn pruning_keeps_the_newest_of_its_own_kind_only() {
+        let d = std::env::temp_dir().join(format!("pel-prune-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        for i in 0..12 {
+            fs::write(d.join(format!("auto-backup-2026-01-{:02}-000000.json", i + 1)), "{}").unwrap();
+            fs::write(d.join(format!("prop-edge-lab-journal-2026-01-{:02}-000000.json", i + 1)), "{}").unwrap();
+        }
+        fs::write(d.join("before-replace-2026-01-01-000000.json"), "{}").unwrap();
+        prune(&d, "auto-backup-", 8);
+        let mut left: Vec<String> = fs::read_dir(&d).unwrap().map(|e| e.unwrap().file_name().into_string().unwrap()).collect();
+        left.sort();
+        let autos: Vec<&String> = left.iter().filter(|n| n.starts_with("auto-backup-")).collect();
+        assert_eq!(autos.len(), 8);
+        assert_eq!(autos[0], "auto-backup-2026-01-05-000000.json");   // the oldest four went
+        assert_eq!(left.iter().filter(|n| n.starts_with("prop-edge-lab-journal-")).count(), 12);   // manual: untouched
+        assert!(left.contains(&"before-replace-2026-01-01-000000.json".to_string()));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn backup_kinds_have_distinct_names() {
+        assert_eq!(backup_name("auto", "S").0, "auto-backup-S.json");
+        assert_eq!(backup_name("before-replace", "S").0, "before-replace-S.json");
+        assert_eq!(backup_name("manual", "S").0, "prop-edge-lab-journal-S.json");
+        // anything unexpected is a manual backup: never pruned, never a path
+        assert_eq!(backup_name("../../evil", "S").0, "prop-edge-lab-journal-S.json");
+    }
 
     #[test]
     fn report_export_accepts_only_png() {

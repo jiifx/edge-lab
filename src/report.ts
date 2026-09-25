@@ -2,7 +2,7 @@
 // onto one 1200x675 PNG, so a result can be shared without a screenshot of the
 // whole window (file names, account list and all). It copies what is ON SCREEN
 // - it computes nothing, so the image can never disagree with the app.
-import { $, css, toast } from "./util";
+import { $, css, toast, localDate } from "./util";
 import { TAURI } from "./store";
 import { redrawValidateCharts } from "./sim";
 
@@ -68,7 +68,7 @@ export function buildReport(): HTMLCanvasElement {
   ctx.fillStyle = muted; ctx.font = "600 13px " + mono;
   ctx.fillText("EDGE LAB  ·  IS THE EDGE REAL?", PAD, PAD + 12);
   ctx.textAlign = "right";
-  ctx.fillText(new Date().toISOString().slice(0, 10), W - PAD, PAD + 12);
+  ctx.fillText(localDate(), W - PAD, PAD + 12);
   ctx.textAlign = "left";
 
   // verdict + chip
@@ -130,7 +130,7 @@ export function saveReport() {
   }
   let url: string;
   try { url = buildReport().toDataURL("image/png"); } catch { toast("Could not draw the report in this environment."); return; }
-  const name = "edge-lab-report-" + new Date().toISOString().slice(0, 10) + ".png";
+  const name = "edge-lab-report-" + localDate() + ".png";
   if (TAURI) {
     TAURI("export_report", { data: url.split(",")[1] })
       .then((p) => toast("Report saved: " + String(p)))
