@@ -9,10 +9,27 @@ rules.
 
 Offline and file-based: no account, no server, no telemetry. Produced by **jiidc** · MIT licensed.
 
-**Edge Lab is free. If you paid for it, you were scammed.** The only official download is the
-[releases page](https://github.com/jiifx/edge-lab/releases).
+**Edge Lab is free. If you paid for it, you were scammed.** The only official download is this
+repository.
 
 ![Edge Lab](docs/preview.png)
+
+## Download
+
+| | Installer (latest version) |
+|---|---|
+| **Windows** 10 / 11 | [**Edge-Lab-Windows-Setup.exe**](https://github.com/jiifx/edge-lab/releases/latest/download/Edge-Lab-Windows-Setup.exe) |
+| **macOS** 11.3+ (Apple Silicon and Intel) | [**Edge-Lab-macOS.dmg**](https://github.com/jiifx/edge-lab/releases/latest/download/Edge-Lab-macOS.dmg) |
+| Sample journal (optional) | [sample-1000-trades.json](https://github.com/jiifx/edge-lab/releases/latest/download/sample-1000-trades.json) |
+
+These links always fetch the newest release. Older versions, release notes and SHA-256 checksums are on
+the [releases page](https://github.com/jiifx/edge-lab/releases).
+
+The installers are not code-signed, so the first launch shows a warning:
+- **Windows:** "Windows protected your PC" → **More info** → **Run anyway**.
+- **macOS:** right-click the app → **Open** → **Open**.
+
+To update, install the new version over the old one. Your journal is not touched (see [Your data](#your-data)).
 
 ## Features
 
@@ -59,9 +76,8 @@ to explore. The same record is in [`samples/sample-1000-trades.json`](samples/sa
 needed: **Date** and a result, either **R** or **P&L** with a **Risk** column. Optional columns:
 Exit time, Setup, Direction (long/short, buy/sell), Symbol, Account, Session, Notes, Fees. Column names
 are matched loosely (`P&L`, `PnL`, `Profit` all work), a separate Time column is joined to the Date, and
-comma, semicolon and tab files all read. When
-every date could be day/month or month/day, the app asks instead of guessing. Re-importing the same file
-with **Merge** adds nothing twice.
+comma, semicolon and tab files all read. When every date could be day/month or month/day, the app asks
+instead of guessing. Re-importing the same file with **Merge** adds nothing twice.
 
 **Replace** never leaves you without a copy: the current journal is saved first (desktop:
 `exports\before-replace-*.json`, browser: a download), and Undo puts it back. Merge keeps your existing
@@ -97,9 +113,25 @@ needs a fresh `npm run build` and Microsoft Edge) · `cd src-tauri && cargo test
 
 ## Your data
 
-Everything lives in `Documents/PropEdgeLab/` (`journal.db`, `images/`, `exports/`); the folder name
-is kept from the app's earlier name so existing journals keep working. **Export backup** writes one
-self-contained JSON (trades + images) that **Import** restores anywhere.
+Your journal stays on your computer. Edge Lab has no account and no server, and it never uploads
+anything.
+
+| App | Where the journal lives |
+|---|---|
+| Windows | `Documents\PropEdgeLab\` |
+| macOS | `~/Documents/PropEdgeLab/` (if Documents access is declined, the app uses its own app-data folder and says so on screen) |
+| Browser version | Inside that browser only, so export backups often |
+
+In that folder, `journal.db` holds your trades and settings, `images/` your screenshots, and `exports/`
+your backups and saved report images. **Open folder** in the Journal takes you there. Installing,
+updating or uninstalling the app never touches this folder.
+
+**Backups**
+- **Export backup** writes one self-contained file (trades, settings and screenshots) that **Import**
+  restores on any computer. The app never deletes these.
+- The desktop app also makes a **weekly automatic backup** and keeps the newest 8.
+- **Import → Replace** saves a copy of your current journal before changing anything, and keeps the
+  newest 20 of those.
 
 ## Disclaimer
 

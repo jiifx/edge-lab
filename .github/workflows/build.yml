@@ -171,6 +171,18 @@ jobs:
 
       - run: cp src/samples/sample-1000-trades.json dist/
 
+      # The README's download links use .../releases/latest/download/<name>,
+      # which only works if the name never changes. So every release also
+      # carries the installers under fixed names - the same bytes as the
+      # versioned files (the checksums below show it).
+      - name: Fixed-name copies for the README download links
+        run: |
+          exe="$(find dist -type f -name '*_x64-setup.exe' | head -1)"
+          dmg="$(find dist -type f -name '*_universal.dmg' | head -1)"
+          test -n "$exe" && test -n "$dmg"
+          cp "$exe" dist/Edge-Lab-Windows-Setup.exe
+          cp "$dmg" dist/Edge-Lab-macOS.dmg
+
       - name: Checksums and release notes
         run: |
           find dist -type f \( -name '*.exe' -o -name '*.dmg' -o -name '*.zip' -o -name 'sample-*.json' \) -print0 \
