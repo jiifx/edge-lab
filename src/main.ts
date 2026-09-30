@@ -36,10 +36,39 @@ $("vReport").addEventListener("click", saveReport);
 // it stays offline - so this opens the releases page only when clicked.
 const RELEASES_URL = "https://github.com/jiifx/edge-lab/releases";
 $("appVer").textContent = __APP_VERSION__;
-$("updBtn").addEventListener("click", () => {
+function openReleases() {
   if (TAURI) TAURI("open_releases").catch(() => toast("Open " + RELEASES_URL + " in your browser."));
   else window.open(RELEASES_URL, "_blank", "noopener");
-});
+}
+$("updBtn").addEventListener("click", openReleases);
+
+// Start-up notice: Edge Lab is free, so anyone who paid for it was scammed.
+// Shown on every launch until "Do not show this again" is ticked. If storage
+// is unavailable the flag reads as unset and the notice simply shows again.
+const FREE_NOTICE_OFF = "pel_free_notice_off";
+function closeFreeNotice() {
+  if ($i("freeHide").checked) LS.set(FREE_NOTICE_OFF, true);
+  $("freeOv").classList.add("hide");
+  document.removeEventListener("keydown", freeNoticeKeys, true);
+}
+function freeNoticeKeys(e: KeyboardEvent) {
+  if (e.key === "Escape" || e.key === "Enter") {
+    // Enter on the checkbox toggles it rather than closing
+    if (e.key === "Enter" && document.activeElement === $i("freeHide")) return;
+    e.preventDefault();
+    e.stopPropagation();
+    closeFreeNotice();
+  }
+}
+$("freeOk").addEventListener("click", closeFreeNotice);
+$("freeLink").addEventListener("click", openReleases);
+if (!LS.get<boolean>(FREE_NOTICE_OFF, false)) {
+  $("freeOv").classList.remove("hide");
+  // capture phase: while the notice is up, Escape/Enter belong to it, not to
+  // the app's shortcuts underneath
+  document.addEventListener("keydown", freeNoticeKeys, true);
+  $("freeOk").focus();
+}
 document.addEventListener("keydown", (e) => {
   if (e.key === "F5" || ((e.ctrlKey || e.metaKey) && (e.key === "r" || e.key === "R"))) {
     e.preventDefault();

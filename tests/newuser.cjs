@@ -34,6 +34,34 @@ const ok = (m) => console.log('ok: ' + m);
   const count = () => page.evaluate(() => { const t = document.querySelector('#jSummary .tile .v'); return t ? t.textContent.trim() : ''; });
   const clickAsk = (re) => page.evaluate((src) => { const x = [...document.querySelectorAll('#askBtns button')].find((e) => new RegExp(src, 'i').test(e.textContent)); if (x) x.click(); return !!x; }, re.source);
 
+  // ---------- 00. the "this app is free" notice ----------
+  const notice = () => page.evaluate(() => {
+    const o = document.getElementById('freeOv');
+    return { shown: !o.classList.contains('hide') && o.getClientRects().length > 0, text: o.innerText, focused: document.activeElement && document.activeElement.id };
+  });
+  let nv = await notice();
+  if (!nv.shown) fail('a first launch must show the free-app notice');
+  else if (!/THIS APPLICATION IS FREE/.test(nv.text) || !/SCAMMED/.test(nv.text) || !/github\.com\/jiifx\/edge-lab/.test(nv.text)) fail('the notice text is wrong: ' + nv.text.slice(0, 160));
+  else ok('first launch shows the free-app notice, focused on ' + nv.focused);
+  // closed WITHOUT the box ticked: it comes back next launch
+  await page.click('#freeOk');
+  await wait(200);
+  if ((await notice()).shown) fail('Got it did not close the notice');
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction('window.__PEL_READY === true', { timeout: 25000 });
+  if (!(await notice()).shown) fail('closed without "Do not show this again", the notice must show on the next launch');
+  else ok('closed without the box ticked: shown again on the next launch');
+  // the checkbox label is clickable, and Escape closes it too
+  await page.click('.freecheck');
+  await page.keyboard.press('Escape');
+  await wait(200);
+  if ((await notice()).shown) fail('Escape did not close the notice');
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction('window.__PEL_READY === true', { timeout: 25000 });
+  nv = await notice();
+  if (nv.shown) fail('"Do not show this again" was ticked, but the notice came back');
+  else ok('"Do not show this again" ticked: not shown on the next launch');
+
   // ---------- 0. the footer names the version and offers updates ----------
   const foot = await page.evaluate(() => ({ v: document.getElementById('appVer').textContent, u: !!document.getElementById('updBtn') }));
   if (foot.v !== VERSION || !foot.u) fail('footer version/update link: ' + JSON.stringify(foot));

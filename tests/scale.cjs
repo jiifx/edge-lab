@@ -33,6 +33,7 @@ const back = (s, weeks) => { if (!s) return s; const d = new Date(s + ':00Z'); d
     args: ['--no-sandbox', '--disable-gpu', '--allow-file-access-from-files', '--edge-skip-compat-layer-relaunch'],
   });
   const page = await b.newPage();
+  await page.evaluateOnNewDocument(() => { try { localStorage.setItem('pel_free_notice_off', 'true'); } catch (e) { /* opaque origin */ } });  // the start-up 'this app is free' notice is tested in newuser.cjs
   await page.setViewport({ width: 1360, height: 900 });
   await page.evaluateOnNewDocument(() => { if (localStorage.getItem('pel_prop') == null) localStorage.setItem('pel_prop', 'true'); });
   const errs = [];

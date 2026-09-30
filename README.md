@@ -9,6 +9,9 @@ rules.
 
 Offline and file-based: no account, no server, no telemetry. Produced by **jiidc** · MIT licensed.
 
+**Edge Lab is free. If you paid for it, you were scammed.** The only official download is the
+[releases page](https://github.com/jiifx/edge-lab/releases).
+
 ![Edge Lab](docs/preview.png)
 
 ## Features

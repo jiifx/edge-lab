@@ -56,6 +56,13 @@ const ok = (m) => console.log('ok: ' + m);
     const errs = [];
     page.on('pageerror', (e) => errs.push(e.message));
     await page.waitForFunction('window.__PEL_READY === true', { timeout: 25000 });
+    // a fresh profile shows the free-app notice (newuser.cjs covers it in
+    // detail); confirm it appears in the desktop build too, then switch it off
+    if (!(await page.evaluate(() => !document.getElementById('freeOv').classList.contains('hide')))) fail('the desktop app did not show the free-app notice on first launch');
+    else ok('desktop first launch shows the free-app notice');
+    await page.evaluate(() => { localStorage.setItem('pel_free_notice_off', 'true'); });
+    await page.reload();
+    await page.waitForFunction('window.__PEL_READY === true', { timeout: 25000 });
     const count = () => page.evaluate(() => { const t = document.querySelector('#jSummary .tile .v'); return t ? t.textContent.trim() : ''; });
     const clickAsk = (re) => page.evaluate((src) => { const x = [...document.querySelectorAll('#askBtns button')].find((e) => new RegExp(src, 'i').test(e.textContent)); if (x) x.click(); return !!x; }, re.source);
     const dialog = () => page.evaluate(() => { const o = document.getElementById('askOv'); return o && !o.classList.contains('hide') ? document.getElementById('askMsg').textContent : ''; });

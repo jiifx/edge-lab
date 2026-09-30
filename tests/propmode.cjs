@@ -17,6 +17,7 @@ const ok = (m) => console.log('ok: ' + m);
     args: ['--no-sandbox', '--disable-gpu', '--allow-file-access-from-files', '--edge-skip-compat-layer-relaunch'],
   });
   const page = await b.newPage();
+  await page.evaluateOnNewDocument(() => { try { localStorage.setItem('pel_free_notice_off', 'true'); } catch (e) { /* opaque origin */ } });  // the start-up 'this app is free' notice is tested in newuser.cjs
   const errs = [];
   page.on('pageerror', (e) => errs.push(e.message));
   const load = async () => {

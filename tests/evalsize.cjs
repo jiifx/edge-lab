@@ -19,6 +19,7 @@ function ok(m) { console.log('ok - ' + m); }
     args: ['--no-sandbox', '--disable-gpu', '--allow-file-access-from-files', '--edge-skip-compat-layer-relaunch'],
   });
   const page = await browser.newPage();
+  await page.evaluateOnNewDocument(() => { try { localStorage.setItem('pel_free_notice_off', 'true'); } catch (e) { /* opaque origin */ } });  // the start-up 'this app is free' notice is tested in newuser.cjs
   await page.evaluateOnNewDocument(() => { try { if (localStorage.getItem('pel_prop') == null) localStorage.setItem('pel_prop', 'true'); } catch (e) { /* opaque origin */ } });  // these suites exercise prop-firm mode
   await page.setViewport({ width: 1400, height: 950 });
   page.on('pageerror', (e) => fail('pageerror: ' + e.message));

@@ -20,6 +20,7 @@ const VERSION = require(REPO + '/package.json').version;
     args: ['--no-sandbox', '--disable-gpu', '--allow-file-access-from-files', '--edge-skip-compat-layer-relaunch'],
   });
   const p = await b.newPage();
+  await p.evaluateOnNewDocument(() => { try { localStorage.setItem('pel_free_notice_off', 'true'); } catch (e) { /* opaque origin */ } });  // no start-up notice in the manual's screenshots
   p.on('pageerror', (e) => console.log('PAGEERROR: ' + e.message));
   await p.goto(SRC, { waitUntil: 'networkidle0' });
   // every screenshot must be decoded before the print, or images land blank

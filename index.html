@@ -594,6 +594,11 @@
   .gallery img.lead{max-height:none;width:100%;}
   .confirm-sheet{max-width:430px;}
   .confirm-sheet .sheet-body{padding:18px;font-size:14.5px;}
+  .freesheet{max-width:540px;border-color:var(--stop);}
+  .freeh{font-family:var(--mono);font-size:21px;font-weight:800;letter-spacing:0.01em;color:var(--stop-ink);margin:0 0 4px;}
+  .freebig{font-family:var(--mono);font-size:16px;font-weight:800;color:var(--stop-ink);margin:0 0 12px;}
+  .freecheck{display:flex;align-items:center;gap:8px;font-size:13.5px;cursor:pointer;}
+  .freecheck input{width:16px;height:16px;margin:0;cursor:pointer;accent-color:var(--go);}
   #toast .toastbtn{margin-left:12px;font:700 12px var(--mono);text-transform:uppercase;letter-spacing:0.06em;color:var(--paper);background:none;border:1.5px solid var(--paper);padding:3px 9px;cursor:pointer;}
   #toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:95;background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:13px;padding:10px 16px;border:1.5px solid var(--line-strong);display:none;max-width:90vw;}
   #chartTip{position:fixed;z-index:99;display:none;pointer-events:none;background:var(--ink);color:var(--paper);font-family:var(--mono);font-size:11.5px;line-height:1.5;padding:6px 9px;border:1.5px solid var(--line-strong);max-width:280px;white-space:nowrap;}
@@ -1132,6 +1137,21 @@
     <div class="sheet-foot">
       <button class="btn danger" id="dtDelete">Delete</button>
       <div class="fr"><button class="iconbtn" id="dtPrev" title="Previous trade (Left arrow)" aria-label="Previous trade">&lsaquo;</button><button class="iconbtn" id="dtNext" title="Next trade (Right arrow)" aria-label="Next trade">&rsaquo;</button><button class="btn" id="dtCloseB">Close</button><button class="btn primary" id="dtEdit">Edit</button></div>
+    </div>
+  </div>
+</div>
+
+<!-- start-up notice: the app is free. Shown on every launch until "Do not show this again" is ticked. -->
+<div class="ov hide" id="freeOv" role="alertdialog" aria-modal="true" aria-labelledby="freeTitle" aria-describedby="freeMsg" style="z-index:90">
+  <div class="sheet confirm-sheet freesheet">
+    <div class="sheet-body">
+      <h3 id="freeTitle" class="freeh">THIS APPLICATION IS FREE.</h3>
+      <p class="freebig">IF YOU PAID FOR IT, YOU GOT SCAMMED!!!</p>
+      <p id="freeMsg" class="nomarg">Edge Lab is free and open source, and always will be. The only official download is <button type="button" class="linkbtn" id="freeLink">github.com/jiifx/edge-lab</button>. If someone sold you a copy, ask for your money back and report the seller.</p>
+    </div>
+    <div class="sheet-foot">
+      <label class="freecheck"><input type="checkbox" id="freeHide"> Do not show this again</label>
+      <div class="fr"><button type="button" class="btn primary" id="freeOk">Got it</button></div>
     </div>
   </div>
 </div>
