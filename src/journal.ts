@@ -4369,7 +4369,7 @@ function buildExportJson(acct: string, cb: (json: string, missing: number) => vo
   };
   const finish = () => {
     const out = {
-      app: "prop-edge-lab", version: 3, exportedAt: new Date().toISOString(),
+      app: "edge-lab", version: 3, exportedAt: new Date().toISOString(),
       ...(acct ? { account: acct } : {}),
       meta: {
         startBalance: acct ? null : JMETA.startBalance,
@@ -4425,7 +4425,7 @@ function doExport() {
       }
       try {
         const slug = acct ? "-" + acct.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) : "";
-        downloadJson(json, "prop-edge-lab-journal" + slug + "-" + fileStamp() + ".json");
+        downloadJson(json, "edge-lab-journal" + slug + "-" + fileStamp() + ".json");
         toast("Backup of " + what + " downloaded." + miss);
         // only a whole-journal backup resets the weekly reminder
         if (!acct) { JMETA.lastAutoBackup = Date.now(); saveMeta(); }

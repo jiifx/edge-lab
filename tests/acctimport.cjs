@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 
-const APP = pathToFileURL(path.resolve(__dirname, '../dist/PropEdgeLab2.html')).href;
+const APP = pathToFileURL(path.resolve(__dirname, '../dist/EdgeLab.html')).href;
 const SAMPLE = path.resolve(__dirname, '../samples/sample-1000-trades.json');
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (m) => { console.log('FAIL: ' + m); process.exitCode = 1; };

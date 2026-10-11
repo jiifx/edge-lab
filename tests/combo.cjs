@@ -16,7 +16,7 @@
 //   5. the popup never pushes the page sideways.
 const puppeteer = require('puppeteer-core');
 const path = require('path');
-const APP = 'file:///' + path.resolve(__dirname, '../dist/PropEdgeLab2.html').replace(/\\/g, '/');
+const APP = 'file:///' + path.resolve(__dirname, '../dist/EdgeLab.html').replace(/\\/g, '/');
 const DIR = 'pel-test/';
 let bad = 0;
 const fail = (m) => { console.error('FAIL: ' + m); bad = 1; };

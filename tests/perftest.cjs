@@ -1,7 +1,7 @@
 // Perf + presets test: drag bursts must not block; account chips; save/delete custom preset.
 const puppeteer = require('puppeteer-core');
 const path = require('path');
-const APP = 'file:///' + path.resolve(__dirname, '../dist/PropEdgeLab2.html').replace(/\\/g, '/');
+const APP = 'file:///' + path.resolve(__dirname, '../dist/EdgeLab.html').replace(/\\/g, '/');
 function fail(m){ console.error('FAIL: ' + m); process.exitCode = 1; }
 (async () => {
   const browser = await puppeteer.launch({ executablePath: 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', headless: 'new', userDataDir: path.resolve('./pel-test/profile-perf-' + Date.now()), args: ['--no-sandbox','--disable-gpu','--allow-file-access-from-files', '--edge-skip-compat-layer-relaunch'] });

@@ -46,6 +46,24 @@ jobs:
       - name: Web build (type check + single-file HTML)
         run: npm run build
 
+      # The no-install browser version, for PCs where an unsigned installer is
+      # not allowed to run (Smart App Control). A zip, because GitHub renames
+      # loose asset files (spaces -> dots) and the ? button opens the manual
+      # by its exact name beside the HTML.
+      - name: Browser version (zip)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force bv | Out-Null
+          Copy-Item dist/EdgeLab.html "bv/Edge Lab.html"
+          Copy-Item "guide/Edge Lab - User Manual.pdf" bv/
+          Compress-Archive -Path "bv/*" -DestinationPath Edge-Lab-browser.zip
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: browser-version
+          path: Edge-Lab-browser.zip
+          if-no-files-found: error
+
       - name: Rust tests
         run: cargo test --manifest-path src-tauri/Cargo.toml
 
@@ -192,9 +210,10 @@ jobs:
             printf '## Checksums\n\n```\n'
             cat SHA256SUMS.txt
             printf '```\n\n'
-            printf '### First run\n\nThe installers are not code-signed, so the OS warns the first time:\n\n'
-            printf -- '- **Windows:** "Windows protected your PC" -> click **More info** -> **Run anyway**.\n'
-            printf -- '- **macOS:** right-click the app -> **Open** -> **Open**.\n\n'
+            printf '### First launch\n\nThe installers are not code-signed, so the OS warns the first time. You never need to turn off Microsoft Defender or any antivirus.\n\n'
+            printf -- '- **Windows:** "Windows protected your PC" -> **More info** -> **Run anyway**. If the browser warns first, choose **Keep**. If Smart App Control blocks it (no Run anyway button), use `Edge-Lab-browser.zip` below instead (unzip, open `Edge Lab.html`) - do not turn Smart App Control off.\n'
+            printf -- '- **macOS 14 and earlier:** right-click the app -> **Open** -> **Open**. **macOS 15 and later:** open it once, then System Settings -> Privacy & Security -> **Open Anyway**.\n\n'
+            printf 'Full steps: https://github.com/jiifx/edge-lab#first-launch\n\n'
             printf 'Try it with sample data: on an empty journal click **Load sample journal**, or import `sample-1000-trades.json` below. Your own trades import from a backup or a CSV (a Date column plus an R or P&L column). Not financial advice.\n'
           } > NOTES.md
 

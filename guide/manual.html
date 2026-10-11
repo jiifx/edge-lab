@@ -356,7 +356,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 
 <h3>15. Backups and your data</h3>
 <ul>
-  <li><b>Desktop app:</b> the journal is <code>journal.db</code> (SQLite) plus screenshots in <code>images\</code>, inside <code>Documents\PropEdgeLab\</code>. <span class="ui">Open folder</span> in the rail reveals it.</li>
+  <li><b>Desktop app:</b> the journal is <code>journal.db</code> (SQLite) plus screenshots in <code>images\</code>, inside <code>Documents\Edge Lab\</code>. <span class="ui">Open folder</span> in the rail reveals it.</li>
   <li><b>Browser version:</b> trades live in that browser only. Export backups often.</li>
   <li><span class="ui">Export backup</span> writes a JSON file of trades, settings and screenshots. With <b>one account</b> selected in Account scope it asks: that account only, or all accounts. The file name says which. If a screenshot cannot be read, the message says how many are missing from the backup. The desktop app also makes a silent weekly backup of everything into <code>exports\</code>.</li>
   <li><span class="ui">Import</span> reads a backup file or a CSV (below). <b>Where the trades go depends on Account scope:</b>
@@ -375,7 +375,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <h4>The exports folder</h4>
 <table>
   <tr><th>File</th><th>Written by</th><th>Kept</th></tr>
-  <tr><td class="k"><code>prop-edge-lab-journal-&hellip;.json</code></td><td>Export backup</td><td>Always. The app never deletes these.</td></tr>
+  <tr><td class="k"><code>edge-lab-journal-&hellip;.json</code></td><td>Export backup</td><td>Always. The app never deletes these.</td></tr>
   <tr><td class="k"><code>auto-backup-&hellip;.json</code></td><td>The weekly automatic backup</td><td>The newest 8</td></tr>
   <tr><td class="k"><code>before-replace-&hellip;.json</code></td><td>Import &rarr; Replace, before it changes anything</td><td>The newest 20</td></tr>
   <tr><td class="k"><code>edge-lab-report-&hellip;.png</code></td><td>Validate &rarr; Save as image</td><td>Always</td></tr>
@@ -682,7 +682,11 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">Timing columns blank</td><td>Log exit times (holding time), planned R:R (RR/kept), MFE (ran to).</td></tr>
   <tr><td class="k">Numbers jump slightly on each change</td><td>Monte Carlo noise. Quick previews run while you drag; full numbers land a moment after you stop.</td></tr>
   <tr><td class="k">The ? button says the manual isn't installed</td><td>Reinstall the latest build. In the browser version, keep this PDF in the same folder as the HTML file.</td></tr>
-  <tr><td class="k">Journal missing after reinstall</td><td>The data lives in <code>Documents\PropEdgeLab\</code>, not in the app. Check that folder, or Import your latest backup from <code>exports\</code>.</td></tr>
+  <tr><td class="k">"Windows protected your PC"</td><td>The installer is free and not code-signed. Click <b>More info</b> &rarr; <b>Run anyway</b>. You never need to turn off Microsoft Defender or any antivirus.</td></tr>
+  <tr><td class="k">"Smart App Control blocked an app"</td><td>Some new Windows 11 PCs block every unsigned app, with no Run anyway. Do not turn Smart App Control off (it cannot be turned back on without reinstalling Windows). Use the browser version instead: <code>Edge-Lab-browser.zip</code> from the releases page, unzipped, then open <code>Edge Lab.html</code>.</td></tr>
+  <tr><td class="k">macOS: "cannot be opened"</td><td>macOS 14 and earlier: right-click the app &rarr; <b>Open</b> &rarr; <b>Open</b>. macOS 15 and later: open it once, then System Settings &rarr; Privacy &amp; Security &rarr; <b>Open Anyway</b>. If it says the app "is damaged", run <code>xattr -cr "/Applications/Edge Lab.app"</code> in Terminal once.</td></tr>
+  <tr><td class="k">"Your journal is still in &hellip;PropEdgeLab"</td><td>Since 2.18.6 the data folder is called <code>Edge Lab</code>, and the app renames the old <code>PropEdgeLab</code> folder on its first start. The message means a file in it was open in another program (often OneDrive syncing). Nothing is lost and the app works from the old folder; close the other program and restart Edge Lab to finish the rename.</td></tr>
+  <tr><td class="k">Journal missing after reinstall</td><td>The data lives in <code>Documents\Edge Lab\</code>, not in the app. Check that folder, or Import your latest backup from <code>exports\</code>.</td></tr>
 </table>
 
 </body>

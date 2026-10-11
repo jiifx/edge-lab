@@ -20,14 +20,38 @@ repository.
 |---|---|
 | **Windows** 10 / 11 | [**Edge-Lab-Windows-Setup.exe**](https://github.com/jiifx/edge-lab/releases/latest/download/Edge-Lab-Windows-Setup.exe) |
 | **macOS** 11.3+ (Apple Silicon and Intel) | [**Edge-Lab-macOS.dmg**](https://github.com/jiifx/edge-lab/releases/latest/download/Edge-Lab-macOS.dmg) |
+| Browser version (no install) | [Edge-Lab-browser.zip](https://github.com/jiifx/edge-lab/releases/latest/download/Edge-Lab-browser.zip): unzip, open `Edge Lab.html` |
 | Sample journal (optional) | [sample-1000-trades.json](https://github.com/jiifx/edge-lab/releases/latest/download/sample-1000-trades.json) |
 
 These links always fetch the newest release. Older versions, release notes and SHA-256 checksums are on
 the [releases page](https://github.com/jiifx/edge-lab/releases).
 
-The installers are not code-signed, so the first launch shows a warning:
-- **Windows:** "Windows protected your PC" → **More info** → **Run anyway**.
-- **macOS:** right-click the app → **Open** → **Open**.
+### First launch
+
+The installers are free and not code-signed (signing costs money every year), so Windows and macOS warn
+the first time. **You never need to turn off Microsoft Defender or any antivirus.** Only download from
+the links above.
+
+**Windows**
+1. **Browser download warning** (sometimes). Edge: *"isn't commonly downloaded"* → **⋯** → **Keep** →
+   **Show more** → **Keep anyway**. Chrome: **Keep**.
+2. **"Windows protected your PC"** (SmartScreen) → **More info** → **Run anyway**. This is the usual
+   one, and it only appears for the first install of each version.
+3. **"Smart App Control blocked an app"** (some new Windows 11 PCs). This has no Run anyway button, and
+   turning Smart App Control off cannot be undone without reinstalling Windows, so don't. Use the
+   browser version instead ([Edge-Lab-browser.zip](https://github.com/jiifx/edge-lab/releases/latest/download/Edge-Lab-browser.zip):
+   unzip it and open `Edge Lab.html`), which needs no install.
+4. If Defender ever quarantines the installer, that's a false positive. Report it at
+   [microsoft.com/wdsi/filesubmission](https://www.microsoft.com/en-us/wdsi/filesubmission) and open an
+   issue here. Don't switch Defender off.
+
+**macOS**
+- **macOS 14 Sonoma and earlier:** right-click the app → **Open** → **Open**.
+- **macOS 15 Sequoia and later** (right-click → Open no longer works): open the app once and click
+  **Done**, then **System Settings → Privacy & Security** → scroll to *"Edge Lab was blocked"* →
+  **Open Anyway** → enter your password → **Open**.
+- If it says the app *"is damaged and can't be opened"*, run this once in Terminal, then open it
+  normally: `xattr -cr "/Applications/Edge Lab.app"`
 
 To update, install the new version over the old one. Your journal is not touched (see [Your data](#your-data)).
 
@@ -100,7 +124,7 @@ npx tauri build         # installer for the current OS
 ```
 
 The frontend also runs in any browser (IndexedDB storage): `npm run dev`, or open the single-file
-build `dist/PropEdgeLab2.html`.
+build `dist/EdgeLab.html`.
 
 **Tests:** `npm test` (unit, no browser) · `npm run test:e2e` (puppeteer against the single-file build;
 needs a fresh `npm run build` and Microsoft Edge) · `cd src-tauri && cargo test`.
@@ -121,13 +145,18 @@ anything.
 
 | App | Where the journal lives |
 |---|---|
-| Windows | `Documents\PropEdgeLab\` |
-| macOS | `~/Documents/PropEdgeLab/` (if Documents access is declined, the app uses its own app-data folder and says so on screen) |
+| Windows | `Documents\Edge Lab\` |
+| macOS | `~/Documents/Edge Lab/` (if Documents access is declined, the app uses its own app-data folder and says so on screen) |
 | Browser version | Inside that browser only, so export backups often |
 
 In that folder, `journal.db` holds your trades and settings, `images/` your screenshots, and `exports/`
 your backups and saved report images. **Open folder** in the Journal takes you there. Installing,
 updating or uninstalling the app never touches this folder.
+
+Before version 2.18.6 the folder was called `PropEdgeLab`. The first time a newer version starts, it
+renames that folder to `Edge Lab`, with everything in it. If the rename can't happen (for example,
+another program has a file in it open), the app keeps using the old folder, says so on screen, and
+tries again on the next start.
 
 **Backups**
 - **Export backup** writes one self-contained file (trades, settings and screenshots) that **Import**

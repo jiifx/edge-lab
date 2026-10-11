@@ -7,5 +7,5 @@ html = html.replace(
   (_m, p) => '<script type="module">' + readFileSync("dist/" + p, "utf8").replace(/<\/script>/g, "<\\/script>") + "</script>",
 );
 if (html.includes('src="./assets/')) throw new Error("script tag not inlined");
-writeFileSync("dist/PropEdgeLab2.html", html);
-console.log("wrote dist/PropEdgeLab2.html", html.length, "bytes");
+writeFileSync("dist/EdgeLab.html", html);
+console.log("wrote dist/EdgeLab.html", html.length, "bytes");

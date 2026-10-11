@@ -7,7 +7,7 @@
 //  4. instant was an invisible sticky firm state with no control
 const puppeteer = require('puppeteer-core');
 const path = require('path');
-const APP = 'file:///' + path.resolve(__dirname, '../dist/PropEdgeLab2.html').replace(/\\/g, '/');
+const APP = 'file:///' + path.resolve(__dirname, '../dist/EdgeLab.html').replace(/\\/g, '/');
 function fail(m) { console.error('FAIL: ' + m); process.exitCode = 1; }
 function ok(m) { console.log('ok - ' + m); }
 

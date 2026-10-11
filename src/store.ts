@@ -153,6 +153,8 @@ function idbStore(): StoreApi {
     init(cb) {
       if (!window.indexedDB) { cb(); return; }
       let rq: IDBOpenDBRequest;
+      // the database keeps the app's first name on purpose: renaming it would
+      // leave every existing browser journal behind in the old one
       try { rq = indexedDB.open("propEdgeLab", 1); } catch { cb(); return; }
       rq.onupgradeneeded = (e) => {
         const db = (e.target as IDBOpenDBRequest).result;

@@ -160,7 +160,7 @@ export function generateSample(endDay: number, seed = 33): { app: string; versio
     t.createdAt = d0;
   }
   return {
-    app: "prop-edge-lab", version: 3, exportedAt: new Date(endDay).toISOString(),
+    app: "edge-lab", version: 3, exportedAt: new Date(endDay).toISOString(),
     meta: {
       startBalance: null, accounts: [SAMPLE_ACCT], balances: { [SAMPLE_ACCT]: 50000 },
       accountFirms: {}, accountPhase: { [SAMPLE_ACCT]: { phase: "eval" } },

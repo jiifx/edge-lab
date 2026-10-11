@@ -2,7 +2,7 @@
 // not 50% (2/4), with the scratch named in the record and the pill neutral.
 const puppeteer = require('puppeteer-core');
 const path = require('path');
-const APP = 'file:///' + require('path').resolve(__dirname, '../dist/PropEdgeLab2.html').replace(/\\/g, '/');
+const APP = 'file:///' + require('path').resolve(__dirname, '../dist/EdgeLab.html').replace(/\\/g, '/');
 function fail(m){ console.error('FAIL: ' + m); process.exitCode = 1; }
 
 (async () => {

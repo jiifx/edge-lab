@@ -5,7 +5,7 @@ const puppeteer = require('puppeteer-core');
 const path = require('path');
 const { pathToFileURL } = require('url');
 
-const APP = pathToFileURL(path.resolve(__dirname, '../dist/PropEdgeLab2.html')).href;
+const APP = pathToFileURL(path.resolve(__dirname, '../dist/EdgeLab.html')).href;
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 const fail = (m) => { console.log('FAIL: ' + m); process.exitCode = 1; };
 const ok = (m) => console.log('ok: ' + m);

@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const { pathToFileURL } = require('url');
 
-const APP = pathToFileURL(path.resolve(__dirname, '../dist/PropEdgeLab2.html')).href;
+const APP = pathToFileURL(path.resolve(__dirname, '../dist/EdgeLab.html')).href;
 const SAMPLE = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../samples/sample-1000-trades.json'), 'utf-8'));
 // The budget is generous on purpose: CI machines are slower and shared, and the
 // heavy work (the Timing verdict) runs in the background. What must NEVER

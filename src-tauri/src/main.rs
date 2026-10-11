@@ -1,5 +1,6 @@
-// Prop Edge Lab 2 - Rust backend.
-// Storage: Documents/PropEdgeLab/{journal.db, images/*.jpg, exports/}  (SQLite; migrates v1 journal.json once)
+// Edge Lab - Rust backend.
+// Storage: Documents/Edge Lab/{journal.db, images/*.jpg, exports/}  (SQLite; migrates v1 journal.json once;
+// a "PropEdgeLab" folder from before 2.18.6 is renamed to it - see pick_data_dir)
 // Engine:  Monte Carlo (phase walk / funded harvest) with bootstrap CIs, mirroring the TS fallback engine.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -40,6 +41,54 @@ fn writable(dir: &Path) -> bool {
     }
 }
 
+// The data folder is "Edge Lab". Until 2.18.6 it was "PropEdgeLab" (the app's
+// first name), so a journal found there is moved over the first time this
+// version starts - by RENAMING the folder, which is all-or-nothing on one
+// volume. Never by copying: a copy that stopped halfway would leave two
+// journals, each missing something.
+//   - only the old folder exists        -> rename it; if that fails (another
+//     program has a file open), keep using the old folder and say so
+//   - both exist, the new one has no journal but the old one does (an empty
+//     "Edge Lab" made by hand, or by a run that could not see the old one)
+//     -> the empty folder must not hide the real journal: remove it (only
+//     possible while it is empty) and rename; failing that, use the old one
+//   - otherwise                         -> the new folder
+// A failed read is not an empty journal: this never picks an empty folder over
+// one that holds a journal.
+const DATA_FOLDER: &str = "Edge Lab";
+const OLD_DATA_FOLDER: &str = "PropEdgeLab";
+
+fn has_journal(p: &Path) -> bool {
+    p.join("journal.db").is_file() || p.join("journal.json").is_file()
+}
+
+fn pick_data_dir(base: &Path) -> (PathBuf, Option<String>) {
+    let new = base.join(DATA_FOLDER);
+    let old = base.join(OLD_DATA_FOLDER);
+    if !old.is_dir() {
+        return (new, None);
+    }
+    let stuck = |e: std::io::Error| {
+        Some(format!(
+            "Your journal is still in {} - it could not be renamed to \"{}\" ({e}). Close any program using that folder (or OneDrive, if it is syncing), then restart Edge Lab to finish.",
+            old.display(),
+            DATA_FOLDER
+        ))
+    };
+    if !new.exists() {
+        return match fs::rename(&old, &new) {
+            Ok(()) => (new, None),
+            Err(e) => (old.clone(), stuck(e)),
+        };
+    }
+    if new.is_dir() && !has_journal(&new) && has_journal(&old) {
+        if let Err(e) = fs::remove_dir(&new).and_then(|_| fs::rename(&old, &new)) {
+            return (old.clone(), stuck(e));
+        }
+    }
+    (new, None)
+}
+
 // macOS puts ~/Documents behind TCC. If the user declines that prompt (or an MDM
 // policy blocks it) every write fails - previously the app panicked before a window
 // existed, so it just bounced in the Dock and vanished on every launch. Fall back
@@ -55,12 +104,17 @@ fn data_dir() -> PathBuf {
                     return p;
                 }
             }
-            if let Some(p) = dirs::document_dir().map(|d| d.join("PropEdgeLab")) {
+            if let Some(base) = dirs::document_dir() {
+                let (p, msg) = pick_data_dir(&base);
                 if writable(&p) {
+                    if let Some(m) = msg {
+                        note(m);
+                    }
                     return p;
                 }
             }
-            if let Some(p) = dirs::data_dir().map(|d| d.join("PropEdgeLab")) {
+            if let Some(base) = dirs::data_dir() {
+                let (p, _) = pick_data_dir(&base);
                 if writable(&p) {
                     note(format!(
                         "Your Documents folder is not writable, so the journal is being stored in {} instead. On macOS this usually means the Documents permission was declined - you can grant it in System Settings > Privacy & Security > Files and Folders, then restart.",
@@ -69,7 +123,7 @@ fn data_dir() -> PathBuf {
                     return p;
                 }
             }
-            let t = std::env::temp_dir().join("PropEdgeLab");
+            let t = std::env::temp_dir().join(DATA_FOLDER);
             let _ = fs::create_dir_all(&t);
             note(format!(
                 "No writable data folder was found, so the journal is in a temporary location ({}) that the system may clear. Export a backup now.",
@@ -263,7 +317,7 @@ fn reveal(path: &Path, select_file: bool) {
 }
 
 // Backups come in three kinds, told apart by file name:
-// - manual ("Export backup"): prop-edge-lab-journal-<stamp>.json, never pruned
+// - manual ("Export backup"): edge-lab-journal-<stamp>.json, never pruned
 // - auto (weekly, silent): auto-backup-<stamp>.json, the newest AUTO_KEEP kept
 // - before-replace (written by Import -> Replace BEFORE it erases anything):
 //   before-replace-<stamp>.json, the newest SNAP_KEEP kept
@@ -275,7 +329,7 @@ fn backup_name(kind: &str, stamp: &str) -> (String, Option<(&'static str, usize)
     match kind {
         "auto" => (format!("auto-backup-{stamp}.json"), Some(("auto-backup-", AUTO_KEEP))),
         "before-replace" => (format!("before-replace-{stamp}.json"), Some(("before-replace-", SNAP_KEEP))),
-        _ => (format!("prop-edge-lab-journal-{stamp}.json"), None),
+        _ => (format!("edge-lab-journal-{stamp}.json"), None),
     }
 }
 
@@ -318,7 +372,7 @@ fn export_journal(data: String, silent: Option<bool>, kind: Option<String>, labe
     // a one-account backup says which account in its name (manual backups only)
     if rule.is_none() {
         if let Some(l) = label.as_deref().map(slug).filter(|l| !l.is_empty()) {
-            name = format!("prop-edge-lab-journal-{l}-{}.json", now_stamp());
+            name = format!("edge-lab-journal-{l}-{}.json", now_stamp());
         }
     }
     let f = d.join(name);
@@ -483,7 +537,7 @@ fn main() {
             engine_odds
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Prop Edge Lab 2");
+        .expect("error while running Edge Lab");
 }
 
 #[cfg(test)]
@@ -497,7 +551,7 @@ mod storage_tests {
         fs::create_dir_all(&d).unwrap();
         for i in 0..12 {
             fs::write(d.join(format!("auto-backup-2026-01-{:02}-000000.json", i + 1)), "{}").unwrap();
-            fs::write(d.join(format!("prop-edge-lab-journal-2026-01-{:02}-000000.json", i + 1)), "{}").unwrap();
+            fs::write(d.join(format!("edge-lab-journal-2026-01-{:02}-000000.json", i + 1)), "{}").unwrap();
         }
         fs::write(d.join("before-replace-2026-01-01-000000.json"), "{}").unwrap();
         prune(&d, "auto-backup-", 8);
@@ -506,9 +560,79 @@ mod storage_tests {
         let autos: Vec<&String> = left.iter().filter(|n| n.starts_with("auto-backup-")).collect();
         assert_eq!(autos.len(), 8);
         assert_eq!(autos[0], "auto-backup-2026-01-05-000000.json");   // the oldest four went
-        assert_eq!(left.iter().filter(|n| n.starts_with("prop-edge-lab-journal-")).count(), 12);   // manual: untouched
+        assert_eq!(left.iter().filter(|n| n.starts_with("edge-lab-journal-")).count(), 12);   // manual: untouched
         assert!(left.contains(&"before-replace-2026-01-01-000000.json".to_string()));
         let _ = fs::remove_dir_all(&d);
+    }
+
+    fn tmp_base(tag: &str) -> PathBuf {
+        let b = std::env::temp_dir().join(format!("pel-rename-{tag}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&b);
+        fs::create_dir_all(&b).unwrap();
+        b
+    }
+
+    #[test]
+    fn an_old_propedgelab_folder_is_renamed_with_everything_in_it() {
+        let b = tmp_base("move");
+        let old = b.join("PropEdgeLab");
+        fs::create_dir_all(old.join("images")).unwrap();
+        fs::write(old.join("journal.db"), "DB").unwrap();
+        fs::write(old.join("images").join("a.jpg"), "IMG").unwrap();
+        let (p, msg) = pick_data_dir(&b);
+        assert_eq!(p, b.join("Edge Lab"));
+        assert!(msg.is_none());
+        assert!(!old.exists(), "the old folder must be gone (renamed, not copied)");
+        assert_eq!(fs::read_to_string(p.join("journal.db")).unwrap(), "DB");
+        assert_eq!(fs::read_to_string(p.join("images").join("a.jpg")).unwrap(), "IMG");
+        let _ = fs::remove_dir_all(&b);
+    }
+
+    #[test]
+    fn a_fresh_install_uses_edge_lab() {
+        let b = tmp_base("fresh");
+        assert_eq!(pick_data_dir(&b), (b.join("Edge Lab"), None));
+        let _ = fs::remove_dir_all(&b);
+    }
+
+    #[test]
+    fn an_empty_edge_lab_folder_never_hides_the_real_journal() {
+        let b = tmp_base("empty-new");
+        fs::create_dir_all(b.join("Edge Lab")).unwrap();
+        fs::create_dir_all(b.join("PropEdgeLab")).unwrap();
+        fs::write(b.join("PropEdgeLab").join("journal.db"), "REAL").unwrap();
+        let (p, _) = pick_data_dir(&b);
+        assert_eq!(fs::read_to_string(p.join("journal.db")).unwrap(), "REAL");
+        let _ = fs::remove_dir_all(&b);
+    }
+
+    #[test]
+    fn a_non_empty_edge_lab_folder_is_never_deleted_or_overwritten() {
+        let b = tmp_base("both");
+        fs::create_dir_all(b.join("Edge Lab")).unwrap();
+        fs::write(b.join("Edge Lab").join("notes.txt"), "MINE").unwrap();
+        fs::create_dir_all(b.join("PropEdgeLab")).unwrap();
+        fs::write(b.join("PropEdgeLab").join("journal.db"), "REAL").unwrap();
+        let (p, msg) = pick_data_dir(&b);
+        // the new folder holds a user's file: it cannot be removed, so the
+        // journal stays where it is, and the app says so
+        assert_eq!(p, b.join("PropEdgeLab"));
+        assert!(msg.is_some());
+        assert_eq!(fs::read_to_string(b.join("Edge Lab").join("notes.txt")).unwrap(), "MINE");
+        assert_eq!(fs::read_to_string(p.join("journal.db")).unwrap(), "REAL");
+        let _ = fs::remove_dir_all(&b);
+    }
+
+    #[test]
+    fn edge_lab_wins_when_it_already_holds_the_journal() {
+        let b = tmp_base("done");
+        fs::create_dir_all(b.join("Edge Lab")).unwrap();
+        fs::write(b.join("Edge Lab").join("journal.db"), "NEW").unwrap();
+        fs::create_dir_all(b.join("PropEdgeLab")).unwrap();
+        fs::write(b.join("PropEdgeLab").join("journal.db"), "OLD").unwrap();
+        assert_eq!(pick_data_dir(&b), (b.join("Edge Lab"), None));
+        assert_eq!(fs::read_to_string(b.join("PropEdgeLab").join("journal.db")).unwrap(), "OLD");   // left alone
+        let _ = fs::remove_dir_all(&b);
     }
 
     #[test]
@@ -524,9 +648,9 @@ mod storage_tests {
     fn backup_kinds_have_distinct_names() {
         assert_eq!(backup_name("auto", "S").0, "auto-backup-S.json");
         assert_eq!(backup_name("before-replace", "S").0, "before-replace-S.json");
-        assert_eq!(backup_name("manual", "S").0, "prop-edge-lab-journal-S.json");
+        assert_eq!(backup_name("manual", "S").0, "edge-lab-journal-S.json");
         // anything unexpected is a manual backup: never pruned, never a path
-        assert_eq!(backup_name("../../evil", "S").0, "prop-edge-lab-journal-S.json");
+        assert_eq!(backup_name("../../evil", "S").0, "edge-lab-journal-S.json");
     }
 
     #[test]

@@ -16,7 +16,7 @@
 //      WebKit-specific failure that leaves a blank gap, not an error).
 const puppeteer = require('puppeteer-core');
 const path = require('path');
-const APP = 'file:///' + path.resolve(__dirname, '../dist/PropEdgeLab2.html').replace(/\\/g, '/');
+const APP = 'file:///' + path.resolve(__dirname, '../dist/EdgeLab.html').replace(/\\/g, '/');
 function fail(m) { console.error('FAIL: ' + m); process.exitCode = 1; }
 
 // one trade set covering every panel: both directions, three sessions, R-unit

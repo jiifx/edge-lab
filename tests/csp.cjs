@@ -2,7 +2,7 @@
 // serves?
 //
 // This class of bug is invisible everywhere the suites already look. `npm run
-// dev` serves no CSP and neither does dist/PropEdgeLab2.html, so a rule a nonce
+// dev` serves no CSP and neither does dist/EdgeLab.html, so a rule a nonce
 // makes inert renders perfectly in both and is wrong only in the installed app
 // - which is how it shipped once already (Trap #1: calendar heat tint gone,
 // `grid-column:1/-1` tiles collapsed into one narrow column, every stat-tile

@@ -9,7 +9,7 @@
 //      announce itself rather than inflate every figure underneath.
 const puppeteer = require('puppeteer-core');
 const path = require('path');
-const APP = 'file:///' + path.resolve(__dirname, '../dist/PropEdgeLab2.html').replace(/\\/g, '/');
+const APP = 'file:///' + path.resolve(__dirname, '../dist/EdgeLab.html').replace(/\\/g, '/');
 let bad = 0;
 const fail = (m) => { console.error('FAIL: ' + m); bad = 1; };
 const ok = (m) => console.log('ok: ' + m);

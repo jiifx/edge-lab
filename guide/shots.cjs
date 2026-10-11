@@ -13,7 +13,7 @@ const path = require('path');
 const fs = require('fs');
 
 const REPO = path.resolve(__dirname, '..');
-const APP = 'file:///' + path.resolve(REPO + '/dist/PropEdgeLab2.html').replace(/\\/g, '/');
+const APP = 'file:///' + path.resolve(REPO + '/dist/EdgeLab.html').replace(/\\/g, '/');
 const OUT = path.resolve(REPO + '/guide/shots');
 fs.mkdirSync(OUT, { recursive: true });
 

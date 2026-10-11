@@ -13,7 +13,7 @@ const { spawn } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
-const EXE = path.resolve(__dirname, '../src-tauri/target/release/prop-edge-lab.exe');
+const EXE = path.resolve(__dirname, '../src-tauri/target/release/edge-lab.exe');
 const SAMPLE = path.resolve(__dirname, '../samples/sample-1000-trades.json');
 const PORT = 9333 + (process.pid % 200);
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -171,7 +171,7 @@ const ok = (m) => console.log('ok: ' + m);
     if (autos !== 8) fail('auto-backups after 12 writes: ' + autos + ', expected 8');
     else ok('automatic backups pruned to the newest 8');
     if (!files(/^before-replace-/).length) fail('pruning removed the before-replace backup');
-    if (!files(/^prop-edge-lab-journal-/).length) fail('a manual backup was not written or was pruned');
+    if (!files(/^edge-lab-journal-/).length) fail('a manual backup was not written or was pruned');
 
     if (errs.length) fail('page errors: ' + errs.join(' | '));
   } catch (e) {
