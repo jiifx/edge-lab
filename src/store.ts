@@ -105,7 +105,7 @@ export interface StoreApi {
   putImage(rec: ImageRec, cb?: (ok: boolean) => void): void;
   getImage(id: string, cb: (rec: ImageRec | null) => void): void;
   deleteImage(id: string, cb?: () => void): void;
-  exportJson?(json: string, cb: (path: string | null, err?: unknown) => void): void;
+  exportJson?(json: string, label: string, cb: (path: string | null, err?: unknown) => void): void;
 }
 
 function tauriStore(invoke: TauriInvoke): StoreApi {
@@ -139,8 +139,8 @@ function tauriStore(invoke: TauriInvoke): StoreApi {
     deleteImage(id, cb) {
       invoke("delete_image", { id }).then(() => cb && cb()).catch(() => cb && cb());
     },
-    exportJson(json, cb) {
-      invoke("export_journal", { data: json }).then((p) => cb(String(p))).catch((e) => cb(null, e));
+    exportJson(json, label, cb) {
+      invoke("export_journal", { data: json, label: label || null }).then((p) => cb(String(p))).catch((e) => cb(null, e));
     },
   };
 }

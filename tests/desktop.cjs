@@ -102,7 +102,7 @@ const ok = (m) => console.log('ok: ' + m);
     const inp = await page.$('#jImportFile');
     await inp.uploadFile(small);
     await wait(700);
-    if (!/copy of your current journal is saved first/.test(await dialog())) fail('the Replace dialog does not say a copy is saved first');
+    if (!/copy of your whole journal is saved first/.test(await dialog())) fail('the Replace dialog does not say a copy is saved first');
     await clickAsk(/replace/);
     await wait(3000);
     const snaps = files(/^before-replace-.*\.json$/);

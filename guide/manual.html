@@ -358,11 +358,17 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <ul>
   <li><b>Desktop app:</b> the journal is <code>journal.db</code> (SQLite) plus screenshots in <code>images\</code>, inside <code>Documents\PropEdgeLab\</code>. <span class="ui">Open folder</span> in the rail reveals it.</li>
   <li><b>Browser version:</b> trades live in that browser only. Export backups often.</li>
-  <li><span class="ui">Export backup</span> writes a JSON file of every trade, setting and screenshot. The desktop app also makes a silent weekly backup into <code>exports\</code>.</li>
-  <li><span class="ui">Import</span> reads one of those backup files, or a CSV (below). If the journal already has trades, you choose:
+  <li><span class="ui">Export backup</span> writes a JSON file of trades, settings and screenshots. With <b>one account</b> selected in Account scope it asks: that account only, or all accounts. The file name says which. If a screenshot cannot be read, the message says how many are missing from the backup. The desktop app also makes a silent weekly backup of everything into <code>exports\</code>.</li>
+  <li><span class="ui">Import</span> reads a backup file or a CSV (below). <b>Where the trades go depends on Account scope:</b>
+    <table>
+      <tr><th>Account scope</th><th>Imported trades go to</th><th>Replace removes</th></tr>
+      <tr><td class="k">One account</td><td>That account, whatever account the file names. Your other accounts are not touched.</td><td>Only that account's trades</td></tr>
+      <tr><td class="k">All accounts</td><td>The accounts named in the file (created if missing)</td><td>Every trade in every account</td></tr>
+    </table>
     <ul>
-      <li><b>Merge</b> adds the file's trades to yours. Trades you already have are skipped, and your accounts' settings (starting balance, R value, phase) are kept; the file only adds settings for accounts you do not have.</li>
-      <li><b>Replace</b> removes your trades and keeps only the file's. A copy of your current journal is saved <b>first</b> (desktop: <code>exports\before-replace-&hellip;.json</code>; browser: a download). If that copy cannot be saved, nothing is replaced. For 20 seconds afterwards, <span class="ui">Undo</span> puts your journal back.</li>
+      <li><b>Merge</b> adds the file's trades. Trades already in the account are skipped, and the message says how many. So importing the same file twice adds nothing, while importing it into a <i>different</i> account gives that account its own copy, with its own screenshots.</li>
+      <li><b>Replace</b> removes the trades shown above and keeps the file's. A copy of your <b>whole</b> journal is saved first (desktop: <code>exports\before-replace-&hellip;.json</code>; browser: a download). If that copy cannot be saved, nothing is replaced. For 20 seconds afterwards, <span class="ui">Undo</span> puts everything back.</li>
+      <li><b>Settings:</b> your accounts keep their own starting balance, R value and phase. A file only fills in what an account has not set yet: with one account selected, from the file's account; with All accounts, for the file's accounts.</li>
     </ul></li>
   <li><span class="ui">Load sample journal</span> appears on an empty journal. It imports the 1,000-trade sample.</li>
 </ul>

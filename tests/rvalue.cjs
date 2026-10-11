@@ -170,6 +170,10 @@ const wait = (ms) => new Promise(r => setTimeout(r, ms));
       tags: { quality: '', mistake: [], condition: [] }, emotionBefore: 0, emotionAfter: 0, imageIds: [] }],
     images: [],
   }));
+  // since 2.18.5 an import goes into the account in scope; restoring a backup
+  // with ITS OWN accounts ('Imported') is done with All accounts in scope
+  await page.select('#jAcct', '');
+  await wait(400);
   const imp = await page.$('#jImportFile');
   await imp.uploadFile(bak);
   await wait(900);

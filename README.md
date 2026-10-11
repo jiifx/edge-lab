@@ -79,9 +79,12 @@ are matched loosely (`P&L`, `PnL`, `Profit` all work), a separate Time column is
 comma, semicolon and tab files all read. When every date could be day/month or month/day, the app asks
 instead of guessing. Re-importing the same file with **Merge** adds nothing twice.
 
-**Replace** never leaves you without a copy: the current journal is saved first (desktop:
-`exports\before-replace-*.json`, browser: a download), and Undo puts it back. Merge keeps your existing
-accounts' settings. Deleting trades or a whole account can be undone too.
+**Imports follow Account scope.** With one account selected, everything in the file goes into that
+account and **Replace** only replaces that account's trades; your other accounts are not touched. With
+**All accounts** selected, the file keeps its own accounts. Replace never leaves you without a copy: the
+whole journal is saved first (desktop: `exports/before-replace-*.json`, browser: a download), and Undo
+puts it back. **Export backup** can save one account or all of them. Deleting trades or a whole
+account can be undone too.
 
 ## Build
 

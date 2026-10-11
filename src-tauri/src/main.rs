@@ -279,6 +279,19 @@ fn backup_name(kind: &str, stamp: &str) -> (String, Option<(&'static str, usize)
     }
 }
 
+// an account name made safe for a file name: letters, digits and single dashes
+fn slug(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        if c.is_ascii_alphanumeric() {
+            out.push(c);
+        } else if !out.ends_with('-') {
+            out.push('-');
+        }
+    }
+    out.trim_matches('-').chars().take(40).collect()
+}
+
 // delete all but the newest `keep` files named <prefix>*.json. The stamp in the
 // name sorts chronologically, so name order is age order.
 fn prune(dir: &Path, prefix: &str, keep: usize) {
@@ -297,11 +310,17 @@ fn prune(dir: &Path, prefix: &str, keep: usize) {
 }
 
 #[tauri::command]
-fn export_journal(data: String, silent: Option<bool>, kind: Option<String>) -> Result<String, String> {
+fn export_journal(data: String, silent: Option<bool>, kind: Option<String>, label: Option<String>) -> Result<String, String> {
     let d = ensure_dirs()?.join("exports");
     // an old frontend calls with silent=true and no kind: that was the weekly one
     let kind = kind.unwrap_or_else(|| if silent.unwrap_or(false) { "auto".into() } else { "manual".into() });
-    let (name, rule) = backup_name(&kind, &now_stamp());
+    let (mut name, rule) = backup_name(&kind, &now_stamp());
+    // a one-account backup says which account in its name (manual backups only)
+    if rule.is_none() {
+        if let Some(l) = label.as_deref().map(slug).filter(|l| !l.is_empty()) {
+            name = format!("prop-edge-lab-journal-{l}-{}.json", now_stamp());
+        }
+    }
     let f = d.join(name);
     fs::write(&f, data).map_err(|e| e.to_string())?;
     if let Some((prefix, keep)) = rule {
@@ -490,6 +509,15 @@ mod storage_tests {
         assert_eq!(left.iter().filter(|n| n.starts_with("prop-edge-lab-journal-")).count(), 12);   // manual: untouched
         assert!(left.contains(&"before-replace-2026-01-01-000000.json".to_string()));
         let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn account_labels_are_file_safe() {
+        assert_eq!(slug("Validating Setups"), "Validating-Setups");
+        assert_eq!(slug("../../etc/passwd"), "etc-passwd");
+        assert_eq!(slug("  FTMO 100k #2 "), "FTMO-100k-2");
+        assert_eq!(slug("***"), "");
+        assert_eq!(slug(&"x".repeat(90)).len(), 40);
     }
 
     #[test]

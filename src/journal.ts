@@ -4353,26 +4353,53 @@ function stripForExport(t: Trade): Record<string, unknown> {
   for (const k in src) if (k.charAt(0) !== "_") c[k] = src[k];
   return c;
 }
-function buildExportJson(cb: (json: string) => void) {
+// acct "" = the whole journal; otherwise just that account's trades and
+// settings. `missing` counts screenshots a trade names but the store could not
+// read: they cannot be in the file, and the caller must say so - a backup that
+// silently lacks screenshots is discovered only on the day it is needed.
+function buildExportJson(acct: string, cb: (json: string, missing: number) => void) {
+  const list = acct ? JT.filter((t) => accOf(t) === acct) : JT;
   const ids: string[] = [];
-  JT.forEach((t) => (t.imageIds || []).forEach((i) => { if (ids.indexOf(i) < 0) ids.push(i); }));
+  list.forEach((t) => (t.imageIds || []).forEach((i) => { if (ids.indexOf(i) < 0) ids.push(i); }));
   const images: { id: string; w?: number; h?: number; dataUrl: string }[] = [];
-  let pend = ids.length;
+  let pend = ids.length, missing = 0;
+  const only = <T>(o: Record<string, T> | undefined): Record<string, T> => {
+    if (!acct) return o || {};
+    return o && o[acct] != null ? { [acct]: o[acct] } : {};
+  };
   const finish = () => {
     const out = {
       app: "prop-edge-lab", version: 3, exportedAt: new Date().toISOString(),
-      meta: { startBalance: JMETA.startBalance, accounts: accounts(), balances: JMETA.balances || {}, accountFirms: JMETA.accountFirms || {}, accountPhase: JMETA.accountPhase || {}, rBasis: JMETA.rBasis || {} },
-      trades: JT.map(stripForExport), images,
+      ...(acct ? { account: acct } : {}),
+      meta: {
+        startBalance: acct ? null : JMETA.startBalance,
+        accounts: acct ? [acct] : accounts(),
+        balances: only(JMETA.balances), accountFirms: only(JMETA.accountFirms),
+        accountPhase: only(JMETA.accountPhase), rBasis: only(JMETA.rBasis),
+      },
+      trades: list.map(stripForExport), images,
     };
-    cb(JSON.stringify(out));
+    cb(JSON.stringify(out), missing);
   };
   if (!pend) { finish(); return; }
   ids.forEach((id) =>
     Store.getImage(id, (rec) => {
       if (rec && rec.blob) {
-        blobToDataURL(rec.blob, (u) => { if (u) images.push({ id, w: rec.w, h: rec.h, dataUrl: u }); if (--pend <= 0) finish(); });
-      } else if (--pend <= 0) finish();
+        blobToDataURL(rec.blob, (u) => { if (u) images.push({ id, w: rec.w, h: rec.h, dataUrl: u }); else missing++; if (--pend <= 0) finish(); });
+      } else { missing++; if (--pend <= 0) finish(); }
     }));
+}
+// local date and time for file names: two exports on one day must not collide
+function fileStamp(): string {
+  const d = new Date(), p = (n: number) => String(n).padStart(2, "0");
+  return localDate() + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+}
+function downloadJson(json: string, name: string) {
+  const u = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+  const a = document.createElement("a");
+  a.href = u; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(u), 1500);
 }
 function doExport() {
   // A journal with no trades can still carry real setup - starting balances,
@@ -4383,28 +4410,36 @@ function doExport() {
   const hasMeta = !!(Object.keys(JMETA.balances || {}).length || Object.keys(JMETA.rBasis || {}).length ||
     Object.keys(JMETA.accountFirms || {}).length || (JMETA.accounts || []).length > 1);
   if (!JT.length && !hasMeta) { toast("Nothing to export yet."); return; }
-  if (!JT.length) toast("No trades yet — exporting your accounts and settings.");
-  buildExportJson((json) => {
-    const name = "prop-edge-lab-journal-" + localDate() + ".json";
-    if (Store.exportJson) {
-      Store.exportJson(json, (p, err) => {
-        if (p) { toast("Backup written: " + p); JMETA.lastAutoBackup = Date.now(); saveMeta(); }
-        else toast("Export failed: " + err);
-      });
-      return;
-    }
-    try {
-      const b = new Blob([json], { type: "application/json" });
-      const u = URL.createObjectURL(b);
-      const a = document.createElement("a");
-      a.href = u; a.download = name;
-      document.body.appendChild(a); a.click(); a.remove();
-      setTimeout(() => URL.revokeObjectURL(u), 1500);
-      toast("Backup downloaded.");
-      JMETA.lastAutoBackup = Date.now();
-      saveMeta();
-    } catch { toast("Could not export in this environment."); }
-  });
+  const go = (acct: string) => {
+    const n = acct ? JT.filter((t) => accOf(t) === acct).length : JT.length;
+    if (!n) toast("No trades " + (acct ? "in " + acct : "yet") + " — exporting the settings only.");
+    buildExportJson(acct, (json, missing) => {
+      const miss = missing ? " " + missing + " screenshot" + (missing > 1 ? "s" : "") + " could not be read and " + (missing > 1 ? "are" : "is") + " not in it." : "";
+      const what = acct ? acct + " (" + n + " trades)" : "all accounts (" + n + " trades)";
+      if (Store.exportJson) {
+        Store.exportJson(json, acct, (p, err) => {
+          if (p) { toast("Backup of " + what + " written: " + p + "." + miss); if (!acct) { JMETA.lastAutoBackup = Date.now(); saveMeta(); } }
+          else toast("Export failed: " + err);
+        });
+        return;
+      }
+      try {
+        const slug = acct ? "-" + acct.replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 40) : "";
+        downloadJson(json, "prop-edge-lab-journal" + slug + "-" + fileStamp() + ".json");
+        toast("Backup of " + what + " downloaded." + miss);
+        // only a whole-journal backup resets the weekly reminder
+        if (!acct) { JMETA.lastAutoBackup = Date.now(); saveMeta(); }
+      } catch { toast("Could not export in this environment."); }
+    });
+  };
+  // one account in scope: ask whether the backup is of that account or of everything
+  if (ACCT !== "" && accounts().length > 1) {
+    ask("Export a backup of <b>" + esc(ACCT) + "</b> only, or of all your accounts?", [
+      { label: "Cancel", kind: "", value: null },
+      { label: "All accounts", kind: "", value: "" },
+      { label: ACCT + " only", kind: "primary", value: ACCT },
+    ], (v) => { if (v != null) go(String(v)); });
+  } else go("");
 }
 // weekly safety net: in the app, silently write a backup into exports/;
 // in the browser (no filesystem), offer the download instead
@@ -4422,7 +4457,7 @@ export function maybeAutoBackup() {
   if (Date.now() - last < BACKUP_EVERY) return;
   const inv = TAURI;
   if (inv && Store.exportJson) {
-    buildExportJson((json) => {
+    buildExportJson("", (json) => {
       inv("export_journal", { data: json, silent: true, kind: "auto" }).then((p) => {
         JMETA.lastAutoBackup = Date.now();
         saveMeta();
@@ -4538,6 +4573,26 @@ export function loadSample() {
   if (!JLOADED) { toast("Journal is still loading - try again in a second."); return; }
   importData(generateSample(Date.now()) as unknown as ImportData, true);
 }
+// An import goes INTO THE ACCOUNT IN SCOPE. With one account selected, every
+// trade in the file lands in that account whatever the file calls it, Replace
+// only replaces that account's trades, and the other accounts are not touched.
+// With "All accounts" selected the file keeps its own accounts, and Replace
+// replaces the whole journal - which the dialog says in those words.
+//
+// Before this, scope was ignored: a file imported while looking at account A
+// landed in the account named inside the file, Replace erased every account,
+// and importing the same file into a second account skipped every trade as a
+// "duplicate" of the first account's copy.
+//
+// A trade moved into a different account gets a new id (and so do its
+// screenshots): the id is its old one plus a short hash of the account. So the
+// same file can live in two accounts without the copies sharing an id or a
+// screenshot file - deleting one copy must never take the other's screenshot -
+// and importing it into the same account again still adds nothing.
+function scopedId(id: string, acct: string): string {
+  const suf = "-" + fnv(acct, 0x811c9dc5);
+  return id.slice(0, 64 - suf.length) + suf;
+}
 function importData(data: ImportData, sample = false, extra = "") {
     if (!data || !Array.isArray(data.trades)) { toast("No trades found in that file."); return; }
     // Sanitize the whole payload up front, BEFORE anything is deleted or written,
@@ -4549,20 +4604,34 @@ function importData(data: ImportData, sample = false, extra = "") {
       imported = (data.trades as unknown[]).map(sanitizeTrade).filter((t): t is Trade => !!t);
     } catch { toast("That backup could not be read."); return; }
     if (!imported.length) { toast("No importable trades in that file (missing or invalid ids)."); return; }
-    // only keep image ids the sanitized trades actually reference
-    const referenced: Record<string, 1> = {};
-    imported.forEach((t) => t.imageIds.forEach((iid) => { referenced[iid] = 1; }));
 
-    // Replace erases the journal, so it is never the only copy: the current
-    // journal is written out FIRST (desktop: exports/before-replace-*.json;
-    // browser: a download), and only a successful copy lets Replace go ahead.
-    // Undo then restores it in place; screenshots of the replaced trades are
-    // kept until the Undo window closes.
+    // where it goes: the scoped account, or (All accounts / the sample) the file's own
+    const target = sample ? "" : ACCT;
+    const fileAccts: string[] = [];
+    imported.forEach((t) => { const a = accOf(t); if (fileAccts.indexOf(a) < 0) fileAccts.push(a); });
+    const imgMap: Record<string, string> = {};   // file image id -> id written here
+    if (target) {
+      const accOfId = new Map(JT.map((t) => [t.id, accOf(t)] as [string, string]));
+      imported.forEach((t) => {
+        const elsewhere = accOfId.has(t.id) && accOfId.get(t.id) !== target;
+        if (accOf(t) !== target || elsewhere) {
+          t.id = scopedId(t.id, target);
+          t.imageIds = t.imageIds.map((i) => (imgMap[i] = imgMap[i] || scopedId(i, target)));
+        }
+        t.account = target;
+      });
+    }
+
     let before: { trades: Trade[]; meta: JMeta } | null = null;
     let savedTo = "";
+    // Replace erases trades, so it is never the only copy: the WHOLE journal is
+    // written out first (desktop: exports/before-replace-*.json; browser: a
+    // download), and only a successful copy lets Replace go ahead. Undo then
+    // restores it in place; screenshots of the replaced trades are kept until
+    // the Undo window closes.
     const snapshotThen = (next: () => void) => {
       before = { trades: JT.slice(), meta: JSON.parse(JSON.stringify(JMETA)) as JMeta };
-      buildExportJson((json) => {
+      buildExportJson("", (json) => {
         if (TAURI) {
           TAURI("export_journal", { data: json, silent: true, kind: "before-replace" })
             .then((p) => { savedTo = String(p); next(); })
@@ -4570,11 +4639,7 @@ function importData(data: ImportData, sample = false, extra = "") {
           return;
         }
         try {
-          const u = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-          const a = document.createElement("a");
-          a.href = u; a.download = "edge-lab-before-replace-" + localDate() + ".json";
-          document.body.appendChild(a); a.click(); a.remove();
-          setTimeout(() => URL.revokeObjectURL(u), 1500);
+          downloadJson(json, "edge-lab-before-replace-" + fileStamp() + ".json");
           savedTo = "your downloads";
           next();
         } catch { before = null; toast("Replace cancelled: a copy of your current journal could not be saved first. Nothing was changed."); }
@@ -4606,44 +4671,24 @@ function importData(data: ImportData, sample = false, extra = "") {
     const run = (mode: unknown) => {
       if (mode === "cancel") return;
       const writeAll = () => {
-        let trades = imported;
-        if (mode === "merge") {
-          const have: Record<string, 1> = {};
-          JT.forEach((t) => { have[t.id] = 1; });
-          trades = trades.filter((t) => !have[t.id]);
-        }
-        const validImgs = imgs.filter((im) => im && typeof im === "object" && safeId((im as { id?: unknown }).id) && referenced[String((im as { id: string }).id)]);
-        let pend = validImgs.length;
+        // what Replace removes: the scoped account's trades, or everything
+        const kept = mode === "replace" ? (target ? JT.filter((t) => accOf(t) !== target) : []) : JT;
+        const have = new Set(kept.map((t) => t.id));
+        const trades = imported.filter((t) => !have.has(t.id));
+        const skipped = imported.length - trades.length;
+        // only the screenshots of trades actually being added are written -
+        // a skipped duplicate must not overwrite the copy already here
+        const want = new Set<string>();
+        trades.forEach((t) => t.imageIds.forEach((i) => want.add(i)));
+        const validImgs = imgs.filter((im) => im && typeof im === "object" && safeId((im as { id?: unknown }).id))
+          .map((im) => ({ ...im, id: imgMap[String(im.id)] || String(im.id) }))
+          .filter((im) => want.has(im.id));
+        let pend = validImgs.length, imgFail = want.size - validImgs.length;
         const writeTrades = () => {
           trades.forEach((t) => { t._R = computeR(t); });
-          JT = mode === "merge" ? JT.concat(trades) : trades;
+          JT = kept.concat(trades);
           JT.sort((a, b) => (b.dateTime || "").localeCompare(a.dateTime || ""));
-          const im = data.meta as Record<string, unknown> | undefined;
-          if (im && typeof im === "object") {
-            const sb = safeNum(im.startBalance);
-            if (sb != null && (mode === "replace" || JMETA.startBalance == null)) JMETA.startBalance = sb;
-            if (Array.isArray(im.accounts)) {
-              const incoming = safeStrArr(im.accounts, 200);
-              const merged = mode === "replace" ? incoming.slice() : accounts().slice();
-              (mode === "replace" ? accounts() : incoming).forEach((a) => { if (merged.indexOf(a) < 0) merged.push(a); });
-              JMETA.accounts = merged.length ? merged : ["Main"];
-            }
-            JMETA.balances = JMETA.balances || {};
-            const keep = mode === "merge";
-            safeAssign(JMETA.balances, im.balances, (v) => { const n = safeNum(v); return n == null ? null : n; }, keep);
-            JMETA.accountFirms = JMETA.accountFirms || {};
-            safeAssign(JMETA.accountFirms, im.accountFirms, (v) => (v && typeof v === "object" ? v as Firm : null), keep);
-            JMETA.accountPhase = JMETA.accountPhase || {};
-            safeAssign(JMETA.accountPhase, (im as { accountPhase?: unknown }).accountPhase, (v) => {
-              const o = v as { phase?: string; since?: string };
-              return o && (o.phase === "eval" || o.phase === "funded")
-                ? { phase: o.phase, ...(typeof o.since === "string" ? { since: o.since } : {}) }
-                : null;
-            }, keep);
-            JMETA.rBasis = JMETA.rBasis || {};
-            safeAssign(JMETA.rBasis, (im as { rBasis?: unknown }).rBasis, sanitizeRBasis, keep);
-            if (!TAURI) LS.set("pel_jmeta", JMETA);
-          }
+          applyImportedMeta(data.meta, mode === "replace" && !target, target, fileAccts);
           normalizeMeta();
           renderAcctSel();
           Store.persistAll(JT, JMETA, () => {
@@ -4652,19 +4697,21 @@ function importData(data: ImportData, sample = false, extra = "") {
             if (sample && ACCT !== "" && ACCT !== SAMPLE_ACCT) setScope(SAMPLE_ACCT);
             renderJournal();
             if ($i("useJournal").checked) applyJournalEdge();
-            // name where the rows LANDED. With scope on account A, a backup
-            // whose trades are on account B imported successfully while the
-            // screen said "No trades in A" - a restore indistinguishable from
-            // a failed one unless the toast says which account got them.
+            // name where the rows LANDED, and what did not come in
             const dests: string[] = [];
             trades.forEach((t) => { const a = accOf(t); if (dests.indexOf(a) < 0) dests.push(a); });
-            const elsewhere = ACCT !== "" && dests.every((a) => a !== ACCT);
-            const msg = "Imported " + trades.length + " trades into " + dests.join(", ") +
+            const elsewhere = ACCT !== "" && dests.length > 0 && dests.every((a) => a !== ACCT);
+            const notes: string[] = [];
+            if (skipped) notes.push(skipped + " already in " + (target || "the journal") + " (skipped)");
+            if (imgFail > 0) notes.push(imgFail + " screenshot" + (imgFail > 1 ? "s" : "") + " missing from the file or could not be saved");
+            if (extra) notes.push(extra);
+            const msg = "Imported " + trades.length + " trade" + (trades.length === 1 ? "" : "s") + (dests.length ? " into " + dests.join(", ") : "") +
               (elsewhere ? " — you are viewing " + ACCT + "; switch account scope to see them." : ".") +
-              (extra ? " " + extra + "." : "");
+              (notes.length ? " " + notes.join(". ") + "." : "");
             const snap = before;
             if (snap) {
-              toastAction("Replaced your " + snap.trades.length + " trades. " + msg + " The old journal was saved to " + savedTo + ".", "Undo",
+              const gone = target ? snap.trades.filter((t) => accOf(t) === target).length : snap.trades.length;
+              toastAction("Replaced " + gone + " trade" + (gone === 1 ? "" : "s") + (target ? " in " + target : "") + ". " + msg + " A copy of the journal before this was saved to " + savedTo + ".", "Undo",
                 () => undoReplace(snap, trades), () => dropOldImages(snap), 20000);
             } else toast(msg);
           });
@@ -4672,22 +4719,92 @@ function importData(data: ImportData, sample = false, extra = "") {
         if (!pend) { writeTrades(); return; }
         validImgs.forEach((im) => {
           const b = im.dataUrl ? dataURLtoBlob(im.dataUrl) : null;
-          if (b && b.size <= 24 * 1024 * 1024) Store.putImage({ id: String(im.id), blob: b, w: im.w, h: im.h }, () => { if (--pend <= 0) writeTrades(); });
-          else if (--pend <= 0) writeTrades();
+          const done = (ok?: boolean) => { if (ok === false) imgFail++; if (--pend <= 0) writeTrades(); };
+          if (b && b.size <= 24 * 1024 * 1024) Store.putImage({ id: im.id, blob: b, w: im.w, h: im.h }, done);
+          else done(false);
         });
       };
-      if (mode === "replace" && JT.length) snapshotThen(writeAll);
+      const removes = mode === "replace" && (target ? JT.some((t) => accOf(t) === target) : JT.length > 0);
+      if (removes) snapshotThen(writeAll);
       else writeAll();
     };
-    if (JT.length) {
-      ask("Import <b>" + imported.length + "</b> trades" + (sample ? " of sample data" : "") + ".<br><br>" +
-        "<b>Merge</b> adds them to your " + JT.length + " trades. <b>Replace</b> removes your " + JT.length + " trades and keeps only these " +
-        "(a copy of your current journal is saved first" + (TAURI ? ", in exports" : " as a download") + ").", [
+
+    const copyNote = "a copy of your whole journal is saved first" + (TAURI ? ", in exports" : " as a download");
+    if (target) {
+      const inA = JT.filter((t) => accOf(t) === target).length;
+      const others = fileAccts.filter((a) => a !== target);
+      const moved = others.length
+        ? "<br><br>The file has them under <b>" + others.map(esc).join(", ") + "</b>. They all go into <b>" + esc(target) + "</b>. To keep the file's own accounts instead, set Account scope to <b>All accounts</b> first."
+        : "";
+      if (!inA) {
+        ask("Import <b>" + imported.length + "</b> trades into <b>" + esc(target) + "</b>." + moved + "<br><br>Your other accounts are not touched.", [
+          { label: "Cancel", kind: "", value: "cancel" },
+          { label: "Import into " + target, kind: "primary", value: "merge" },
+        ], run);
+      } else {
+        ask("Import <b>" + imported.length + "</b> trades into <b>" + esc(target) + "</b>." + moved + "<br><br>" +
+          "<b>Merge</b> adds them to the " + inA + " trades in " + esc(target) + ". <b>Replace</b> removes those " + inA + " trades and keeps only these (" + copyNote + "). " +
+          "Your other accounts are not touched either way.", [
+          { label: "Cancel", kind: "", value: "cancel" },
+          { label: "Replace " + target, kind: "danger", value: "replace" },
+          { label: "Merge", kind: "primary", value: "merge" },
+        ], run);
+      }
+    } else if (JT.length) {
+      const nAcc = new Set(JT.map(accOf)).size;
+      ask("Import <b>" + imported.length + "</b> trades" + (sample ? " of sample data" : "") + " into <b>" + fileAccts.map(esc).join(", ") + "</b>.<br><br>" +
+        "<b>Merge</b> adds them to your journal. <b>Replace</b> removes <b>all " + JT.length + " trades in " + (nAcc === 1 ? "your account" : "all " + nAcc + " accounts") + "</b> and keeps only these (" + copyNote + ").<br><br>" +
+        "To import into one account only, pick it in Account scope first.", [
         { label: "Cancel", kind: "", value: "cancel" },
-        { label: "Replace", kind: "danger", value: "replace" },
+        { label: "Replace everything", kind: "danger", value: "replace" },
         { label: "Merge", kind: "primary", value: "merge" },
       ], run);
-    } else run("replace");
+    } else run("merge");
+}
+// Account settings that come with a file. All accounts in scope: the file's
+// accounts are added, and its settings fill in what the journal does not have
+// yet (Replace-everything lets the file's settings win). One account in scope:
+// nothing about the file's other accounts is added; if the file is a single
+// account, its settings fill in only what the target account has not set.
+function applyImportedMeta(meta: unknown, fileWins: boolean, target: string, fileAccts: string[]) {
+  const im = meta as Record<string, unknown> | undefined;
+  if (!im || typeof im !== "object") return;
+  const keep = !fileWins;
+  const num = (v: unknown) => { const n = safeNum(v); return n == null ? null : n; };
+  const phase = (v: unknown) => {
+    const o = v as { phase?: string; since?: string };
+    return o && (o.phase === "eval" || o.phase === "funded")
+      ? { phase: o.phase, ...(typeof o.since === "string" ? { since: o.since } : {}) }
+      : null;
+  };
+  JMETA.balances = JMETA.balances || {};
+  JMETA.accountFirms = JMETA.accountFirms || {};
+  JMETA.accountPhase = JMETA.accountPhase || {};
+  JMETA.rBasis = JMETA.rBasis || {};
+  if (target) {
+    if (fileAccts.length !== 1) return;
+    const src = fileAccts[0];
+    const pick = (o: unknown) => (o && typeof o === "object" && !isDangerousKey(src) ? (o as Record<string, unknown>)[src] : undefined);
+    const fill = <T>(dst: Record<string, T>, v: T | null) => { if (v != null && dst[target] == null) dst[target] = v; };
+    fill(JMETA.balances, num(pick(im.balances)));
+    fill(JMETA.rBasis, sanitizeRBasis(pick(im.rBasis)));
+    fill(JMETA.accountPhase, phase(pick(im.accountPhase)));
+    const f = pick(im.accountFirms);
+    fill(JMETA.accountFirms, f && typeof f === "object" ? f as Firm : null);
+  } else {
+    const sb = safeNum(im.startBalance);
+    if (sb != null && (fileWins || JMETA.startBalance == null)) JMETA.startBalance = sb;
+    if (Array.isArray(im.accounts)) {
+      const merged = accounts().slice();
+      safeStrArr(im.accounts, 200).forEach((a) => { if (!isDangerousKey(a) && merged.indexOf(a) < 0) merged.push(a); });
+      JMETA.accounts = merged;
+    }
+    safeAssign(JMETA.balances, im.balances, num, keep);
+    safeAssign(JMETA.accountFirms, im.accountFirms, (v) => (v && typeof v === "object" ? v as Firm : null), keep);
+    safeAssign(JMETA.accountPhase, im.accountPhase, phase, keep);
+    safeAssign(JMETA.rBasis, im.rBasis, sanitizeRBasis, keep);
+  }
+  if (!TAURI) LS.set("pel_jmeta", JMETA);
 }
 
 // ---------- CSV import ----------
