@@ -52,7 +52,13 @@ function fail(m) { console.error('FAIL: ' + m); process.exitCode = 1; }
   else console.log('ok: chance of a payout reads ' + kv.payAny);
   if (!/typical/.test(kv.pays)) fail('payouts/year missing the typical-vs-average split: ' + kv.pays);
   else console.log('ok: payouts/year reads ' + kv.pays.replace(/\s+/g, ' ').slice(0, 60));
-  if (!kv.goalHidden) fail('the goal row must stay hidden until a goal is set');
+  // 2.19.0: a goal is set out of the box (one payout a month), so the row shows;
+  // 0 turns it off
+  if (kv.goalHidden) fail('the default goal (one payout a month) should show the goal row');
+  else console.log('ok: goal row shows the default goal');
+  await page.evaluate(() => { const n = document.getElementById('nGoal'); n.value = '0'; n.dispatchEvent(new Event('input', { bubbles: true })); });
+  await new Promise(r => setTimeout(r, 800));
+  if (!(await page.evaluate(() => document.getElementById('fGoalRow').classList.contains('hide')))) fail('goal 0 must hide the goal row');
   else console.log('ok: goal row hidden at goal 0');
 
   // ---------- the payout odds must agree with the Decision tab ----------
@@ -82,6 +88,9 @@ function fail(m) { console.error('FAIL: ' + m); process.exitCode = 1; }
     await new Promise(r => setTimeout(r, 800));
   };
 
+  // these goal checks are written in yearly dollars; the tab opens per month
+  await page.evaluate(() => document.querySelector('button[data-goalp="yr"]').click());
+  await new Promise(r => setTimeout(r, 600));
   await setGoal(9000);
   const g1 = await page.evaluate(() => ({
     hidden: document.getElementById('fGoalRow').classList.contains('hide'),
@@ -108,6 +117,8 @@ function fail(m) { console.error('FAIL: ' + m); process.exitCode = 1; }
   // everything else here is measured over is a year. Switching period must move
   // the box, never the target - and it must say so, since payouts are lumpy and
   // a monthly figure invites reading it as a wage.
+  await page.evaluate(() => document.querySelector('button[data-goalp="yr"]').click());
+  await new Promise(r => setTimeout(r, 600));
   await setGoal(12000);
   const yr = await page.evaluate(() => ({ box: document.getElementById('nGoal').value, stored: JSON.parse(localStorage.getItem('pel_pay_goal')) }));
   await page.evaluate(() => document.querySelector('button[data-goalp="mo"]').click());

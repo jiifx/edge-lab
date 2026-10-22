@@ -356,7 +356,13 @@ export const PAY_CHUNK = 5;
 // consumes NO draws, and with all four fields at 0 every comparison below
 // reduces to the pre-gate code path exactly - all seeded anchors, TS and Rust,
 // read the identical stream.
-export function fundedSim(risk: number, T: number, rnd: () => number): { profit: number; alive: 0 | 1; pays: number } {
+// `ev`, when given, records WHEN things happened: the step of every withdrawal
+// (and its size in % of account) and the step the account died (-1 = alive).
+// Recording consumes no draws and changes no branch, so every seeded anchor
+// reads the identical stream with or without it. The portfolio simulator
+// (portfolioSim) needs the timing; nothing else pays for it.
+export interface FundedEvents { pays: number[]; amts: number[]; death: number }
+export function fundedSim(risk: number, T: number, rnd: () => number, ev?: FundedEvents): { profit: number; alive: 0 | 1; pays: number } {
   let eq = 0, peak = 0, peakEod = 0, banked = 0, inDay = 0, sincePay = 0, dayStart = 0, pays = 0, winCount = 0;
   // consistency gate bookkeeping: the best single DAY and the profit earned,
   // both measured since the last payout (the app models the resetting variant,
@@ -383,7 +389,7 @@ export function fundedSim(risk: number, T: number, rnd: () => number): { profit:
     // checked BEFORE the rollover resets dayStart, mirroring phaseWalk, where
     // every check precedes the rollover - otherwise the last trade of each day
     // would escape the limit
-    if (F.daily > 0 && eq - dayStart <= -F.daily) return { profit: banked, alive: 0, pays };
+    if (F.daily > 0 && eq - dayStart <= -F.daily) { if (ev) ev.death = i; return { profit: banked, alive: 0, pays }; }
     inDay++;
     if (inDay >= tpd) {
       // a winning day is judged on the day's CLOSE, before dayStart resets
@@ -395,7 +401,7 @@ export function fundedSim(risk: number, T: number, rnd: () => number): { profit:
       inDay = 0; sincePay++; if (eq > peakEod) peakEod = eq; dayStart = eq;
     }
     const fl = ddFloor(peak, peakEod, F.maxdd);
-    if (eq <= fl) return { profit: banked, alive: 0, pays };
+    if (eq <= fl) { if (ev) ev.death = i; return { profit: banked, alive: 0, pays }; }
     // A big day does not fail the account - it BLOCKS withdrawals until later
     // profit dilutes its share below the threshold. That is a delay, which is
     // why this gate keeps the provable sign the first-payout leg relies on.
@@ -418,11 +424,60 @@ export function fundedSim(risk: number, T: number, rnd: () => number): { profit:
         // the first sweep harsher on unlocked trailing-EOD rules (floor stayed
         // at -maxdd instead of following the withdrawal down), breaking this
         // branch's own invariant that a withdrawal is not a trading loss
-        if (eq >= w) { banked += w; eq -= w; peak -= w; peakEod -= w; dayStart -= w; sincePay = 0; pays++; winCount = 0; bestDay = 0; profitSince = 0; }
-      } else if (wOk && eq >= fl + F.maxdd + w) { banked += w; eq -= w; dayStart -= w; sincePay = 0; pays++; winCount = 0; bestDay = 0; profitSince = 0; }
+        if (eq >= w) { banked += w; eq -= w; peak -= w; peakEod -= w; dayStart -= w; sincePay = 0; pays++; winCount = 0; bestDay = 0; profitSince = 0; if (ev) { ev.pays.push(i); ev.amts.push(w); } }
+      } else if (wOk && eq >= fl + F.maxdd + w) { banked += w; eq -= w; dayStart -= w; sincePay = 0; pays++; winCount = 0; bestDay = 0; profitSince = 0; if (ev) { ev.pays.push(i); ev.amts.push(w); } }
     }
   }
   return { profit: banked, alive: 1, pays };
+}
+
+// ---------------------------------------------------------------------------
+// SEVERAL FUNDED ACCOUNTS AT ONCE (2.19.0)
+// ---------------------------------------------------------------------------
+// Everything above sizes ONE account. A trader running several copies of the
+// same signal is not running several independent accounts: the same bad day
+// hits all of them, so "93% survive" per account is not three independent 93%
+// chances. This runs every account through fundedSim on ONE shared stream of
+// trades (copy-trading, exact: fundedSim draws exactly one random number per
+// trade, so the same seed IS the same trades) or on separate streams
+// (independent strategies).
+//
+// Rebuy: a blown account is replaced after `fundSteps` trades (the expected time
+// to pass an evaluation again) and the replacement joins the SAME stream at that
+// point - copy-trading keeps copying. Its cost is charged by the caller as
+// rebuys x cost-to-fund. The evaluation is not re-simulated: its time and its
+// expected cost are, which is what decides whether replacing pays.
+export interface PortfolioPath { profitPct: number; rebuys: number; aliveEnd: number; allDown: 0 | 1; byMonth: number[] }
+export function portfolioSim(sizes: number[], T: number, seed: number, independent: boolean, rebuy: boolean, fundSteps: number): PortfolioPath {
+  const tpd = tpdOf();
+  const stepsPerMonth = Math.max(1, TRADING_DAYS_PER_MONTH * tpd);
+  const months = Math.max(1, Math.ceil(T / stepsPerMonth));
+  const byMonth = new Array<number>(months).fill(0);
+  let profitPct = 0, rebuys = 0, aliveEnd = 0;
+  // alive intervals of every slot, to find a moment when NO account is up
+  const cover = new Array<number>(T + 1).fill(0);
+  for (let k = 0; k < sizes.length; k++) {
+    const streamSeed = independent ? (seed + k * 0x9e3779b1) | 0 : seed;
+    let t = 0;
+    while (t < T) {
+      const rnd = mulberry(streamSeed);
+      for (let b = 0; b < t; b++) rnd();          // join the stream at step t
+      const ev: FundedEvents = { pays: [], amts: [], death: -1 };
+      const r = fundedSim(sizes[k], T - t, rnd, ev);
+      profitPct += r.profit;
+      ev.pays.forEach((st, j) => { byMonth[Math.min(months - 1, Math.floor((t + st) / stepsPerMonth))] += ev.amts[j]; });
+      const end = r.alive ? T : t + ev.death + 1;
+      cover[t]++; cover[Math.min(T, end)]--;
+      if (r.alive) { aliveEnd++; break; }
+      if (!rebuy) break;
+      t = end + fundSteps;
+      if (t < T) rebuys++;
+    }
+  }
+  // a moment with nobody up = every slot dead at once (copy-trading's real risk)
+  let up = 0, allDown: 0 | 1 = 0;
+  for (let i = 0; i < T; i++) { up += cover[i]; if (up <= 0) { allDown = 1; break; } }
+  return { profitPct, rebuys, aliveEnd, allDown, byMonth };
 }
 // `profit` is a MEAN, and the distribution behind it is heavily right-skewed: a
 // minority of long-lived accounts carry it while the median account banks far

@@ -115,7 +115,7 @@
   <div>18. Your account, and prop firm mode</div>
   <div>19. Validate</div>
   <div>20. Challenge</div>
-  <div>21. Funded</div>
+  <div>21. Funded (optimizer)</div>
   <div>22. Decision</div>
   <div class="g">Part 4 — Reference</div>
   <div>23. Messages you may see</div>
@@ -540,44 +540,73 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">Phase 1/2 is the harder gate</td><td>Which phase kills most attempts on a 2-step firm.</td></tr>
 </table>
 
-<h3>21. Funded — will it pay? <span style="font-weight:400;font-size:10pt;color:#5C635A">(prop firm mode)</span></h3>
+<h3>21. Funded — the sizing optimizer <span style="font-weight:400;font-size:10pt;color:#5C635A">(prop firm mode)</span></h3>
 <figure><img src="shots/09-funded.png" alt="Funded"><figcaption>Funded.</figcaption></figure>
+<p>This tab is an optimizer: it searches every risk size for your edge and your firm and suggests the size each goal calls for. Everything works out of the box on default settings, and every setting can be changed.</p>
 <ol class="steps">
-  <li>Set <b>Risk per trade %</b> for the funded account. Most traders size down after passing.</li>
-  <li>Optional: set a <b>Payout goal</b> per month or per year. 0 = off. The slider moves in whole payouts.</li>
-  <li>Read the results and the chart.</li>
+  <li>Pick <b>Per month</b> (default) or <b>Per year</b> at the top. Every money figure, the goal and the tables follow it.</li>
+  <li>Set a <b>Payout goal</b>. Never set, it defaults to <b>one payout a month</b>; 0 turns it off. The slider moves in whole payouts.</li>
+  <li>Read <b>Suggested sizes</b> under the chart and click <b>Use</b> on the one you want: it sets <b>Risk per trade %</b>.</li>
+  <li>Optional: change the <b>Optimizer settings</b>, or plan several accounts under <b>Several accounts</b>.</li>
 </ol>
+<h4>Suggested sizes</h4>
+<table>
+  <tr><th>Suggestion</th><th>What it picks</th></tr>
+  <tr><td class="k">Goal</td><td>The smallest size whose odds of reaching your goal are within 3% of the best size's odds: the least risk that still gets you there.</td></tr>
+  <tr><td class="k">Balanced</td><td>The largest size, up to the top of the profit plateau, whose yearly survival clears your <b>survival target</b> (default 85%) at your measured edge <b>and</b> in the set share of plausible versions of it (default 9 of 10; your record resampled, a slider edge redrawn at its own trades-in-record size). A size that clears the target only at the measured edge is shown as <b>fragile</b>.</td></tr>
+  <tr><td class="k">Velocity</td><td>The most payouts a year among sizes whose survival stays above the <b>velocity survival floor</b> (default 75%), robustly. Ties go to the smaller size.</td></tr>
+  <tr><td class="k">Max net</td><td>The most <b>net</b> profit, with no survival bar: the aggressive end, shown so the trade-off is visible.</td></tr>
+  <tr><td class="k">Your size</td><td>The risk slider, for comparison.</td></tr>
+</table>
+<p>Each row shows the size, yearly survival, <b>Holds</b> (the share of plausible edges where that size still clears your survival target), payouts, and <b>Net</b>: payouts minus the expected cost of replacing a blown account (the cost and time to get funded again, at the Challenge tab's eval risk). Counting that cost is what stops a size that pays once and then blows up from looking as good as one that lasts.</p>
+<h4>Optimizer settings</h4>
+<table>
+  <tr><td class="k">Survival target %</td><td>What Balanced must keep alive for a year. Default 85.</td></tr>
+  <tr><td class="k">Must hold in</td><td>How sure: 8 of 10, <b>9 of 10</b> (default) or 19 of 20 plausible versions of your edge.</td></tr>
+  <tr><td class="k">Velocity survival floor %</td><td>The lowest survival Velocity may accept. Default 75.</td></tr>
+  <tr><td class="k">Reset to defaults</td><td>Puts every setting back. The line beside it says whether you are on the defaults.</td></tr>
+</table>
+<h4>The tiles</h4>
 <table>
   <tr><td class="k">Chance of a payout</td><td>Chance of at least one withdrawal inside the year, including the first-payout wait and minimum.</td></tr>
-  <tr><td class="k">Payouts / year</td><td>Typical (median) and average count. Each payout is up to 5% of the account.</td></tr>
-  <tr><td class="k">Profit / year</td><td>Cash actually withdrawn, averaged over every account including the ones that blew up. In $ mode it is after your split; in % mode, before.</td></tr>
-  <tr><td class="k">Survival</td><td>Accounts still alive after 252 trading days.</td></tr>
+  <tr><td class="k">Payouts / month</td><td>The year's average divided by 12 (per year: typical and average count). Each payout is up to 5% of the account.</td></tr>
+  <tr><td class="k">Profit / month</td><td>Cash actually withdrawn, averaged over every account including the ones that blew up. In $ mode it is after your split; in % mode, before.</td></tr>
+  <tr><td class="k">Survival (1 year)</td><td>Accounts still alive after 252 trading days. Green when it clears your survival target.</td></tr>
   <tr><td class="k">Breached banks</td><td>Median cash an account that breaches had withdrawn before it died, beside a survivor's. Shown when survival is under 100%.</td></tr>
-  <tr><td class="k">Balanced size</td><td>The largest size, up to the top of the profit plateau, where 85+ accounts in 100 survive the year <b>not only at your measured edge but in at least 9 of 10 plausible versions of it</b> (your record resampled; a slider edge is redrawn at its own trades-in-record size). The tile shows the survival, how often it holds (e.g. <b>holds 9/10</b>), and what share of the maximum profit it keeps. The chart marks it with a dashed <b>balanced</b> line beside the <b>most profit</b> bracket. Hidden under 30 trades.
-    <br><br>Why not the most profitable size: payouts come out in fixed chunks, so past a point a bigger size cannot pay more, only blow up more, and the most profitable sizes usually sit right next to a survival cliff (often the daily loss limit). A size that clears 85% only if your edge is exactly as measured is shown as <b>fragile</b> instead.</td></tr>
-  <tr><td class="k">Smallest size for goal</td><td>The smallest size whose odds of reaching your goal are within 3% of the best.</td></tr>
+  <tr><td class="k">Balanced size</td><td>The Balanced suggestion, with its survival, how often it holds, and the share of the maximum net profit it keeps.</td></tr>
+  <tr><td class="k">Smallest size for goal</td><td>The Goal suggestion, with its odds; or why the goal cannot be reached on one account (the firm's payout schedule caps it, or no size gets there).</td></tr>
 </table>
-<p><b>Chart:</b> profit per year against size. It rises, flattens, then falls as accounts start dying. The background shades with survival: green survives, red dies. The bracket marks the flat top: sizes that pay within 3% of the best, but that do <b>not</b> survive the same. The solid line is your size; a dashed line marks the smallest size for your goal.</p>
+<p><b>Chart:</b> net profit against size, shaded by survival (green survives, red dies). Every suggestion is a dashed line with its name; the solid line is your size. Hover for the numbers at any size.</p>
+<h4>Several accounts</h4>
+<p>Everything above sizes <b>one</b> account. Traders running several accounts are not running independent ones: with the same trades on every account, the same bad day hits all of them. This section simulates 1 up to <b>Accounts (most you'd run)</b> at once and, for each count, the size that reaches your goal with the least risk.</p>
+<table>
+  <tr><td class="k">Copy-trade / Independent</td><td><b>Copy-trade</b> (default): every account takes the same trades, so they win and lose together. <b>Independent</b>: each account trades its own stream from the same edge (different strategies or times).</td></tr>
+  <tr><td class="k">Same size / Ladder</td><td><b>Ladder</b> spreads sizes from 0.7&times; to 1.3&times; of the base. With copy-trading it is the only diversification there is: a streak that ends the biggest account leaves the smaller ones standing.</td></tr>
+  <tr><td class="k">Replace a blown account</td><td>Buys a new evaluation when one blows up; it trades again after the expected time to pass and costs the expected cost to get funded.</td></tr>
+  <tr><td class="k">Goal reached</td><td>Share of years whose payouts reach your goal.</td></tr>
+  <tr><td class="k">All down at once</td><td>Share of years with a moment when <b>no</b> account is up. With copy-trading, this is the risk that matters.</td></tr>
+</table>
+<p>The &#9733; row is the recommendation: the <b>fewest</b> accounts that reach your goal in at least half the years (fewest = least in fees), or with no goal, the best net whose all-down risk stays under 1 &minus; your survival target. Starting the accounts costs extra: one cost-to-fund each.</p>
 <div class="note"><p class="h">The withdrawal habit this tab assumes</p>
-<p>Up to 5% of the account is swept every 5 trading days, <b>never out of the drawdown cushion</b>. On a static or locked-trailing floor, a sweep only happens if the account stays a full max-drawdown above its floor afterwards: on $50,000 with a $2,000 drawdown, $2,000 stays in and the first withdrawal needs about $4,500 of profit. That retained cushion is most of what "Survival" measures. Keeping $500 less costs about 16 points of survival; $1,000 less costs about 51. If you sweep down to the firm's minimum, the survival figure does not describe you. On an <b>unlocked</b> trailing floor nothing is retained, because the floor follows the withdrawal down.</p>
-<p>Payout gates (buffer, % cap, $ cap, consistency, winning days) are applied exactly as the firm would. Payout <b>cadence</b> is shown but not priced. Trades are drawn independently: no tilt, no streaks, no sizing up after a loss.</p></div>
+<p>Up to 5% of the account is swept every 5 trading days, <b>never out of the drawdown cushion</b>. Payout gates (buffer, % cap, $ cap, consistency, winning days) are applied exactly as the firm would. Payout <b>cadence</b> is shown but not priced. Trades are drawn independently and every day trades your full trades-per-day: no tilt, no stopping for the day, which is what puts a cliff where five losing trades cross a daily loss limit. A replacement account's evaluation is priced by its expected time and cost, not re-simulated.</p></div>
 
 <h3>22. Decision — is it worth buying? <span style="font-weight:400;font-size:10pt;color:#5C635A">(prop firm mode)</span></h3>
 <figure><img src="shots/10-decision.png" alt="Decision"><figcaption>Decision.</figcaption></figure>
 <ol class="steps">
-  <li>Set <b>Eval risk / trade %</b> and <b>Funded risk / trade %</b>. These two also drive the journal's prop odds.</li>
+  <li>Set <b>Eval risk / trade %</b> and <b>Funded risk / trade %</b>, or click <b>Apply</b> on one of the <b>Plans for your goal</b> to set both. These two also drive the journal's prop odds.</li>
   <li>Read <b>Net expected value of buying in</b> and its verdict: <b>Worth it</b>, <b>Not worth it</b>, or <b>Could go either way</b> (graded on the low end of the 90% range).</li>
   <li>If it's not worth it, read the line under the verdict: it names an eval size that would make it pay, or says no size will.</li>
 </ol>
 <table>
   <tr><td class="k">Chance to pass</td><td>End-to-end pass odds (both phases on a 2-step).</td></tr>
   <tr><td class="k">Expected fees to fund</td><td>Average cost to get funded, re-attempting until you pass: fees, resets, subscription months, activation.</td></tr>
-  <tr><td class="k">Best eval size</td><td>The eval size that funds you for the least money, measured on this firm; where several cost the same, the quickest that still passes 85+ attempts in 100 <b>in at least 9 of 10 plausible versions of your edge</b> (the same robustness as the Funded tab's balanced size). Under a time limit or min days, a <b>smaller</b> size can cost more.</td></tr>
+  <tr><td class="k">Best eval size</td><td>The eval size that funds you for the least money, measured on this firm; where several cost the same, the quickest that still passes 85+ attempts in 100 in the Funded tab's share of plausible versions of your edge (default 9 of 10).</td></tr>
   <tr><td class="k">First-year payout</td><td>Expected withdrawals over a funded year, after split.</td></tr>
   <tr><td class="k">Pass → paid</td><td>Chance one purchase ends with money withdrawn; in brackets, the odds once funded and typical days to the first payout.</td></tr>
-  <tr><td class="k">Net @ 1st payout</td><td>Where you stand the day of your first withdrawal: the odds of getting there × one payout, minus the cost to fund. A firm can be worth a year and still not have repaid its fee by then.</td></tr>
+  <tr><td class="k">Net @ 1st payout</td><td>Where you stand the day of your first withdrawal: the odds of getting there × one payout, minus the cost to fund.</td></tr>
 </table>
-<p><b>Budget to funded</b> shows what to set aside to be 50%, 80% or 95% sure of getting funded, with attempts and months. Plan from these rather than the average when evaluations come out of savings. They assume attempts are independent; real traders tilt after failures, so treat them as floors.</p>
+<p><b>Budget to funded</b> shows what to set aside to be 50%, 80% or 95% sure of getting funded, with attempts and months. They assume attempts are independent.</p>
+<p><b>Plans for your goal</b> pairs the best eval size with each Funded-tab suggestion (Goal, Balanced, Velocity, Max net) and prices the first year: payouts at that funded size minus the cost to get funded. The sizes and settings are the Funded tab's, so the two tabs always name the same sizes.</p>
 <p>The net EV assumes your edge is real (check Validate), that you re-attempt until funded, and about a year of trading. It ignores time value and taxes. Discounted resets are priced only when a Reset fee is set.</p>
 
 <!-- ============================ PART 4 ============================ -->

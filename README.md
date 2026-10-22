@@ -81,7 +81,14 @@ To update, install the new version over the old one. Your journal is not touched
 **Prop firm mode (optional)**
 - Firm rules: static / trailing / end-of-day drawdown, daily loss, targets, min days, consistency,
   fees, payout gates
-- **Challenge** pass odds, **Funded** payouts and survival, **Decision** net expected value of buying in
+- **Challenge** pass odds, and the eval size that funds you cheapest and fastest
+- **Funded** is a sizing optimizer: against a monthly payout goal it suggests a **Goal**, **Balanced**,
+  **Velocity** and **Max net** size (marked on the chart, one click to use), each robust to your edge
+  being an estimate, with net profit counting the cost of replacing a blown account. Defaults work out
+  of the box; survival target, confidence and velocity floor are configurable
+- **Several accounts**: copy-traded or independent, same size or laddered, with blown accounts
+  replaced - the fewest accounts and the size that reach your monthly goal
+- **Decision** net expected value of buying in, and a plan per optimization (eval + funded size)
 - **Rule guard**: live distance to a bound account's drawdown floor, daily limit and target
 
 The explanations live in the **user manual** (the **?** button in the app, or

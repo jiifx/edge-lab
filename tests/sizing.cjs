@@ -43,7 +43,7 @@ const ok = (m) => console.log('ok: ' + m);
   if (f.label !== 'Balanced size') fail('the tile should be labelled Balanced size, is "' + f.label + '"');
   if (!(size > 0.2 && size < 0.82)) fail('balanced size should sit below the old 0.82% pick, got ' + f.text.replace(/\n/g, ' | '));
   else ok('Funded: ' + f.text.replace(/\n/g, ' | '));
-  if (!/plausible/.test(f.title) || !/% of the most profitable/.test(f.title)) fail('the tooltip must state the robustness and the profit cost: ' + f.title);
+  if (!/plausible/.test(f.title) || !/% of the most net profit/.test(f.title)) fail('the tooltip must state the robustness and the profit cost: ' + f.title);
   else ok('tooltip: ' + f.title);
 
   // Challenge eval pick on the Decision tab, after its robust check

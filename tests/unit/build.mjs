@@ -45,6 +45,7 @@ export async function buildOnce(tag = "app") {
     `export { dowOf, hourOf, hourLabel, durBucket, dayOrdinals, postLossGaps, timeBuckets, separability, dayCountRows, targetSweep } from "${src}/journal.ts";`,
     `export { parseCsvRows, csvNum, csvDate, csvDateOrder, csvToTrades } from "${src}/journal.ts";`,
     `export { generateSample, SAMPLE_ACCT } from "${src}/sample.ts";`,
+    `export { optSettings, setOpt, resetOpt, OPT_DEFAULTS, sharesAt, netCurve, pickBalancedAt, pickVelocity, pickMaxNet, pickGoal, ladderSizes, pickPerCount, recommendCount } from "${src}/optimize.ts";`,
   ].join("\n"));
   const outfile = join(outDir, tag + ".mjs");
   await esbuild.build({
