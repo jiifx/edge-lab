@@ -814,20 +814,25 @@ let bandCancel = 0;
 interface RobustSlot { key: string; shares: number[] | null; seq: number }
 const robustSlots: Record<string, RobustSlot> = {};
 let lastBalanced: number | null = null;   // the Funded tab's balanced size, for Validate
-function ensureRobust(kind: string, key: string, n: number, score: () => number[], bar: number): number[] | null {
+// One SIZE of one record per slice: a whole record's sizes in one slice put the
+// Decision tab's worst main-thread task at 219ms on CI against a 250ms budget.
+// scoreAt(i) scores size i under the edge in force; the engine seeds every size
+// identically, so per-size calls give exactly the numbers one call would.
+function ensureRobust(kind: string, key: string, n: number, scoreAt: (i: number) => number, bar: number): number[] | null {
   const slot = robustSlots[kind] || (robustSlots[kind] = { key: "", shares: null, seq: 0 });
   if (slot.key === key) return slot.shares;
   if (FAST || n <= 0) return null;
   slot.key = key; slot.shares = null;
   const my = ++slot.seq;
   const hits = new Array<number>(n).fill(0);
-  let drawn = 0;
+  let drawn = 0, i = 0;
+  let rec: number[] = [];
   runJob(() => {
     if (my !== slot.seq) return true;
-    const rec = plausibleRecord(9101 + drawn * 0x9e3779b1);
-    drawn++;
-    const v = withEdge(rec, score);
-    for (let i = 0; i < n; i++) if ((v[i] ?? 0) >= bar) hits[i]++;
+    if (i === 0) rec = plausibleRecord(9101 + drawn * 0x9e3779b1);
+    const at = i;
+    if (withEdge(rec, () => scoreAt(at)) >= bar) hits[at]++;
+    if (++i >= n) { i = 0; drawn++; }
     return drawn >= ROBUST_DRAWS;
   }, () => {
     if (my !== slot.seq) return;
@@ -1257,15 +1262,32 @@ let gCache: GCache = { risks: [], prof: [], surv: [], pays: [] };
 // whole step for want of the point between (0.58% fails, so 0.46% at 70% of max
 // profit, where 0.52% holds at 81%). Point survival and profit at the fine sizes
 // come from one full-count run on the record itself, cached per edge and firm.
+// Through the job queue, ONE size per slice: run whole it is ~4M walk steps and
+// blocked the window for 349ms on CI (tests/perftest.cjs, budget 250ms).
+// fundedCurve seeds every size's runs identically, so computing one size per
+// call gives exactly the numbers one call over all sizes would.
 let fineCache: { key: string; sizes: number[]; prof: number[]; surv: number[] } | null = null;
+let finePending = "";
 function fineCurve(key: string, top: number): { sizes: number[]; prof: number[]; surv: number[] } | null {
   if (fineCache && fineCache.key === key) return fineCache;
-  if (FAST) return null;
+  if (FAST || finePending === key) return null;
+  finePending = key;
   const sizes: number[] = [];
   for (let r = 0.1; r <= top + 1e-9; r += 0.06) sizes.push(Math.round(r * 100) / 100);
-  const c = fundedCurve(sizes, 240, yearSteps());
-  fineCache = { key, sizes, prof: c.prof, surv: c.surv };
-  return fineCache;
+  const prof: number[] = [], surv: number[] = [];
+  let k = 0;
+  runJob(() => {
+    if (finePending !== key) return true;
+    const c = fundedCurve([sizes[k]], 240, yearSteps());
+    prof.push(c.prof[0]); surv.push(c.surv[0]);
+    return ++k >= sizes.length;
+  }, () => {
+    if (finePending !== key) return;
+    finePending = "";
+    fineCache = { key, sizes, prof, surv };
+    render();
+  });
+  return null;
 }
 // One withdrawal in dollars, after the split and the user's haircut - the unit a
 // payout goal is quantised to, since the model only ever withdraws whole chunks.
@@ -1446,7 +1468,7 @@ function renderFunded() {
   const fine = noEdge || thinRecord ? null : fineCurve(d.key + "|" + upto, d.risks[upto] ?? 0);
   const fShares = !fine ? null
     : ensureRobust("fund", d.key + "|" + upto + "|fine", fine.sizes.length,
-      () => fundedCurve(fine.sizes, ROBUST_SIMS, yearSteps()).surv, SAFE_SURV);
+      (i) => fundedCurve([fine.sizes[i]], ROBUST_SIMS, yearSteps()).surv[0], SAFE_SURV);
   const bal = fShares && fine ? pickBalanced(fine.surv, fShares, fine.sizes.length - 1) : -1;
   // a grid size's slot on the fine grid (the fine grid contains every grid size)
   const fineAt = (gi: number) => fine ? Math.min(fine.sizes.length - 1, Math.max(0, Math.round(((d.risks[gi] ?? 0.1) - 0.1) / 0.06))) : 0;
@@ -1761,7 +1783,7 @@ function evalAdvice(curRisk: number): EvalAdvice {
   // hold in 9 of 10 plausible versions of the edge. Until that check lands the
   // point-estimate pick is shown, marked as still being checked.
   const evShares = ensureRobust("eval", eCache.key + "|" + pl.lo + "-" + pl.hi, pl.hi - pl.lo + 1,
-    () => challengeCurve(pts.slice(pl.lo, pl.hi + 1).map((p) => p.risk), ROBUST_EVAL_SIMS).map((p) => p.pass), PASS_BAR);
+    (i) => challengeCurve([pts[pl.lo + i].risk], ROBUST_EVAL_SIMS)[0].pass, PASS_BAR);
   let pickI = ep.pick, barMet = ep.barMet;
   if (evShares) {
     let rp = -1;
