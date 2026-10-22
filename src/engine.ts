@@ -361,9 +361,43 @@ export const PAY_CHUNK = 5;
 // Recording consumes no draws and changes no branch, so every seeded anchor
 // reads the identical stream with or without it. The portfolio simulator
 // (portfolioSim) needs the timing; nothing else pays for it.
+// HOW THE FUNDED ACCOUNT IS RUN (2.20.0). Two choices a funded trader makes
+// that the original model fixed:
+//  - payMax: withdraw the firm's MAXIMUM each time instead of the 5% habit
+//    chunk. With a dollar cap the request waits until the whole cap is
+//    available and takes all of it (a "max payout"); with only a % cap it takes
+//    the most the rule allows at each window; uncapped, every withdrawable dollar
+//    above the drawdown cushion. Windows open on the firm's own cadence
+//    (payoutEvery / payoutFirst), never sooner than the sweep habit.
+//  - cushion: size each trade by the distance to the drawdown floor instead of
+//    a fixed % of the account. `risk` is then the risk at a full cushion (the
+//    start): an account deep in drawdown trades smaller, one with profit built
+//    above a locked or static floor trades larger, up to CUSHION_CAP x.
+// Both default OFF, which is the pre-2.20 path exactly: neither consumes a draw
+// or changes a branch when off, so every seeded anchor (TS and Rust) reads the
+// identical stream. The app turns them on from the optimizer settings.
+export interface PayModel { payMax: boolean; cushion: boolean }
+let PM: PayModel = { payMax: false, cushion: false };
+export function setPayModel(m: Partial<PayModel>) { PM = { ...PM, ...m }; }
+export function payModel(): PayModel { return { ...PM }; }
+export const CUSHION_CAP = 2;
+// the smallest request worth making on a firm with no dollar cap, % of account
+export const MIN_REQ_PCT = 1;
+// The amount a max-payout request waits for, in % of account: the whole dollar
+// cap when the firm has one (that is what "max payout" means), else the firm's
+// minimum or MIN_REQ_PCT, whichever is larger.
+export function maxPayNeed(): number {
+  const minPct = F.account > 0 ? ((F.payoutMin || 0) / F.account) * 100 : 0;
+  const capAmtPct = F.account > 0 ? ((F.payoutCapAmt || 0) / F.account) * 100 : 0;
+  return capAmtPct > 0 ? Math.max(capAmtPct, minPct) : Math.max(minPct, MIN_REQ_PCT);
+}
+// the per-trade risk under the cushion rule, given where the floor is now
+function cushionRisk(risk: number, eq: number, fl: number): number {
+  return F.maxdd > 0 ? risk * Math.max(0, Math.min(CUSHION_CAP, (eq - fl) / F.maxdd)) : risk;
+}
 export interface FundedEvents { pays: number[]; amts: number[]; death: number }
-export function fundedSim(risk: number, T: number, rnd: () => number, ev?: FundedEvents): { profit: number; alive: 0 | 1; pays: number } {
-  let eq = 0, peak = 0, peakEod = 0, banked = 0, inDay = 0, sincePay = 0, dayStart = 0, pays = 0, winCount = 0;
+export function fundedSim(risk: number, T: number, rnd: () => number, ev?: FundedEvents, pm: PayModel = PM): { profit: number; alive: 0 | 1; pays: number; life: number } {
+  let eq = 0, peak = 0, peakEod = 0, banked = 0, inDay = 0, sincePay = 0, dayStart = 0, pays = 0, winCount = 0, day = 0;
   // consistency gate bookkeeping: the best single DAY and the profit earned,
   // both measured since the last payout (the app models the resetting variant,
   // which is what most firms publish - see the note on payoutCons)
@@ -383,13 +417,17 @@ export function fundedSim(risk: number, T: number, rnd: () => number, ev?: Funde
   const minPct = F.account > 0 ? ((F.payoutMin || 0) / F.account) * 100 : 0;
   const consF = Math.max(0, Math.min(100, F.payoutCons || 0));
   const gated = bufPct > 0 || capF > 0 || capAmtPct > 0 || winN > 0 || consF > 0;
+  // max-payout windows: the firm's cadence, never faster than the habit
+  const spacing = pm.payMax ? Math.max(every, F.payoutEvery || 0) : every;
+  const firstDay = pm.payMax ? Math.max(spacing, F.payoutFirst || 0) : 0;
+  const need = pm.payMax ? maxPayNeed() : 0;
   for (let i = 0; i < T; i++) {
-    eq += sampleR(rnd) * risk;
+    eq += sampleR(rnd) * (pm.cushion ? cushionRisk(risk, eq, ddFloor(peak, peakEod, F.maxdd)) : risk);
     if (eq > peak) peak = eq;
     // checked BEFORE the rollover resets dayStart, mirroring phaseWalk, where
     // every check precedes the rollover - otherwise the last trade of each day
     // would escape the limit
-    if (F.daily > 0 && eq - dayStart <= -F.daily) { if (ev) ev.death = i; return { profit: banked, alive: 0, pays }; }
+    if (F.daily > 0 && eq - dayStart <= -F.daily) { if (ev) ev.death = i; return { profit: banked, alive: 0, pays, life: i + 1 }; }
     inDay++;
     if (inDay >= tpd) {
       // a winning day is judged on the day's CLOSE, before dayStart resets
@@ -398,15 +436,26 @@ export function fundedSim(risk: number, T: number, rnd: () => number, ev?: Funde
       // the consistency rule compares the BEST day against profit since the last
       // payout; both are measured on closed days, so they update together here
       if (consF > 0) { if (dayPnl > bestDay) bestDay = dayPnl; profitSince += dayPnl; }
-      inDay = 0; sincePay++; if (eq > peakEod) peakEod = eq; dayStart = eq;
+      inDay = 0; sincePay++; day++; if (eq > peakEod) peakEod = eq; dayStart = eq;
     }
     const fl = ddFloor(peak, peakEod, F.maxdd);
-    if (eq <= fl) { if (ev) ev.death = i; return { profit: banked, alive: 0, pays }; }
+    if (eq <= fl) { if (ev) ev.death = i; return { profit: banked, alive: 0, pays, life: i + 1 }; }
     // A big day does not fail the account - it BLOCKS withdrawals until later
     // profit dilutes its share below the threshold. That is a delay, which is
     // why this gate keeps the provable sign the first-payout leg relies on.
     const consOk = consF <= 0 || profitSince <= 0 || bestDay / profitSince <= consF / 100;
-    if (sincePay >= every && consOk && (winN <= 0 || winCount >= winN) && (bufPct <= 0 || eq >= bufPct)) {
+    if (pm.payMax) {
+      if (sincePay >= spacing && day >= firstDay && consOk && (winN <= 0 || winCount >= winN) && (bufPct <= 0 || eq >= bufPct)) {
+        let w = trailUnlocked ? eq : eq - (fl + F.maxdd);
+        if (capF > 0) w = Math.min(w, (capF / 100) * eq);
+        if (capAmtPct > 0) w = Math.min(w, capAmtPct);
+        if (w > 0 && w >= need - 1e-9) {
+          banked += w; eq -= w; dayStart -= w; sincePay = 0; pays++; winCount = 0; bestDay = 0; profitSince = 0;
+          if (trailUnlocked) { peak -= w; peakEod -= w; }
+          if (ev) { ev.pays.push(i); ev.amts.push(w); }
+        }
+      }
+    } else if (sincePay >= every && consOk && (winN <= 0 || winCount >= winN) && (bufPct <= 0 || eq >= bufPct)) {
       // the withdrawal is the habit chunk, shrunk by the cap when one applies -
       // at most cap% of current profit may leave. A gated firm also refuses
       // anything under its minimum, so a cap-shrunk sliver is skipped rather
@@ -428,7 +477,7 @@ export function fundedSim(risk: number, T: number, rnd: () => number, ev?: Funde
       } else if (wOk && eq >= fl + F.maxdd + w) { banked += w; eq -= w; dayStart -= w; sincePay = 0; pays++; winCount = 0; bestDay = 0; profitSince = 0; if (ev) { ev.pays.push(i); ev.amts.push(w); } }
     }
   }
-  return { profit: banked, alive: 1, pays };
+  return { profit: banked, alive: 1, pays, life: T };
 }
 
 // ---------------------------------------------------------------------------
@@ -447,21 +496,35 @@ export function fundedSim(risk: number, T: number, rnd: () => number, ev?: Funde
 // point - copy-trading keeps copying. Its cost is charged by the caller as
 // rebuys x cost-to-fund. The evaluation is not re-simulated: its time and its
 // expected cost are, which is what decides whether replacing pays.
-export interface PortfolioPath { profitPct: number; rebuys: number; aliveEnd: number; allDown: 0 | 1; byMonth: number[] }
-export function portfolioSim(sizes: number[], T: number, seed: number, independent: boolean, rebuy: boolean, fundSteps: number): PortfolioPath {
+//
+// Stagger (2.20.0): account k is bought `staggerSteps` x k trades after the
+// first, so copy-traded accounts sit at different distances from their floors
+// when the same bad run arrives - the one diversification copy-trading has.
+// `bought` counts the accounts actually started inside the horizon.
+//
+// The streams are drawn once per path into an array and every account (and
+// every replacement) reads it from its own starting step. Identical numbers to
+// replaying mulberry from the seed, without re-drawing t numbers per rebuy.
+export interface PortfolioPath { profitPct: number; rebuys: number; aliveEnd: number; allDown: 0 | 1; byMonth: number[]; bought: number }
+export function portfolioSim(sizes: number[], T: number, seed: number, independent: boolean, rebuy: boolean, fundSteps: number, staggerSteps = 0): PortfolioPath {
   const tpd = tpdOf();
   const stepsPerMonth = Math.max(1, TRADING_DAYS_PER_MONTH * tpd);
   const months = Math.max(1, Math.ceil(T / stepsPerMonth));
   const byMonth = new Array<number>(months).fill(0);
-  let profitPct = 0, rebuys = 0, aliveEnd = 0;
+  let profitPct = 0, rebuys = 0, aliveEnd = 0, bought = 0;
   // alive intervals of every slot, to find a moment when NO account is up
   const cover = new Array<number>(T + 1).fill(0);
+  const streamOf = (sd: number) => { const a = new Float64Array(T); const r = mulberry(sd); for (let i = 0; i < T; i++) a[i] = r(); return a; };
+  const shared = independent ? null : streamOf(seed);
   for (let k = 0; k < sizes.length; k++) {
-    const streamSeed = independent ? (seed + k * 0x9e3779b1) | 0 : seed;
-    let t = 0;
+    const start = Math.max(0, Math.round(k * staggerSteps));
+    if (start >= T) break;
+    bought++;
+    const arr = shared || streamOf((seed + k * 0x9e3779b1) | 0);
+    let t = start;
     while (t < T) {
-      const rnd = mulberry(streamSeed);
-      for (let b = 0; b < t; b++) rnd();          // join the stream at step t
+      let pos = t;
+      const rnd = () => arr[pos++];               // join the stream at step t
       const ev: FundedEvents = { pays: [], amts: [], death: -1 };
       const r = fundedSim(sizes[k], T - t, rnd, ev);
       profitPct += r.profit;
@@ -474,10 +537,11 @@ export function portfolioSim(sizes: number[], T: number, seed: number, independe
       if (t < T) rebuys++;
     }
   }
-  // a moment with nobody up = every slot dead at once (copy-trading's real risk)
+  // a moment with nobody up = every slot dead at once (copy-trading's real risk);
+  // staggered accounts not yet bought are simply not up yet
   let up = 0, allDown: 0 | 1 = 0;
   for (let i = 0; i < T; i++) { up += cover[i]; if (up <= 0) { allDown = 1; break; } }
-  return { profitPct, rebuys, aliveEnd, allDown, byMonth };
+  return { profitPct, rebuys, aliveEnd, allDown, byMonth, bought };
 }
 // `profit` is a MEAN, and the distribution behind it is heavily right-skewed: a
 // minority of long-lived accounts carry it while the median account banks far
@@ -497,14 +561,14 @@ export function portfolioSim(sizes: number[], T: number, seed: number, independe
 // accounts the user will not have. "If it dies, what did it pay me first?" is
 // the number the likely outcome actually banks. Bookkeeping only: no extra
 // draws, no reordering, every seeded anchor reads the identical stream.
-export function fundedStats(risk: number, N: number, T: number): { profit: number; surv: number; paysMed: number; paysMean: number; bankedDeadMed: number; bankedAliveMed: number } {
+export function fundedStats(risk: number, N: number, T: number): { profit: number; surv: number; paysMed: number; paysMean: number; bankedDeadMed: number; bankedAliveMed: number; life: number } {
   const rnd = mulberry(9931);
-  let sp = 0, al = 0;
+  let sp = 0, al = 0, lf = 0;
   const pays: number[] = [];
   const dead: number[] = [], alive: number[] = [];
   for (let i = 0; i < N; i++) {
     const r = fundedSim(risk, T, rnd);
-    sp += r.profit; al += r.alive;
+    sp += r.profit; al += r.alive; lf += r.life;
     // the sim counts its own sweeps now (gated firms withdraw variable
     // amounts, so profit/PAY_CHUNK stopped being a withdrawal count); with no
     // gates every sweep is exactly one chunk and this equals the old derivation
@@ -517,7 +581,7 @@ export function fundedStats(risk: number, N: number, T: number): { profit: numbe
   let tot = 0;
   pays.forEach((c) => { tot += c; });
   return {
-    profit: sp / N, surv: al / N,
+    profit: sp / N, surv: al / N, life: N ? lf / N : 0,
     paysMed: N ? pays[(N * 0.5) | 0] : 0, paysMean: N ? tot / N : 0,
     bankedDeadMed: dead.length ? dead[(dead.length * 0.5) | 0] : 0,
     bankedAliveMed: alive.length ? alive[(alive.length * 0.5) | 0] : 0,
@@ -543,19 +607,22 @@ export function fundedStats(risk: number, N: number, T: number): { profit: numbe
 // the samples means P(bank >= k withdrawals) can be answered at render time for
 // ANY target k without re-simulating - so changing a payout goal is a redraw, not
 // a 5,000-run recompute, and the curve cache stays valid across goal changes.
-export function fundedCurve(risks: number[], N: number, T: number): { prof: number[]; surv: number[]; pays: number[][] } {
-  const prof: number[] = [], surv: number[] = [], pays: number[][] = [];
+// `life` is the mean number of TRADES an account stays up inside the horizon
+// (T for a survivor): with survival it gives how often a slot has to be
+// re-bought, which is what prices a size as a business (see slotEcon).
+export function fundedCurve(risks: number[], N: number, T: number, pm?: PayModel): { prof: number[]; surv: number[]; pays: number[][]; life: number[] } {
+  const prof: number[] = [], surv: number[] = [], pays: number[][] = [], life: number[] = [];
   for (const risk of risks) {
-    let sp = 0, al = 0;
+    let sp = 0, al = 0, lf = 0;
     const counts: number[] = [];
     for (let i = 0; i < N; i++) {
-      const r = fundedSim(risk, T, mulberry((9931 + i * 0x9e3779b1) | 0));
-      sp += r.profit; al += r.alive;
+      const r = fundedSim(risk, T, mulberry((9931 + i * 0x9e3779b1) | 0), undefined, pm);
+      sp += r.profit; al += r.alive; lf += r.life;
       counts.push(r.pays);   // real sweep count - see fundedStats
     }
-    prof.push(sp / N); surv.push(al / N); pays.push(counts);
+    prof.push(sp / N); surv.push(al / N); pays.push(counts); life.push(lf / N);
   }
-  return { prof, surv, pays };
+  return { prof, surv, pays, life };
 }
 
 // The flat top of that curve: the contiguous run of sizes paying within `tol` of
@@ -745,6 +812,7 @@ export function portfolioFunded(slots: Slot[], N: number, T: number): PortFunded
 // pricing a payout the simulation never made.
 export function firstPayoutPct(): number {
   // payoutMin is dollars; everything in the engine is percent of account
+  if (PM.payMax) return maxPayNeed();
   const minPct = F.account > 0 ? ((F.payoutMin || 0) / F.account) * 100 : 0;
   return Math.max(PAY_CHUNK, minPct);
 }
@@ -756,8 +824,10 @@ export function firstPayoutSim(risk: number, T: number, rnd: () => number): { pa
   const trailUnlocked = F.ddType !== "static" && !F.ddLock;
   // you cannot withdraw before the firm opens the window, and you would not
   // withdraw sooner than your own habit even if it let you
-  const firstDay = Math.max(F.payoutFirst || 0, SWEEP_HABIT_DAYS);
+  // under the max-payout model the firm's own cadence opens the first window too
+  const firstDay = PM.payMax ? Math.max(F.payoutFirst || 0, SWEEP_HABIT_DAYS, F.payoutEvery || 0) : Math.max(F.payoutFirst || 0, SWEEP_HABIT_DAYS);
   const need = firstPayoutPct();
+  const cushion = PM.cushion;
   // the payout gates - see fundedSim. For a FIRST payout their sign is provable
   // (the note on payoutOdds): a buffer, a cap or a winning-days rule can only
   // push the first qualifying moment later, and ruin is absorbing, so gates can
@@ -771,7 +841,7 @@ export function firstPayoutSim(risk: number, T: number, rnd: () => number): { pa
   const winPct = F.account > 0 ? ((F.winAmt || 0) / F.account) * 100 : 0;
   const consF = Math.max(0, Math.min(100, F.payoutCons || 0));
   for (let i = 0; i < T; i++) {
-    eq += sampleR(rnd) * risk;
+    eq += sampleR(rnd) * (cushion ? cushionRisk(risk, eq, ddFloor(peak, peakEod, F.maxdd)) : risk);
     if (eq > peak) peak = eq;
     // daily loss limit, same placement and reasoning as fundedSim above
     if (F.daily > 0 && eq - dayStart <= -F.daily) return { paid: 0, days: day };

@@ -1,7 +1,7 @@
 // Journal: log, editor, detail, stats (quant layer + prop odds + edge report), export/import.
 import { $, $i, $s, $c, css, fit, mulberry, localDate, esc, hasNum, LS, toast, toastAction, ask, hooks, chartTip, wireTips, pctEst } from "./util";
 import { S, F, money, Firm, setFirm, withFirm, withEdge, view } from "./state";
-import { computeR, computeRraw, plannedRR, hasRBasis, challengeStats, evalPass, fundedStats, payoutOdds, costToFund, wilson, profitPlateau, PAID_SIMS, PAY_CHUNK, yearSteps, TradeLike } from "./engine";
+import { computeR, computeRraw, plannedRR, hasRBasis, challengeStats, evalPass, fundedStats, payoutOdds, costToFund, wilson, profitPlateau, PAID_SIMS, PAY_CHUNK, yearSteps, TradeLike, payModel } from "./engine";
 import { Store, TAURI, Trade, JMeta, b64ToBlob } from "./store";
 import { bandOf, consWindows, DayR, PLATEAU_TOL } from "./plan";
 import { generateSample, SAMPLE_ACCT } from "./sample";
@@ -650,7 +650,9 @@ function oddsKey(rs: number[], re: number, rf: number, f: Firm): string {
   // the phase is in the key because finishOdds folds it into the view: without
   // it, marking the account funded served the cached eval forecast until some
   // other input happened to change
-  return ACCT + "|" + phaseFor(ACCT).phase + "|" + rs.length + "|" + sum.toFixed(3) + "|" + re + "|" + rf + "|" + firmKey(f);
+  // the payout/sizing model moves the funded legs, so it busts the cache too
+  const pm = payModel();
+  return ACCT + "|" + phaseFor(ACCT).phase + "|" + rs.length + "|" + sum.toFixed(3) + "|" + re + "|" + rf + "|" + firmKey(f) + "|" + (pm.payMax ? "M" : "h") + (pm.cushion ? "C" : "f");
 }
 function finishOdds(key: string, f: Firm, bound: boolean, pass: number, surv: number, profitPct: number, paid: number, meanDaysAll: number, passLo: number, passHi: number, survLo: number, survHi: number, rs: number[], re: number, rf: number) {
   // An instant-funded firm has no evaluation: the engines still simulated the
@@ -734,7 +736,8 @@ function ensureOdds(): OddsView | null {
   if (oddsPendingKey === key) return null;
   oddsPendingKey = key;
   if (TAURI) {
-    TAURI("engine_odds", { rs, firm: ff.firm, re, rf })
+    // the native engine reads the payout/sizing model off the firm it is sent
+    TAURI("engine_odds", { rs, firm: { ...ff.firm, ...payModel() }, re, rf })
       .then((o) => {
         const r = o as { pass: number; surv: number; profit_pct: number; paid: number; mean_days_all: number; pass_lo: number; pass_hi: number; surv_lo: number; surv_hi: number };
         finishOdds(key, ff.firm, ff.bound, r.pass, r.surv, r.profit_pct, r.paid, r.mean_days_all, r.pass_lo, r.pass_hi, r.surv_lo, r.surv_hi, rs, re, rf);
@@ -2714,36 +2717,6 @@ function renderModelTable(elId: string, list: Trade[]) {
       renderJournal();
     }));
 }
-// The payout goal set on the Simulator's Funded tab, answered against YOUR
-// logged trades instead of the sliders. Deliberately expressed as expected
-// payouts rather than a probability: `pay` is derived from the funded profit
-// that BOTH the Rust engine and the TS fallback return, so this tile reads the
-// same in the desktop app and the browser. A P(hit) would need the payout-count
-// distribution, which only the TS side has - and a number that changed with the
-// build is worse than a coarser one that does not.
-function goalTile(c: OddsView): string {
-  const goal = Math.max(0, LS.get<number>("pel_pay_goal", 0));
-  if (goal <= 0) return "";
-  const { firm } = firmFor();
-  // The haircut MUST be applied here, matching payChunk$ on the Simulator's
-  // Funded tab. It cancels inside `expect` - it scales the payout total and one
-  // payout by the same factor - but NOT inside `need`, whose numerator is a
-  // real-dollar goal that was never discounted. Leaving it off made one saved
-  // goal cost 22 payouts on one screen and 15 on the other, the gap being
-  // exactly 1/(1-haircut).
-  const hc = Math.max(0, Math.min(0.5, LS.get<number>("pel_haircut", 0)));
-  const chunk$ = (((PAY_CHUNK / 100) * firm.account * firm.split) / 100) * (1 - hc);
-  if (!(chunk$ > 0)) return "";
-  const expect = (c.pay * (1 - hc)) / chunk$;
-  const need = Math.ceil(goal / chunk$);
-  const per = LS.get<string>("pel_pay_goal_period", "yr") === "mo";
-  const ok = expect >= need;
-  return '<div class="tile"><div class="k">Your payout goal</div><div class="v ' + (ok ? "cell-go" : "cell-stop") +
-    '" style="font-size:16px">' + (ok ? "on track" : "short") + "</div>" +
-    '<div class="ts">' + money(per ? Math.round(goal / 12) : goal) + (per ? "/mo" : "/yr") + " needs <b>" + need +
-    "</b> payout" + (need === 1 ? "" : "s") + " &middot; your record averages <b>" + expect.toFixed(1) +
-    "</b> a year on this firm. An average over a year, not a monthly wage &mdash; payouts arrive in lumps.</div></div>";
-}
 function renderPropOdds() {
   const el = document.getElementById("propOdds");
   if (!el) return;
@@ -2783,7 +2756,6 @@ function renderPropOdds() {
     // grading the tile green on the undiscounted number
     '<div class="tile"><div class="k">Payout if funded' + info("Payout if funded") + '</div><div class="v ' + (payHc - c.fees > 0 ? "cell-go" : "cell-stop") + '">' + money(payHc) + '</div><div class="ts">~1yr, before fees &middot; assumes you get funded' + (oddsHc > 0 ? " &middot; after your " + Math.round(oddsHc * 100) + "% haircut" : "") + "</div></div>" +
     '<div class="tile"><div class="k">Sample quality' + info("Sample quality") + '</div><div class="v ' + (thin ? "cell-caution" : "cell-go") + '" style="font-size:16px">' + c.n + " &middot; " + c.grade + "</div></div>" +
-    goalTile(c) +
     '<div class="tile" style="grid-column:1/-1"><div class="k">Basis</div><div class="v" style="font-size:12.5px;font-weight:400">' + c.n + " resolved trades from <b>" + esc(ACCT === "" ? "all accounts" : ACCT) + "</b> resampled against " + esc(firmName) +
     (c.bound ? " (bound)" : " (Simulator firm)") +
     " &middot; eval " + c.re.toFixed(2) + "% &middot; funded " + c.rf.toFixed(2) + "%" + (thin ? " &middot; <b>under 50 trades: ranges wide</b>" : "") + "</div></div>";

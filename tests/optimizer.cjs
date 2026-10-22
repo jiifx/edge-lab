@@ -1,8 +1,8 @@
-// The Funded / Decision optimizer (2.19.0), end to end in the real app on the
+// The Funded / Decision optimizer (2.20.0), end to end in the real app on the
 // sample record: every optimization is suggested and marked, settings move the
-// picks and reset to defaults, the month/year switch changes every money label,
-// "Use" and "Apply" set the sliders, and several accounts recommends a setup -
-// including when one account cannot reach the goal.
+// picks and reset to defaults, the other sizing rule is compared, "Use" and
+// "Apply" set the sliders, and several accounts size per count - the same size
+// when copy-traded on one day, re-simulated when independent or staggered.
 const puppeteer = require('puppeteer-core');
 const path = require('path');
 const { pathToFileURL } = require('url');
@@ -41,20 +41,24 @@ const ok = (m) => console.log('ok: ' + m);
   // ---------- 1. every optimization is suggested, month is the default unit ----------
   let s = await sugs();
   const keys = s.map((x) => x.key).join(',');
-  if (keys !== 'goal,balanced,velocity,maxnet') fail('expected goal,balanced,velocity,maxnet, got ' + keys);
+  if (keys !== 'best,balanced,income') fail('expected best,balanced,income on this record (no dollar cap, so no max-payout pick), got ' + keys);
   else ok('suggestions: ' + s.map((x) => x.key + ' ' + x.size + '%').join(' · '));
   const sizes = Object.fromEntries(s.map((x) => [x.key, x.size]));
-  if (!(sizes.goal <= sizes.balanced && sizes.balanced <= sizes.velocity && sizes.velocity <= sizes.maxnet)) fail('the picks should run goal <= balanced <= velocity <= max net on this record');
-  else ok('ordered from least to most risk');
-  const lbl = await page.evaluate(() => [document.getElementById('fProfitLbl').textContent, document.getElementById('lGoalLbl').textContent]);
-  if (!/month/.test(lbl[0]) || !/month/.test(lbl[1])) fail('month should be the default unit: ' + lbl.join(' | '));
-  else ok('per month by default: ' + lbl.join(' | '));
+  if (!(sizes.balanced <= sizes.best && sizes.best < sizes.income)) fail('on this record balanced <= best ROI < most income');
+  else ok('ordered: balanced <= best ROI < most income');
+  const roiOf = (k) => page.evaluate((key) => { const r = document.querySelector('#optTable tr[data-sug="' + key + '"]'); return r ? parseFloat(r.children[3].textContent.replace(/[$,]/g, '')) : NaN; }, k);
+  const bestRoi = await roiOf('best'), incRoi = await roiOf('income');
+  if (!(bestRoi > incRoi)) fail('most income should return less per fee dollar than best ROI: ' + incRoi + ' vs ' + bestRoi);
+  else ok('most income leans on re-buys: $' + incRoi + ' vs $' + bestRoi + ' per $1');
+  const lbl = await page.evaluate(() => [document.getElementById('fProfitLbl').textContent, document.getElementById('fChartTitle').textContent]);
+  if (!/month/.test(lbl[0]) || !/Return on fees/.test(lbl[1])) fail('month default / ROI chart: ' + lbl.join(' | '));
+  else ok('per month by default; chart: ' + lbl[1]);
 
   // ---------- 2. Use sets the risk slider ----------
-  await page.evaluate(() => document.querySelector('#optTable tr[data-sug="balanced"] button[data-use]').click());
+  await page.evaluate(() => document.querySelector('#optTable tr[data-sug="best"] button[data-use]').click());
   await wait(800);
   const srf = await page.evaluate(() => Number(document.getElementById('srf').value));
-  if (Math.abs(srf - sizes.balanced) > 0.001) fail('Use should set the funded risk to ' + sizes.balanced + ', got ' + srf);
+  if (Math.abs(srf - sizes.best) > 0.001) fail('Use should set the funded risk to ' + sizes.best + ', got ' + srf);
   else ok('Use set the funded risk to ' + srf + '%');
 
   // ---------- 3. settings move the picks; reset restores ----------
@@ -64,62 +68,66 @@ const ok = (m) => console.log('ok: ' + m);
   const bal97 = (s.find((x) => x.key === 'balanced') || {}).size;
   if (!(bal97 < sizes.balanced)) fail('a 97% survival target should pick a smaller balanced size than ' + sizes.balanced + ', got ' + bal97);
   else ok('survival target 97%: balanced ' + sizes.balanced + '% -> ' + bal97 + '%');
-  const note = await page.evaluate(() => document.getElementById('optDefNote').textContent);
-  if (note !== 'custom settings') fail('should say custom settings, says ' + note);
+  if (await page.evaluate(() => document.getElementById('optDefNote').textContent) !== 'custom settings') fail('should say custom settings');
   await page.evaluate(() => document.getElementById('optReset').click());
   await wait(2500);
   s = await sugs();
   if ((s.find((x) => x.key === 'balanced') || {}).size !== sizes.balanced) fail('reset should restore the default balanced size');
   else ok('Reset to defaults restores ' + sizes.balanced + '%');
 
-  // ---------- 4. the period switch ----------
-  await page.evaluate(() => document.querySelector('button[data-goalp="yr"]').click());
+  // ---------- 4. the other sizing rule is compared; cushion relabels the risk ----------
+  try { await page.waitForFunction(() => { const e = document.getElementById('optRuleCmp'); return e && /would return/.test(e.textContent); }, { timeout: 120000, polling: 500 }); } catch { fail('the sizing-rule comparison never finished'); }
+  ok('rule comparison: ' + (await page.evaluate(() => document.getElementById('optRuleCmp').innerText)).replace(/\s+/g, ' '));
+  await page.evaluate(() => document.querySelector('button[data-sizer="cushion"]').click());
   await wait(1500);
-  const yr = await page.evaluate(() => [document.getElementById('fProfitLbl').textContent, document.querySelector('#optTable th:nth-child(6)').textContent]);
-  if (!/year/.test(yr[0]) || !/\/yr/.test(yr[1])) fail('per year should relabel: ' + yr.join(' | '));
-  else ok('per year relabels the tab: ' + yr.join(' | '));
-  await page.evaluate(() => document.querySelector('button[data-goalp="mo"]').click());
+  const lab = await page.evaluate(() => document.getElementById('lrfSub').textContent);
+  if (!/full cushion/.test(lab)) fail('cushion sizing should relabel the risk as the risk at a full cushion: ' + lab);
+  else ok('cushion sizing relabels the risk: ' + lab);
+  await page.evaluate(() => document.querySelector('button[data-sizer="fixed"]').click());
   await wait(1000);
 
-  // ---------- 5. several accounts: a goal one account cannot reach ----------
-  try { await settled('accTable'); } catch { fail('the accounts table never finished'); }
-  await page.evaluate(() => { const i = document.getElementById('nGoal'); i.value = '40000'; i.dispatchEvent(new Event('input', { bubbles: true })); });
-  await wait(1500);
-  try { await settled('accTable'); } catch { fail('the accounts table never re-ran for the new goal'); }
-  const acc = await page.evaluate(() => ({
-    rows: [...document.querySelectorAll('#accTable tbody tr')].map((r) => ({ n: parseInt(r.children[0].textContent.replace(/\D/g, '')), rec: r.classList.contains('rec'), goal: r.children[2].textContent })),
-    read: document.getElementById('accRead').innerText,
-  }));
-  const rec = acc.rows.find((r) => r.rec);
-  if (acc.rows.length !== 3) fail('three account counts expected, got ' + acc.rows.length);
-  else if (!rec || rec.n < 2) fail('$40,000/mo needs more than one account on this record; recommended ' + JSON.stringify(rec) + ' | ' + acc.read);
-  else ok('$40,000/mo: ' + acc.rows.map((r) => r.n + ' acct ' + r.goal).join(' · ') + ' -> ' + acc.read);
-  // independent vs copy changes the result
-  const before = await page.evaluate(() => document.getElementById('accTable').innerText);
+  // ---------- 5. several accounts ----------
+  try { await settled('optTable'); await settled('accTable'); } catch { fail('the accounts table never finished'); }
+  const accRows = () => page.evaluate(() => [...document.querySelectorAll('#accTable tbody tr')].map((r) => ({ n: +r.children[0].textContent, size: parseFloat(r.children[1].textContent), down: r.children[6].textContent })));
+  const same = await accRows();
+  if (same.length !== 5) fail('five account counts by default, got ' + same.length);
+  else if (new Set(same.map((r) => r.size)).size !== 1) fail('copy-traded same-day accounts should all run one size: ' + JSON.stringify(same));
+  else ok('copy-trade, same day: ' + same[0].size + '% at every count');
+  const read1 = await page.evaluate(() => document.getElementById('accRead').innerText);
+  if (!/rise and fall together/.test(read1)) fail('the read should say why the size does not move: ' + read1);
+  // independent accounts cover for each other
   await page.evaluate(() => document.querySelector('button[data-acm="ind"]').click());
   await wait(1500);
   try { await settled('accTable'); } catch { fail('independent never finished'); }
-  const after = await page.evaluate(() => document.getElementById('accTable').innerText);
-  if (before === after) fail('switching to independent accounts should change the table');
-  else ok('independent accounts re-simulate');
-  await page.evaluate(() => { document.querySelector('button[data-acm="copy"]').click(); const i = document.getElementById('nGoal'); i.value = '4500'; i.dispatchEvent(new Event('input', { bubbles: true })); });
+  const ind = await accRows();
+  if (!(ind[ind.length - 1].size >= ind[0].size)) fail('more independent accounts should allow at least the one-account size: ' + JSON.stringify(ind));
+  else ok('independent: ' + ind.map((r) => r.n + '@' + r.size + '% (all down ' + r.down + ')').join(' · '));
+  await page.evaluate(() => document.querySelector('button[data-acm="copy"]').click());
+  // staggered purchases re-simulate
+  await page.evaluate(() => { const i = document.getElementById('nStag'); i.value = '15'; i.dispatchEvent(new Event('change', { bubbles: true })); });
+  await wait(1500);
+  try { await settled('accTable'); } catch { fail('staggered never finished'); }
+  const st = await accRows();
+  if (JSON.stringify(st) === JSON.stringify(same)) fail('staggering the purchases should change the table');
+  else ok('staggered 15 days: ' + st.map((r) => r.n + '@' + r.size + '% (all down ' + r.down + ')').join(' · '));
+  await page.evaluate(() => { const i = document.getElementById('nStag'); i.value = '0'; i.dispatchEvent(new Event('change', { bubbles: true })); });
   await wait(1000);
 
   // ---------- 6. Decision: plans, and Apply sets both sliders ----------
   await page.evaluate(() => document.querySelector('[data-tab="decision"]').click());
   try { await settled('dPlans'); } catch { fail('the Decision plans never finished'); }
   const plan = await page.evaluate(() => {
-    const r = document.querySelector('#dPlans tr[data-plan="velocity"]');
+    const r = document.querySelector('#dPlans tr[data-plan="balanced"]');
     return r ? { e: parseFloat(r.children[1].textContent), f: parseFloat(r.children[2].textContent) } : null;
   });
-  if (!plan) fail('no Velocity plan on the Decision tab');
+  if (!plan) fail('no Balanced plan on the Decision tab');
   else {
-    await page.evaluate(() => document.querySelector('#dPlans tr[data-plan="velocity"] button[data-apply]').click());
+    await page.evaluate(() => document.querySelector('#dPlans tr[data-plan="balanced"] button[data-apply]').click());
     await wait(1500);
     const sl = await page.evaluate(() => [Number(document.getElementById('srde').value), Number(document.getElementById('srdf').value)]);
     if (Math.abs(sl[0] - plan.e) > 0.001 || Math.abs(sl[1] - plan.f) > 0.001) fail('Apply should set eval ' + plan.e + ' and funded ' + plan.f + ', got ' + sl.join(' / '));
     else ok('Decision Apply set eval ' + sl[0] + '% and funded ' + sl[1] + '%');
-    if (Math.abs(plan.f - sizes.velocity) > 0.001) fail('Decision and Funded must name the same velocity size: ' + plan.f + ' vs ' + sizes.velocity);
+    if (Math.abs(plan.f - sizes.balanced) > 0.001) fail('Decision and Funded must name the same balanced size: ' + plan.f + ' vs ' + sizes.balanced);
     else ok('Decision and Funded agree on every size');
   }
 

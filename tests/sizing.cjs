@@ -35,16 +35,21 @@ const ok = (m) => console.log('ok: ' + m);
     const u = document.getElementById('useJournal'); if (!u.checked) { u.checked = true; u.dispatchEvent(new Event('change', { bubbles: true })); }
     document.querySelector('[data-tab="funded"]').click();
   });
-  // the robust check runs in the background: wait for the tile to resolve
-  try { await page.waitForFunction(() => /holds \d|fragile|none survivable|n\/a/.test(document.getElementById('fPeak').textContent), { timeout: 150000, polling: 500 }); }
+  // the robust check runs in the background: wait for the suggestions to resolve
+  try { await page.waitForFunction(() => document.querySelector('#optTable tr[data-sug="balanced"]') && /\/10 edges/.test(document.getElementById('fPeak').textContent), { timeout: 150000, polling: 500 }); }
   catch { fail('the balanced size never resolved'); }
-  const f = await page.evaluate(() => ({ label: document.getElementById('fPeak').previousElementSibling.textContent, text: document.getElementById('fPeak').innerText, title: document.getElementById('fPeak').title }));
-  const size = parseFloat(f.text);
-  if (f.label !== 'Balanced size') fail('the tile should be labelled Balanced size, is "' + f.label + '"');
-  if (!(size > 0.2 && size < 0.82)) fail('balanced size should sit below the old 0.82% pick, got ' + f.text.replace(/\n/g, ' | '));
-  else ok('Funded: ' + f.text.replace(/\n/g, ' | '));
-  if (!/plausible/.test(f.title) || !/% of the most net profit/.test(f.title)) fail('the tooltip must state the robustness and the profit cost: ' + f.title);
-  else ok('tooltip: ' + f.title);
+  const f = await page.evaluate(() => {
+    const r = document.querySelector('#optTable tr[data-sug="balanced"]');
+    return { bal: r ? parseFloat(r.children[1].textContent) : NaN, surv: r ? r.children[2].textContent : '', why: r ? r.children[0].innerText : '',
+      label: document.getElementById('fPeak').previousElementSibling.textContent, text: document.getElementById('fPeak').innerText, title: document.getElementById('fPeak').title };
+  });
+  if (!(f.bal > 0.2 && f.bal < 0.82)) fail('balanced size should sit below the old 0.82% pick, got ' + f.bal);
+  else ok('Funded Balanced: ' + f.bal + '% at ' + f.surv + ' survival (' + f.why.replace(/\n/g, ' | ') + ')');
+  if (!/9 of 10 edges/.test(f.why)) fail('Balanced must say how sure it is: ' + f.why);
+  // 2.20.0: the headline tile is Best ROI, robust in the same way
+  if (f.label !== 'Best ROI size') fail('the headline tile should be Best ROI size, is "' + f.label + '"');
+  if (!/plausible versions of your edge/.test(f.title) || !/fees/.test(f.title)) fail('the Best ROI tooltip must state the robustness and the fees: ' + f.title);
+  else ok('Best ROI tile: ' + f.text.replace(/\n/g, ' | '));
 
   // Challenge eval pick on the Decision tab, after its robust check
   await page.evaluate(() => document.querySelector('[data-tab="decision"]').click());

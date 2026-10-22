@@ -6,6 +6,7 @@ import { wireJournal, renderJournal, applyJournalEdge, clearJournalEdge, renderE
 import { Store, TAURI } from "./store";
 import { $, $i, LS, esc, toast, applyShortcutLabels } from "./util";
 import { saveReport } from "./report";
+import { applyPayModel } from "./optimize";
 
 declare const __APP_VERSION__: string;
 
@@ -115,6 +116,8 @@ $i("propMode").addEventListener("change", () => {
   applyPropMode();
   render(); saveSim(); renderJournal();
 });
+// the payout/sizing model every funded number reads, before anything computes one
+applyPayModel();
 const wantJournalEdge = restoreSim();
 firmToForm();
 applyPropMode();

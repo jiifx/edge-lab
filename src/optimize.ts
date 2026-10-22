@@ -1,79 +1,144 @@
-// The Funded / Decision OPTIMIZER (2.19.0): the pure part. Settings with
-// defaults, the size each optimization picks, the net-of-replacement profit
-// curve, and the multi-account summaries. No DOM, no engine runs - sim.ts feeds
-// it curves and survival matrices it already computed, so every pick on the
-// chart, in the suggestions table and on the Decision tab comes from one place.
+// The Funded / Decision OPTIMIZER: the pure part. Settings with defaults, the
+// business arithmetic of an account SLOT, the size each optimization picks, and
+// the multi-account summaries. No DOM and no simulation here - sim.ts feeds it
+// curves and matrices it already computed, so every pick on the chart, in the
+// suggestions table and on the Decision tab comes from one place.
+//
+// 2.20.0 re-founded this on the economics of running funded accounts as a
+// business. A slot is: buy an evaluation, pass, withdraw until the account
+// breaches, buy again. What a size is worth is what the slot returns on the
+// fees it eats, not what one account banks in one year - that view gave a
+// blown account's replacement no income, charged no first purchase, and (with
+// the old 5%-a-week withdrawal habit) capped income so that most sizes looked
+// the same.
 import { LS } from "./util";
 import { SAFE_SURV, ROBUST_CONF } from "./plan";
+import { setPayModel } from "./engine";
 
 // ---------------------------------------------------------------------------
 // settings: one default for each knob, every one configurable, one reset
 // ---------------------------------------------------------------------------
 export interface OptSettings {
-  survTarget: number;   // the yearly survival the Balanced size must clear
+  payMax: boolean;      // withdraw the firm's max each time (else the 5%-a-week habit)
+  cushion: boolean;     // size by the distance to the drawdown floor (else fixed %)
+  survTarget: number;   // the yearly survival Balanced must clear; 1 - this caps "all down at once"
   conf: number;         // ...in this share of plausible versions of the edge
-  velFloor: number;     // the survival Velocity may not go below
-  maxAccounts: number;  // multi-account: the most accounts to consider
-  copy: boolean;        // multi-account: the same trades on every account
-  ladder: boolean;      // multi-account: spread sizes 0.7x-1.3x around the base
-  rebuy: boolean;       // multi-account: replace a blown account
+  maxAccounts: number;  // several accounts: compare 1 up to this many
+  copy: boolean;        // several accounts: the same trades on every account
+  staggerDays: number;  // several accounts: trading days between buying each one (0 = same day)
+  rebuy: boolean;       // several accounts: replace a blown account
 }
 export const OPT_DEFAULTS: OptSettings = {
-  survTarget: SAFE_SURV, conf: ROBUST_CONF, velFloor: 0.75,
-  maxAccounts: 3, copy: true, ladder: false, rebuy: true,
+  payMax: true, cushion: false, survTarget: SAFE_SURV, conf: ROBUST_CONF,
+  maxAccounts: 5, copy: true, staggerDays: 0, rebuy: true,
 };
 const clampN = (v: unknown, lo: number, hi: number, d: number) => {
-  const n = Number(v);
+  const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
   return isFinite(n) ? Math.max(lo, Math.min(hi, n)) : d;
 };
+const bool = (v: unknown, d: boolean) => (typeof v === "boolean" ? v : d);
 export function optSettings(): OptSettings {
   const s = LS.get<Partial<OptSettings>>("pel_opt", {}) || {};
   return {
+    payMax: bool(s.payMax, OPT_DEFAULTS.payMax),
+    cushion: bool(s.cushion, OPT_DEFAULTS.cushion),
     survTarget: clampN(s.survTarget, 0.5, 0.99, OPT_DEFAULTS.survTarget),
     conf: clampN(s.conf, 0.5, 0.99, OPT_DEFAULTS.conf),
-    velFloor: clampN(s.velFloor, 0.3, 0.99, OPT_DEFAULTS.velFloor),
     maxAccounts: Math.round(clampN(s.maxAccounts, 1, 10, OPT_DEFAULTS.maxAccounts)),
-    copy: typeof s.copy === "boolean" ? s.copy : OPT_DEFAULTS.copy,
-    ladder: typeof s.ladder === "boolean" ? s.ladder : OPT_DEFAULTS.ladder,
-    rebuy: typeof s.rebuy === "boolean" ? s.rebuy : OPT_DEFAULTS.rebuy,
+    copy: bool(s.copy, OPT_DEFAULTS.copy),
+    staggerDays: Math.round(clampN(s.staggerDays, 0, 120, OPT_DEFAULTS.staggerDays)),
+    rebuy: bool(s.rebuy, OPT_DEFAULTS.rebuy),
   };
 }
-export function setOpt(patch: Partial<OptSettings>) { LS.set("pel_opt", { ...optSettings(), ...patch }); }
-export function resetOpt() { LS.set("pel_opt", { ...OPT_DEFAULTS }); }
+// The payout and sizing model is read by the ENGINE for every funded number in
+// the app (Funded, Decision, the journal's prop odds), so a change here has to
+// reach it at once - and at start-up, before anything is computed.
+export function applyPayModel() {
+  const o = optSettings();
+  setPayModel({ payMax: o.payMax, cushion: o.cushion });
+}
+export function setOpt(patch: Partial<OptSettings>) { LS.set("pel_opt", { ...optSettings(), ...patch }); applyPayModel(); }
+export function resetOpt() { LS.set("pel_opt", { ...OPT_DEFAULTS }); applyPayModel(); }
 export function isDefault(o: OptSettings): boolean {
   return (Object.keys(OPT_DEFAULTS) as (keyof OptSettings)[]).every((k) => o[k] === OPT_DEFAULTS[k]);
 }
 
 // ---------------------------------------------------------------------------
-// robustness: the share of plausible records clearing a bar, at each size
+// robustness over plausible versions of the edge
 // ---------------------------------------------------------------------------
-// mat[draw][size] holds the survival (or pass rate) one plausible record
-// scored at that size. Kept as values, not hits, so moving a bar in the
-// settings is instant: no re-simulation.
+// mat[draw][size] holds one plausible record's value at that size. Kept as
+// values, not hits, so moving a bar in the settings re-picks instantly.
 export function sharesAt(mat: number[][], bar: number): number[] {
   if (!mat.length) return [];
   const n = mat[0].length, out = new Array<number>(n).fill(0);
   for (const row of mat) for (let i = 0; i < n; i++) if ((row[i] ?? 0) >= bar) out[i]++;
   return out.map((h) => h / mat.length);
 }
+// The value a size reaches in at least `conf` of plausible records: the
+// (1 - conf) quantile of each column. "At least $3.10 back per $1 in 9 of 10
+// versions of your edge" is this at conf 0.9.
+export function floorAt(mat: number[][], conf: number): number[] {
+  if (!mat.length) return [];
+  const n = mat[0].length, out: number[] = [];
+  const k = Math.max(0, Math.min(mat.length - 1, Math.floor((1 - conf) * mat.length)));
+  for (let i = 0; i < n; i++) out.push(mat.map((r) => r[i] ?? 0).sort((a, b) => a - b)[k]);
+  return out;
+}
 
 // ---------------------------------------------------------------------------
-// net profit: payouts minus the cost of replacing a blown account
+// the economics of one account SLOT
 // ---------------------------------------------------------------------------
-// A year's banked payouts count what an account withdrew BEFORE it died, and
-// treat losing it as free - so a size that pays once and blows up read nearly
-// as profitable as one that lasts (the "most profit 1.54%" at ~9% survival). An
-// account that dies has to be replaced to keep earning, and replacing it costs
-// the expected price of getting funded again. Charging that once per death
-// makes ruin cost something. `replacePct` is that price in the curve's own
-// unit (% of account, before the split), so the curve keeps its scale.
-export function netCurve(prof: number[], surv: number[], replacePct: number): number[] {
-  return prof.map((p, i) => p - (1 - (surv[i] ?? 0)) * Math.max(0, replacePct));
+// One cycle of a slot: a funded account trades until it breaches or the horizon
+// T ends; a breach costs `costPct` and `fundSteps` trades to get funded again.
+// By the renewal-reward theorem the long-run rate is E[reward per cycle] /
+// E[length per cycle], so over a year of T trades:
+//   cycles = T / (life + (1 - surv) * fundSteps)
+//   payouts = prof * cycles,  re-buys = (1 - surv) * cycles
+//   fees    = costPct * (1 + re-buys)       - the first purchase plus each re-buy
+//   return  = payouts / fees               - $ back per $1 of fees
+// A survivor that reaches T starts a fresh cycle without a purchase: it keeps
+// the account but is treated as if it lost its built-up cushion, which
+// under-credits sizes that keep accounts alive - a conservative error.
+// `prof` and `costPct` must share a unit (the curve's % of account, before the
+// split, with the cost converted to it), so `roi` is unit-free.
+export interface SlotEcon { pay: number; fees: number; net: number; roi: number; rebuys: number; cycles: number }
+export function slotEcon(prof: number, surv: number, life: number, T: number, costPct: number, fundSteps: number): SlotEcon {
+  const s = Math.max(0, Math.min(1, surv)), c = Math.max(0, costPct);
+  const cycleLen = Math.max(1, life + (1 - s) * Math.max(0, fundSteps));
+  const cycles = T / cycleLen;
+  const pay = Math.max(0, prof) * cycles, rebuys = (1 - s) * cycles;
+  const fees = c * (1 + rebuys);
+  return { pay, fees, net: pay - fees, roi: fees > 0 ? pay / fees : 0, rebuys, cycles };
+}
+export function econCurve(prof: number[], surv: number[], life: number[], T: number, costPct: number, fundSteps: number): SlotEcon[] {
+  return prof.map((p, i) => slotEcon(p, surv[i] ?? 0, life[i] ?? 0, T, costPct, fundSteps));
 }
 
 // ---------------------------------------------------------------------------
 // the picks. Each returns an INDEX into the arrays it was given, or -1.
 // ---------------------------------------------------------------------------
+// The smallest index whose value is within `tol` of the best: neighbouring
+// sizes near a flat top differ by sampling noise, so "the" argmax is not an
+// answer - the least risk that is as good as the best is.
+export function plateauLo(vals: number[], tol = 0.03): number {
+  if (!vals.length) return -1;
+  let best = 0;
+  for (let i = 1; i < vals.length; i++) if (vals[i] > vals[best]) best = i;
+  if (!(vals[best] > 0)) return -1;
+  const cut = vals[best] * (1 - tol);
+  for (let i = 0; i <= best; i++) if (vals[i] >= cut) return i;
+  return best;
+}
+// Best ROI (the default): the most $ back per $1 of fees that holds in `conf`
+// of plausible versions of the edge - the robust floor, not the point estimate.
+export function pickBestRoi(roiFloor: number[]): number { return plateauLo(roiFloor); }
+// Most income: the most net $ a slot earns (payouts minus every fee), at the
+// measured edge. The aggressive end, shown so the trade-off is visible.
+export function pickMostIncome(net: number[]): number { return plateauLo(net); }
+// Max payout: with a dollar cap per payout, past some size an account already
+// takes the full cap at almost every window and more size only adds risk. The
+// least size that gets (within 3%) the most max payouts a year.
+export function pickMaxPayout(paysMean: number[]): number { return plateauLo(paysMean); }
 // Balanced: the largest size up to `upto` that clears `target` at the measured
 // edge AND in at least `conf` of plausible records.
 export function pickBalancedAt(surv: number[], shares: number[], upto: number, target: number, conf: number): number {
@@ -82,77 +147,31 @@ export function pickBalancedAt(surv: number[], shares: number[], upto: number, t
   }
   return -1;
 }
-// Velocity: the most payouts a year, among sizes up to `upto` whose survival
-// stays above the floor (measured, and in `conf` of plausible records). Ties go
-// to the smaller size - the same payouts for less risk.
-export function pickVelocity(paysMean: number[], surv: number[], sharesFloor: number[], upto: number, floor: number, conf: number): number {
-  let best = -1;
-  for (let i = 0; i <= Math.min(upto, paysMean.length - 1); i++) {
-    if ((surv[i] ?? 0) < floor || (sharesFloor[i] ?? 0) < conf) continue;
-    if (best < 0 || paysMean[i] > paysMean[best] + 1e-9) best = i;
-  }
-  return best;
-}
-// Max net: the largest net profit. No survival bar - this is the aggressive end,
-// shown so the trade-off is visible; the table prints its survival beside it.
-export function pickMaxNet(net: number[]): number {
-  let best = -1;
-  for (let i = 0; i < net.length; i++) if (best < 0 || net[i] > net[best]) best = i;
-  return best >= 0 && net[best] > 0 ? best : -1;
-}
-// Goal: the SMALLEST size whose odds of reaching the goal are within 3% of the
-// best odds on the grid (odds under 5% everywhere = out of reach, -1).
-export function pickGoal(pHit: number[]): number {
-  if (!pHit.length) return -1;
-  const best = Math.max(...pHit);
-  if (best < 0.05) return -1;
-  for (let i = 0; i < pHit.length; i++) if (pHit[i] >= best * 0.97) return i;
-  return -1;
-}
 
 // ---------------------------------------------------------------------------
 // several accounts
 // ---------------------------------------------------------------------------
-// A ladder spreads the sizes from 0.7x to 1.3x of a base size, averaging the
-// base. With copy-trading this is the ONLY diversification there is: the same
-// losing streak that ends the biggest account leaves the smaller ones standing.
-export function ladderSizes(base: number, n: number, ladder: boolean): number[] {
-  if (!ladder || n <= 1) return new Array<number>(n).fill(base);
-  return Array.from({ length: n }, (_, k) => Math.round(base * (0.7 + (0.6 * k) / (n - 1)) * 100) / 100);
-}
 export interface PortfolioStat {
-  n: number; base: number; sizes: number[];
-  pGoal: number;        // share of years whose payouts reach the goal
-  payYear: number;      // mean payouts, trader $ a year
-  netYear: number;      // ...minus rebuys x cost to fund
+  n: number; base: number;
+  payYear: number;      // mean payouts in a year, trader $, all accounts
+  feesYear: number;     // mean fees in that year: every account bought + every re-buy
+  fees95: number;       // fees in a bad year (95th percentile) - the budget to hold
+  netYear: number;      // payYear - feesYear
+  roi: number;          // payYear / feesYear
   pAllDown: number;     // share of years with a moment when NO account is up
-  rebuys: number;       // mean replacements a year
-  aliveEnd: number;     // mean accounts alive at year end
+  rebuys: number;       // mean re-buys a year
 }
-// Per account count, the size that reaches the goal with the least risk - the
-// same rule as the single-account Goal pick: the smallest base whose goal odds
-// are within 3% of that count's best. With no goal: the best net whose
-// all-down risk stays under 1 - target.
-export function pickPerCount(stats: PortfolioStat[], goal: number, target: number): PortfolioStat | null {
+// In expectation the return per fee dollar does not depend on how many accounts
+// run - payouts and fees both scale with the count. What the count changes is
+// how often EVERYTHING is down at once, and that is where the size per account
+// moves: per count, the best-ROI size among those whose all-down risk stays
+// within `allDownMax`. One account must be sized to survive on its own; several
+// staggered or independent accounts cover for each other and can run nearer the
+// best-ROI size. `ok` is false when no size meets the bar (the safest is shown).
+export function pickPerCount(stats: PortfolioStat[], allDownMax: number): { stat: PortfolioStat; ok: boolean } | null {
   if (!stats.length) return null;
-  if (goal > 0) {
-    const best = Math.max(...stats.map((s) => s.pGoal));
-    if (best >= 0.05) return stats.find((s) => s.pGoal >= best * 0.97) || null;
-    return stats.reduce((a, b) => (b.pGoal > a.pGoal ? b : a));
-  }
-  const ok = stats.filter((s) => s.pAllDown <= 1 - target);
-  const pool = ok.length ? ok : stats;
-  return pool.reduce((a, b) => (b.netYear > a.netYear ? b : a));
-}
-// The recommended setup across counts: with a goal, the FEWEST accounts that
-// reach it at least half the time (fewest = least in fees); else the count
-// with the best odds. With no goal, the best net.
-export function recommendCount(rows: PortfolioStat[], goal: number): PortfolioStat | null {
-  if (!rows.length) return null;
-  if (goal > 0) {
-    const hit = rows.filter((r) => r.pGoal >= 0.5).sort((a, b) => a.n - b.n);
-    if (hit.length) return hit[0];
-    return rows.reduce((a, b) => (b.pGoal > a.pGoal ? b : a));
-  }
-  return rows.reduce((a, b) => (b.netYear > a.netYear ? b : a));
+  const pool = stats.filter((s) => s.pAllDown <= allDownMax + 1e-9);
+  if (!pool.length) return { stat: stats.reduce((a, b) => (b.pAllDown < a.pAllDown ? b : a)), ok: false };
+  const i = plateauLo(pool.map((s) => s.roi));
+  return { stat: pool[i >= 0 ? i : 0], ok: true };
 }

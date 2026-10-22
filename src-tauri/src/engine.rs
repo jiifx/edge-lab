@@ -23,11 +23,9 @@ pub struct Firm {
     // the pre-2.2 behaviour exactly
     #[serde(default, rename = "payoutMin")]
     pub payout_min: f64,
-    // Deliberately never read: spacing BETWEEN payouts moves neither the EV (wrong
-    // sign, see funded_stats) nor the first-payout odds (nothing to space against).
-    // Kept on the struct so the firm shape stays identical to the TS Firm and the
-    // frontend's JSON deserialises without a special case.
-    #[allow(dead_code)]
+    // Read only under the max-payout model (pay_max): the firm's own payout
+    // windows. The habit model leaves cadence out of the EV (wrong sign, see
+    // funded_stats) and out of the first-payout odds (nothing to space against).
     #[serde(default, rename = "payoutEvery")]
     pub payout_every: i64,
     #[serde(default, rename = "payoutFirst")]
@@ -48,6 +46,13 @@ pub struct Firm {
     pub win_days: i64,
     #[serde(default, rename = "winAmt")]
     pub win_amt: f64,
+    // HOW the funded account is run (2.20.0) - mirrors PayModel in src/engine.ts.
+    // Not firm rules: the frontend adds them to the firm JSON it sends. Both
+    // default false = the pre-2.20 path exactly (no draws, no branches change).
+    #[serde(default, rename = "payMax")]
+    pub pay_max: bool,
+    #[serde(default)]
+    pub cushion: bool,
     pub daily: f64,
     #[serde(rename = "minDays")]
     pub min_days: i64,
@@ -94,6 +99,17 @@ impl Rng {
 const SWEEP_HABIT_DAYS: i64 = 5;
 // mirrors PAY_CHUNK in src/engine.ts - one withdrawal, in percent of account
 const PAY_CHUNK: f64 = 5.0;
+// mirrors CUSHION_CAP / MIN_REQ_PCT / maxPayNeed() in src/engine.ts
+const CUSHION_CAP: f64 = 2.0;
+const MIN_REQ_PCT: f64 = 1.0;
+fn max_pay_need(f: &Firm) -> f64 {
+    let min_pct = if f.account > 0.0 { f.payout_min / f.account * 100.0 } else { 0.0 };
+    let cap_amt_pct = if f.account > 0.0 { f.payout_cap_amt / f.account * 100.0 } else { 0.0 };
+    if cap_amt_pct > 0.0 { cap_amt_pct.max(min_pct) } else { min_pct.max(MIN_REQ_PCT) }
+}
+fn cushion_risk(f: &Firm, risk: f64, eq: f64, fl: f64) -> f64 {
+    if f.maxdd > 0.0 { risk * ((eq - fl) / f.maxdd).clamp(0.0, CUSHION_CAP) } else { risk }
+}
 // Sim sizes and seeds mirrored from the TS side. These MUST track their TS
 // twins - if either side changes, the parity anchors below have to be re-minted
 // or the desktop app and the browser build show different numbers for the same
@@ -311,6 +327,10 @@ pub fn funded_stats_e(e: Edge, f: &Firm, risk: f64, n: usize, t_steps: usize, se
     let min_pct = if f.account > 0.0 { f.payout_min / f.account * 100.0 } else { 0.0 };
     let cons_f = f.payout_cons.clamp(0.0, 100.0);
     let gated = buf_pct > 0.0 || cap_f > 0.0 || cap_amt_pct > 0.0 || win_n > 0 || cons_f > 0.0;
+    // max-payout windows: the firm's cadence, never faster than the habit
+    let spacing = if f.pay_max { every.max(f.payout_every) } else { every };
+    let first_day = if f.pay_max { spacing.max(f.payout_first) } else { 0 };
+    let need = if f.pay_max { max_pay_need(f) } else { 0.0 };
     let (mut sum_profit, mut alive_n) = (0.0f64, 0usize);
     for _ in 0..n {
         let (mut eq, mut peak, mut peak_eod, mut banked) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
@@ -319,8 +339,10 @@ pub fn funded_stats_e(e: Edge, f: &Firm, risk: f64, n: usize, t_steps: usize, se
         let mut alive = true;
         let mut win_count = 0i64;
         let (mut best_day, mut profit_since) = (0.0f64, 0.0f64);
+        let mut day = 0i64;
         for _ in 0..t_steps {
-            eq += e.draw(&mut rnd) * risk;
+            let r_now = if f.cushion { cushion_risk(f, risk, eq, dd_floor(f, peak, peak_eod, f.maxdd)) } else { risk };
+            eq += e.draw(&mut rnd) * r_now;
             if eq > peak {
                 peak = eq;
             }
@@ -343,6 +365,7 @@ pub fn funded_stats_e(e: Edge, f: &Firm, risk: f64, n: usize, t_steps: usize, se
                 }
                 in_day = 0;
                 since_pay += 1;
+                day += 1;
                 if eq > peak_eod {
                     peak_eod = eq;
                 }
@@ -354,7 +377,27 @@ pub fn funded_stats_e(e: Edge, f: &Firm, risk: f64, n: usize, t_steps: usize, se
                 break;
             }
             let cons_ok = cons_f <= 0.0 || profit_since <= 0.0 || best_day / profit_since <= cons_f / 100.0;
-            if since_pay >= every && cons_ok && (win_n <= 0 || win_count >= win_n) && (buf_pct <= 0.0 || eq >= buf_pct) {
+            if f.pay_max {
+                // mirrors the payMax branch of fundedSim in src/engine.ts
+                if since_pay >= spacing && day >= first_day && cons_ok && (win_n <= 0 || win_count >= win_n) && (buf_pct <= 0.0 || eq >= buf_pct) {
+                    let mut w = if trail_unlocked { eq } else { eq - (fl + f.maxdd) };
+                    if cap_f > 0.0 { w = w.min(cap_f / 100.0 * eq); }
+                    if cap_amt_pct > 0.0 { w = w.min(cap_amt_pct); }
+                    if w > 0.0 && w >= need - 1e-9 {
+                        banked += w;
+                        eq -= w;
+                        day_start -= w;
+                        since_pay = 0;
+                        win_count = 0;
+                        best_day = 0.0;
+                        profit_since = 0.0;
+                        if trail_unlocked {
+                            peak -= w;
+                            peak_eod -= w;
+                        }
+                    }
+                }
+            } else if since_pay >= every && cons_ok && (win_n <= 0 || win_count >= win_n) && (buf_pct <= 0.0 || eq >= buf_pct) {
                 // cap shrinks the habit chunk; a gated firm refuses anything
                 // under its minimum. Ungated = the pre-gate arithmetic exactly.
                 // habit chunk, %-of-profit cap and fixed $ ceiling - smallest wins
@@ -424,10 +467,10 @@ pub fn first_payout_odds(rs: &[f64], f: &Firm, risk: f64, n: usize, t_steps: usi
 pub fn first_payout_odds_days_e(e: Edge, f: &Firm, risk: f64, n: usize, t_steps: usize, seed: u32) -> (f64, f64) {
     let tpd = f.tpd.max(1);
     let trail_unlocked = f.dd_type != "static" && f.dd_lock == 0;
-    let first_day = f.payout_first.max(SWEEP_HABIT_DAYS);
+    let first_day = if f.pay_max { f.payout_first.max(SWEEP_HABIT_DAYS).max(f.payout_every) } else { f.payout_first.max(SWEEP_HABIT_DAYS) };
     // payout_min is dollars; the engine works in percent of account
     let min_pct = if f.account > 0.0 { f.payout_min / f.account * 100.0 } else { 0.0 };
-    let need = PAY_CHUNK.max(min_pct);
+    let need = if f.pay_max { max_pay_need(f) } else { PAY_CHUNK.max(min_pct) };
     // the payout gates - mirrors firstPayoutSim in src/engine.ts. Provable sign:
     // each can only push the first qualifying moment later; ruin is absorbing.
     let buf_pct = if f.account > 0.0 { f.payout_buffer / f.account * 100.0 } else { 0.0 };
@@ -446,7 +489,8 @@ pub fn first_payout_odds_days_e(e: Edge, f: &Firm, risk: f64, n: usize, t_steps:
         let mut win_count = 0i64;
         let (mut best_day, mut profit_since) = (0.0f64, 0.0f64);
         for _ in 0..t_steps {
-            eq += e.draw(&mut rnd) * risk;
+            let r_now = if f.cushion { cushion_risk(f, risk, eq, dd_floor(f, peak, peak_eod, f.maxdd)) } else { risk };
+            eq += e.draw(&mut rnd) * r_now;
             if eq > peak {
                 peak = eq;
             }
@@ -534,7 +578,7 @@ mod tests {
             type_: "1phase".into(), account: 100000.0, p1: 8.0, p2: 0.0, maxdd: 8.0,
             dd_type: "static".into(), dd_lock: 1, time_limit: 0, daily: 4.0, min_days: 0, cons: 0.0,
             tpd: 5, split: 90.0, fee: 400.0,
-            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0,
+            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, pay_max: false, cushion: false,
         }
     }
 
@@ -557,7 +601,7 @@ mod tests {
             type_: "futures".into(), account: 50000.0, p1: 6.0, p2: 0.0, maxdd: 4.0,
             dd_type: dd_type.into(), dd_lock, time_limit, daily: 0.0, min_days: 0, cons: 0.0,
             tpd: 5, split: 90.0, fee: 150.0,
-            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0,
+            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, pay_max: false, cushion: false,
         }
     }
 
@@ -764,6 +808,42 @@ mod tests {
         assert!((bank50 - 72.5).abs() < 1e-6, "capped all-win anchor drifted from JS: {bank50}");
     }
 
+    // The payout/sizing model (2.20.0): max payout each time and cushion
+    // sizing. Anchors minted from the TS engine (src/engine.ts, PayModel) on
+    // 2026-10-22 with the same edge, seeds and horizon - the desktop journal's
+    // odds come from here, the browser's from TS, and they must agree.
+    #[test]
+    fn pay_model_matches_js() {
+        let rs = edge(0.55, 1.5, 100);
+        let run = |f: &Firm| (funded_stats(&rs, f, 0.8, 400, 750, 9931), first_payout_odds(&rs, f, 0.8, 800, 750, 7717));
+        let mut a = firm_futures("trailing-eod", 1, 0);
+        a.payout_cap_amt = 1500.0;
+        a.pay_max = true;
+        let ((p, s), paid) = run(&a);
+        assert!((p - 76.0725).abs() < 1e-6 && (s - 0.85).abs() < 1e-9 && (paid - 0.8775).abs() < 1e-9, "max + $ cap: {p} {s} {paid}");
+        let mut b = firm_futures("static", 1, 0);
+        b.payout_every = 10;
+        b.payout_cap = 50.0;
+        b.pay_max = true;
+        let ((p, s), paid) = run(&b);
+        assert!((p - 198.27613992309568).abs() < 1e-6 && (s - 0.935).abs() < 1e-9 && (paid - 0.93875).abs() < 1e-9, "max + cadence + % cap: {p} {s} {paid}");
+        let mut c = firm_futures("trailing-eod", 1, 0);
+        c.cushion = true;
+        let ((p, s), paid) = run(&c);
+        assert!((p - 144.1875).abs() < 1e-6 && (s - 1.0).abs() < 1e-9 && (paid - 1.0).abs() < 1e-9, "cushion: {p} {s} {paid}");
+        let mut d = firm_futures("trailing", 0, 0);
+        d.pay_max = true;
+        d.cushion = true;
+        let ((p, s), paid) = run(&d);
+        assert!((p - 149.6122495548364).abs() < 1e-6 && (s - 1.0).abs() < 1e-9 && (paid - 1.0).abs() < 1e-9, "max + cushion, unlocked: {p} {s} {paid}");
+        // and off is the old path exactly
+        let mut e2 = firm_futures("trailing-eod", 1, 0);
+        e2.payout_cap_amt = 1500.0;
+        let off = funded_stats(&rs, &e2, 0.8, 400, 750, 9931);
+        e2.pay_max = false;
+        assert_eq!(off, funded_stats(&rs, &e2, 0.8, 400, 750, 9931));
+    }
+
     // The consistency PAYOUT gate (2.9.2) - 9 of 23 catalogued firms run one.
     // Same structural argument as the other gates on the first-payout leg: a
     // big day blocks the request until later profit dilutes its share, which
@@ -856,7 +936,7 @@ mod tests {
             type_: "futures".into(), account: 50000.0, p1: 6.0, p2: 0.0, maxdd: 4.0,
             dd_type: "trailing-eod".into(), dd_lock: 1, time_limit: 0, daily: 2.0,
             min_days: 2, cons: 50.0, tpd: 5, split: 90.0, fee: 49.0,
-            payout_min: 0.0, payout_every: 5, payout_first: 5, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0,
+            payout_min: 0.0, payout_every: 5, payout_first: 5, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, pay_max: false, cushion: false,
         };
         // (the same three walks the removed firm scorer ran, called directly)
         let chal = challenge_stats_e(Edge::Trades(&rs), &ts, 0.75, SCORE_CHAL_SIMS, 12345);
@@ -874,7 +954,7 @@ mod tests {
             type_: "2step".into(), account: 50000.0, p1: 10.0, p2: 5.0, maxdd: 10.0,
             dd_type: "static".into(), dd_lock: 0, time_limit: 0, daily: 5.0,
             min_days: 4, cons: 0.0, tpd: 5, split: 80.0, fee: 375.0,
-            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0,
+            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, pay_max: false, cushion: false,
         };
         let ch = challenge_stats_e(Edge::Trades(&rs), &two, 0.75, 1200, 12345);
         assert!((ch.pass - 0.8967).abs() < 0.005, "2step both {}", ch.pass);

@@ -104,25 +104,14 @@ function fail(m){ console.error('FAIL: ' + m); process.exitCode = 1; }
   if (!odds.includes('90% range')) fail('odds missing bootstrap range'); else console.log('ok: bootstrap ranges shown');
   if (!odds.includes('very thin') && !odds.includes('thin')) fail('odds missing sample grade'); else console.log('ok: sample-quality grade shown');
 
-  // the payout goal set on the Simulator's Funded tab, answered against the
-  // journal's OWN trades. Absent until a goal exists, so it cannot clutter the
-  // panel for anyone who has not asked the question.
-  if (odds.includes('Your payout goal')) fail('goal tile showed with no goal set');
-  else console.log('ok: no goal tile until a goal is set');
-  await page.evaluate(() => {
-    localStorage.setItem('pel_pay_goal', '18000');
-    localStorage.setItem('pel_pay_goal_period', '"mo"');
-  });
+  // 2.20.0 removed the payout goal: an old saved goal must not resurrect a tile
+  await page.evaluate(() => localStorage.setItem('pel_pay_goal', '18000'));
   await page.click('[data-jview="log"]');
   await page.click('[data-jview="stats"]');
   await page.waitForSelector('#propOdds', { timeout: 5000 });
-  await new Promise(r => setTimeout(r, 600));
-  const goalTxt = await page.$eval('#propOdds', e => e.textContent);
-  if (!goalTxt.includes('Your payout goal')) fail('goal tile missing after setting a goal: ' + goalTxt.slice(-200));
-  else if (!/payouts? .{0,4}your record averages/i.test(goalTxt.replace(/\s+/g, ' '))) fail('goal tile does not compare need against the record: ' + goalTxt.slice(-220));
-  else if (!/lumps/.test(goalTxt)) fail('goal tile must say payouts arrive in lumps, not monthly');
-  else console.log('ok: journal goal tile reads "' + (goalTxt.replace(/\s+/g, ' ').match(/Your payout goal.{0,110}/) || [''])[0] + '"');
-  await page.evaluate(() => { localStorage.removeItem('pel_pay_goal'); localStorage.removeItem('pel_pay_goal_period'); });
+  if ((await page.$eval('#propOdds', e => e.textContent)).includes('Your payout goal')) fail('a stale saved goal brought the removed goal tile back');
+  else console.log('ok: no payout goal tile, even with an old goal saved');
+  await page.evaluate(() => localStorage.removeItem('pel_pay_goal'));
   const statsTxt = await page.$eval('#jv-stats', e => e.textContent);
   if (!statsTxt.includes('SQN')) fail('metrics grid missing SQN');
   if (!statsTxt.includes('95% CI')) fail('metrics grid missing CI sub-lines');

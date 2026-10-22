@@ -81,6 +81,7 @@
   .h2row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;}
   /* optimizer tables (Funded suggestions, Several accounts, Decision plans) */
   table.breakdown tr.rec td{background:var(--go-bg);font-weight:700;}
+  table.breakdown tr.warnrow td{color:var(--muted);}
   table.breakdown td .mk{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px;border:2px dashed currentColor;}
   .usebtn{font-family:var(--mono);font-size:11px;font-weight:700;padding:3px 8px;border:1.5px solid var(--line-strong);background:var(--panel);color:var(--ink);cursor:pointer;}
   .usebtn:hover{border-color:var(--go);}
@@ -890,27 +891,27 @@
         <div class="grid2">
           <div class="controls">
             <div class="ctrl"><div class="row"><span>Risk per trade %</span><input type="number" class="numin" id="nrf" min="0.1" max="3" step="0.01" value="0.5" aria-label="Funded risk value"></div><input type="range" id="srf" min="0.1" max="3" step="0.01" value="0.5" aria-label="Funded risk per trade"><div class="sub" id="lrfSub"><span class="skel"></span></div></div>
-            <div class="ctrl"><div class="row"><span id="lGoalLbl" title="What you want this account to pay you. The model withdraws in fixed 5%-of-account chunks, so the slider moves in whole payouts. 0 = off.">Payout goal $</span><input type="number" class="numin" id="nGoal" min="0" step="250" value="0" aria-label="Payout goal in dollars"></div><input type="range" id="sGoal" min="0" max="24" step="1" value="0" aria-label="Payout goal in whole payouts">
-              <div class="sub" id="lGoalSub">0 = off</div></div>
             <div class="kv" style="margin-top:6px">
               <div class="r"><div class="k" title="Chance a funded account reaches at least one withdrawal inside the year. This one DOES price the firm's first-payout waiting period and minimum, so it matches the Decision tab.">Chance of a payout</div><div class="v" id="fPayAny"><span class="skel"></span></div></div>
               <div class="r"><div class="k" id="fPaysLbl" title="How many withdrawals land, assuming the app's uniform sweep habit. Per month is the year's mean divided by 12: payouts are lumpy, a drawdown month pays nothing.">Payouts / month</div><div class="v" id="fPays"><span class="skel"></span></div></div>
               <div class="r"><div class="k" id="fProfitLbl" title="Cash actually withdrawn, averaged across every account including the ones that blew up. Whatever is left sitting in the account at the end is collateral, not payout, so it is not counted.">Profit / month</div><div class="v" id="fProfit"><span class="skel"></span></div></div>
               <div class="r"><div class="k" title="Share of accounts still alive after a full trading year - 252 trading days at your trades-per-day setting - without hitting the drawdown floor or the daily loss limit.">Survival (1 year)</div><div class="v" id="fSurv"><span class="skel"></span></div></div>
               <div class="r hide" id="fFateRow"><div class="k" title="The Profit figure above is a mean over every account, and at low survival it is carried by a minority of long-lived ones. This is the median cash an account that BREACHES inside the year has already withdrawn before it dies - the money the likely outcome actually pays you - beside what a surviving account banks over the year.">Breached banks</div><div class="v" id="fFate"><span class="skel"></span></div></div>
-              <div class="r"><div class="k" title="The largest size, up to the top of the profit plateau, where your survival target is met - not only at your measured edge but in the share of plausible versions of it set in Optimizer settings.">Balanced size</div><div class="v" id="fPeak"><span class="skel"></span></div></div>
-              <div class="r hide" id="fGoalRow"><div class="k" title="The SMALLEST size whose odds of reaching your goal are within 3% of the best size's odds. Smaller means more survival for the same shot at the goal.">Smallest size for goal</div><div class="v" id="fGoal"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="Running this account as a business slot: payouts per $1 of fees, counting the first purchase and a re-buy each time it breaches (cost and time to pass again from the Challenge tab). At your risk size.">Return on fees</div><div class="v" id="fRoi"><span class="skel"></span></div></div>
+              <div class="r"><div class="k" title="The size with the most $ back per $1 of fees in the share of plausible versions of your edge set in Optimizer settings - the least size within 3% of that best.">Best ROI size</div><div class="v" id="fPeak"><span class="skel"></span></div></div>
             </div>
             <div class="optset">
               <div class="vh" style="margin-top:14px">Optimizer settings</div>
-              <div class="ctrl"><div class="row"><span title="The yearly survival the Balanced size has to clear. Higher = smaller, safer size.">Survival target %</span><input type="number" class="numin" id="nSurvT" min="50" max="99" step="1" value="85" aria-label="Survival target percent"></div></div>
+              <div class="fld"><label title="How a withdrawal is taken. Max: the firm's maximum each time - with a dollar cap, wait until the whole cap is available and take it; with a % cap, the most it allows; uncapped, all profit above the drawdown cushion - on the firm's own payout schedule. Small sweeps: up to 5% of the account every week.">Payouts</label><div class="seg" role="group" aria-label="Payout rule"><button type="button" data-paym="max" aria-pressed="true">Max each time</button><button type="button" data-paym="sweep" aria-pressed="false">Small sweeps</button></div></div>
+              <div class="fld"><label title="Fixed: the same % of the account on every trade. Cushion: risk scales with your distance to the drawdown floor - the risk size is what you risk at a full cushion, less in a drawdown, more (up to 2x) once profit sits above a locked or static floor.">Sizing</label><div class="seg" role="group" aria-label="Sizing rule"><button type="button" data-sizer="fixed" aria-pressed="true">Fixed %</button><button type="button" data-sizer="cushion" aria-pressed="false">Cushion</button></div></div>
+              <p class="small muted" id="optRuleCmp" style="margin:4px 0 8px"></p>
+              <div class="ctrl"><div class="row"><span title="The yearly survival the Balanced size has to clear, and (as 1 minus it) how often every account may be down at once under Several accounts.">Survival target %</span><input type="number" class="numin" id="nSurvT" min="50" max="99" step="1" value="85" aria-label="Survival target percent"></div></div>
               <div class="ctrl"><div class="row"><span title="How sure the size has to be: the target must hold in this share of plausible versions of your edge (your record, resampled). Higher = more margin for an edge that is only an estimate.">Must hold in</span><select id="selConf" aria-label="Robustness"><option value="0.8">8 of 10 edges</option><option value="0.9">9 of 10 edges</option><option value="0.95">19 of 20 edges</option></select></div></div>
-              <div class="ctrl"><div class="row"><span title="Velocity picks the size with the most payouts, but never below this yearly survival.">Velocity survival floor %</span><input type="number" class="numin" id="nVelF" min="30" max="99" step="1" value="75" aria-label="Velocity survival floor percent"></div></div>
               <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><button type="button" class="barbtn" id="optReset">Reset to defaults</button><span class="small muted" id="optDefNote"></span></div>
             </div>
           </div>
-          <div style="min-width:0"><div class="vh" id="fChartTitle">Net profit vs size (your edge, this firm)</div><canvas id="cGrowth" height="250"></canvas>
-            <p class="small muted" style="margin-top:8px" id="fChartKey">Line = payouts minus the cost of replacing a blown account &middot; shading: green = survives, red = dies &middot; solid = your size &middot; dashed = the suggestions below.</p>
+          <div style="min-width:0"><div class="vh" id="fChartTitle">Return on fees vs size (your edge, this firm)</div><canvas id="cGrowth" height="250"></canvas>
+            <p class="small muted" style="margin-top:8px" id="fChartKey">Line = $ back per $1 of fees for one account slot, re-bought when it breaches &middot; dotted = break-even &middot; shading: green = survives, red = dies &middot; solid = your size &middot; dashed = the suggestions below.</p>
             <div class="vh" style="margin-top:14px">Suggested sizes</div>
             <div id="optTable"><span class="skel"></span></div>
             <p class="small muted" id="optNote" style="margin-top:6px"></p>
@@ -920,9 +921,9 @@
         <div class="vh" style="margin-top:22px">Several accounts</div>
         <div class="grid2">
           <div class="controls">
-            <div class="ctrl"><div class="row"><span title="The most funded accounts you would run at once. The table compares 1 up to this many.">Accounts (most you'd run)</span><input type="number" class="numin" id="nAcc" min="1" max="10" step="1" value="3" aria-label="Most accounts"></div><input type="range" id="sAcc" min="1" max="10" step="1" value="3" aria-label="Most accounts slider"></div>
-            <div class="fld"><label>Trades</label><div class="seg" role="group" aria-label="How the accounts trade"><button type="button" data-acm="copy" aria-pressed="true" title="Every account takes the same trades. They blow up together - only different sizes diversify.">Copy-trade</button><button type="button" data-acm="ind" aria-pressed="false" title="Each account trades its own stream of trades from the same edge (different strategies, different times). Outcomes are mostly unrelated.">Independent</button></div></div>
-            <div class="fld"><label>Sizes</label><div class="seg" role="group" aria-label="Account sizes"><button type="button" data-acs="same" aria-pressed="true" title="Every account at the same size.">Same size</button><button type="button" data-acs="ladder" aria-pressed="false" title="Sizes spread from 0.7x to 1.3x of the base size. With copy-trading this is the only diversification there is.">Ladder</button></div></div>
+            <div class="ctrl"><div class="row"><span title="The most funded accounts you would run at once. The table compares 1 up to this many.">Accounts (most you'd run)</span><input type="number" class="numin" id="nAcc" min="1" max="10" step="1" value="5" aria-label="Most accounts"></div><input type="range" id="sAcc" min="1" max="10" step="1" value="5" aria-label="Most accounts slider"></div>
+            <div class="fld"><label>Trades</label><div class="seg" role="group" aria-label="How the accounts trade"><button type="button" data-acm="copy" aria-pressed="true" title="Every account takes the same trades. Bought the same day, they blow up together; staggered purchases diversify.">Copy-trade</button><button type="button" data-acm="ind" aria-pressed="false" title="Each account trades its own stream of trades from the same edge (different strategies, different times). Outcomes are mostly unrelated.">Independent</button></div></div>
+            <div class="ctrl"><div class="row"><span title="Trading days between buying each account. 0 = all bought the same day. Staggered accounts sit at different distances from their floors when the same bad run arrives, so copy-traded accounts stop dying together.">Days between buying each</span><input type="number" class="numin" id="nStag" min="0" max="120" step="1" value="0" aria-label="Days between buying each account"></div></div>
             <div class="fld"><label class="ddcheck"><input type="checkbox" id="cbRebuy" checked> <span title="Buy a new evaluation when an account blows up. The replacement starts trading after the expected time to pass, and costs the expected cost to get funded (Challenge tab).">Replace a blown account</span></label></div>
             <p class="small muted" id="accAssume"></p>
           </div>
@@ -963,7 +964,7 @@
         <div class="vh" style="margin-top:18px">Budget to funded</div>
 
         <div class="statgrid" id="dBudget" style="margin-bottom:4px"></div>
-        <div class="vh" style="margin-top:18px">Plans for your goal</div>
+        <div class="vh" style="margin-top:18px">Plans by optimization</div>
         <div id="dPlans"><span class="skel"></span></div>
         <p class="small muted" id="dPlansNote" style="margin-top:6px"></p>
       </div>
