@@ -38,7 +38,7 @@ export async function buildOnce(tag = "app") {
     // named rather than `export *`: plan.ts deliberately re-states a couple of
     // the engine's names in a firm-scoped form, and a star re-export would drop
     // the collisions SILENTLY, leaving a test importing undefined
-    `export { riskGrid, pickFundedSize, pickEvalSize, consWindows, activeGates, buildPlan, firstPayoutPctOf, PLATEAU_TOL, SAFE_SURV, PASS_BAR, PLAN_MIN_N, PLAN_FUND_SIMS, PLAN_EVAL_SIMS, PLAN_BAND_MIN_N, PLAN_BAND_DRAWS, PLAN_BAND_SIMS, bandGrid, bandDraw, sizeFromCurve, bandOf, bandText, resampleRecord } from "${src}/plan.ts";`,
+    `export { riskGrid, pickFundedSize, pickEvalSize, consWindows, activeGates, buildPlan, firstPayoutPctOf, PLATEAU_TOL, SAFE_SURV, PASS_BAR, PLAN_MIN_N, PLAN_FUND_SIMS, PLAN_EVAL_SIMS, PLAN_BAND_MIN_N, PLAN_BAND_DRAWS, PLAN_BAND_SIMS, bandGrid, bandDraw, sizeFromCurve, bandOf, bandText, resampleRecord, plausibleRecord, pickBalanced, ROBUST_CONF, ROBUST_DRAWS } from "${src}/plan.ts";`,
     `export { ddSim, effectiveN, fitBlock, autocorr, overshootProfile, maxRiskForLimit, zFor, wilsonAt, DD_DEFAULT } from "${src}/dd.ts";`,
     `export { mulberry } from "${src}/util.ts";`,
     `export { stats, statsDeep, fmtDur, excursions, tradeR, trade$, resolvedRs, cutStat, cutOdds, CUT_MIN_N, JMETA } from "${src}/journal.ts";`,

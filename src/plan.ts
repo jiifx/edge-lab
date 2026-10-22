@@ -22,10 +22,10 @@
 // singletons, so scoring a BOUND firm from the journal without swapping them in
 // would silently re-price every other tab (Trap #10). Nothing in this file
 // touches F or S outside those wrappers.
-import { Firm, withFirm, withEdge } from "./state";
+import { Firm, withFirm, withEdge, S } from "./state";
 import { mulberry, runJob } from "./util";
 import {
-  challengeCurve, costPlateau, expectancy, fundedCurve, profitPlateau,
+  challengeCurve, costPlateau, expectancy, fundedCurve, profitPlateau, sampleR,
   payoutOdds, PAID_SIMS, PAY_CHUNK, yearSteps, EvalPoint,
 } from "./engine";
 
@@ -76,14 +76,16 @@ export interface FundedPick {
   inPlateau: number;   // largest size INSIDE the plateau clearing SAFE_SURV, or -1
   anywhere: number;    // largest size ANYWHERE on the grid clearing it, or -1
 }
-// THE FUNDED SIZING RULE, in one place (commit 3a3e9ec).
+// THE PROFIT PLATEAU AND ITS POINT-ESTIMATE SURVIVAL (commit 3a3e9ec).
 //
 // "Best size" used to be a profit maximum with survival deleted - it recommended
 // sizes where 39 accounts in 100 survived the year, because profitPlateau read
-// prof[] and nothing ever read surv[], which sits in the same object. The rule
-// is now: the LARGEST size inside the profit plateau that still clears the 85%
-// survival bar. Largest, not smallest, because inside the plateau profit is flat
-// by construction, so the only thing left to spend is risk of ruin.
+// prof[] and nothing ever read surv[], which sits in the same object. 3a3e9ec
+// then named the LARGEST plateau size clearing 85% survival - which spends
+// survival for profit that is flat by construction, and clears the bar only at
+// the measured edge. Since 2.18.7 the Funded tab names pickBalanced's size
+// instead (ROBUST SIZING below); this function still supplies the plateau, and
+// the point-estimate fallback shown when no size holds up robustly.
 //
 // It returns INDICES and never a sentence: the caller owns the copy, and the
 // caller must always print the survival number beside the size. "No
@@ -100,6 +102,55 @@ export function pickFundedSize(prof: number[], surv: number[]): FundedPick {
     inPlateau: prof.length ? lastSafe(flat.lo, flat.hi) : -1,
     anywhere: prof.length ? lastSafe(0, prof.length - 1) : -1,
   };
+}
+
+// ---------------------------------------------------------------------------
+// ROBUST SIZING (2.18.7) - a size the app names has to clear its bar in at
+// least ROBUST_CONF of the plausible versions of the edge, not only at the
+// measured edge.
+// ---------------------------------------------------------------------------
+//
+// pickFundedSize above, used on its own, named the LARGEST size in the profit
+// plateau that cleared 85% survival AT THE POINT ESTIMATE. Measured on the
+// sample record and the 2-step preset, that put the pick at 0.82%: 89% survival
+// as measured, one grid step below a cliff (0.94% -> 11%, five losing trades a
+// day crossing the 5% daily limit), and below 85% survival in 43% of resampled
+// versions of the same record - for 2% more profit than 0.70%. Inside a plateau
+// the profit is flat, so "largest" spends survival for nothing, and choosing at
+// the point estimate puts the pick wherever the cliff happens to sit for an edge
+// the record only estimates. The balanced rule asks the bar to hold in 9 of 10
+// plausible records (the same resampling the app's 90% ranges use). There it
+// names 0.52% (96% survival as measured, 85%+ in 9 records of 10), at 81% of
+// the plateau's profit - the price of the margin, printed on the tile.
+export const ROBUST_CONF = 0.9;
+export const ROBUST_DRAWS = 80;
+export const ROBUST_SIMS = 100;        // funded: per size, per plausible record
+export const ROBUST_EVAL_SIMS = 120;   // challenge: per size, per plausible record
+
+// One plausible version of the edge. A journal record is resampled with
+// replacement (resampleRecord, as every band does). A slider edge has no record,
+// so one is DRAWN from the sliders at their own "trades in record" size - a
+// parametric bootstrap: the same uncertainty the Validate tab's interval puts on
+// that n. Must be called outside withEdge (it reads the live S).
+export function plausibleRecord(seed: number): number[] {
+  if (S.trades && S.trades.length) return resampleRecord(S.trades, seed);
+  const rnd = mulberry(seed);
+  const n = Math.max(10, Math.min(5000, S.n | 0));
+  const out = new Array<number>(n);
+  for (let i = 0; i < n; i++) out[i] = sampleR(rnd);
+  return out;
+}
+
+// The balanced funded size: the largest index <= upto whose survival clears
+// SAFE_SURV both at the measured edge (surv) and in at least ROBUST_CONF of the
+// plausible records (share = fraction of records clearing it at that size).
+// upto is the top of the profit plateau: past it a size pays less AND survives
+// less, so nothing up there can be the balanced answer. -1 when no size holds.
+export function pickBalanced(surv: number[], share: number[], upto: number): number {
+  for (let i = Math.min(upto, share.length - 1); i >= 0; i--) {
+    if ((surv[i] ?? 0) >= SAFE_SURV && (share[i] ?? 0) >= ROBUST_CONF) return i;
+  }
+  return -1;
 }
 
 export interface EvalPick {

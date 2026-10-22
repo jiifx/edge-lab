@@ -374,3 +374,41 @@ test("a funded account skips the evaluation leg entirely, at any n", async () =>
     assert.equal(p.evalRisk, 0, "and no eval size is named for it");
   }
 });
+
+// ---------------------------------------------------------------------------
+// The balanced funded size (2.18.7): robust to the edge being an estimate
+// ---------------------------------------------------------------------------
+test("balanced size: a size that clears 85% only at the measured edge is not named", () => {
+  const { pickBalanced } = E;
+  // survival as measured, per size: everything up to index 4 clears 85%
+  const surv = [1.0, 0.99, 0.96, 0.92, 0.89, 0.40];
+  // ...but in plausible versions of the edge, only up to index 2 holds 9 times in 10
+  const share = [1.0, 1.0, 0.92, 0.70, 0.57, 0.0];
+  // the old rule named index 4 (largest clearing 85% in the plateau); this names 2
+  assert.equal(pickBalanced(surv, share, 4), 2);
+  // never above the top of the profit plateau, even when bigger sizes hold
+  assert.equal(pickBalanced([1, 1, 1, 1], [1, 1, 1, 1], 1), 1);
+  // the measured edge has to clear the bar too, not only the plausible ones
+  assert.equal(pickBalanced([0.80, 0.80], [1, 1], 1), -1);
+  // nothing holds -> -1 (the tab then shows its fragile fallback, not this)
+  assert.equal(pickBalanced([0.9, 0.9], [0.5, 0.4], 1), -1);
+});
+
+test("plausible records: a journal is resampled, a slider edge is drawn at its own n", () => {
+  const { plausibleRecord, S } = E;
+  const saved = { trades: S.trades, p: S.p, b: S.b, s: S.s, n: S.n };
+  try {
+    S.trades = [1, -1, 2, -1, 0.5];
+    const a = plausibleRecord(11), b = plausibleRecord(11);
+    assert.deepEqual(a, b, "deterministic for a seed");
+    assert.equal(a.length, 5);
+    assert.ok(a.every((r) => [1, -1, 2, 0.5].includes(r)), "resampled from the record itself");
+    S.trades = null; S.p = 0.5; S.b = 2; S.s = 0; S.n = 400;
+    const c = plausibleRecord(7);
+    assert.equal(c.length, 400, "a slider edge is drawn at its own trades-in-record size");
+    assert.ok(c.every((r) => r === 2 || r === -1), "drawn from the slider outcomes");
+    const wins = c.filter((r) => r === 2).length / c.length;
+    assert.ok(Math.abs(wins - 0.5) < 0.08, "centred on the slider win rate, got " + wins);
+    assert.notDeepEqual(plausibleRecord(8), c, "a different seed is a different plausible record");
+  } finally { Object.assign(S, saved); }
+});

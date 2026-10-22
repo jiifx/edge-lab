@@ -509,7 +509,8 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <li><b>Use realised loss sizes</b>: on = losses are resampled at the sizes you actually logged, so a stop that filled at &minus;1.4R can happen again. Off = every loss is your average loss. If all your logged losses are the same size, your journal records planned losses, not fills.</li>
 </ul>
 <h4>Largest risk per trade</h4>
-<p>The risk per trade at which the p95 drawdown over your horizon exactly fills the account limit. In prop firm mode it is shown in green if the Funded tab's risk is inside it, red if not, with how much of the limit a 1-in-20 bad run would use. One run in twenty is still worse, so treat it as a ceiling, not a target.</p>
+<p>The risk per trade at which the p95 drawdown over your horizon exactly fills the account limit. It counts <b>every</b> peak-to-trough fall against the limit, with no daily limit and no withdrawals. One run in twenty is still worse, so treat it as a ceiling, not a target.</p>
+<p>In prop firm mode the box also quotes the Funded tab's <b>balanced size</b>. The two differ on purpose: the Funded tab applies your firm's own rules (a static floor lets you give back profit above the starting balance; a daily limit adds a cliff; withdrawals move the floor), so it answers a different question about the same edge.</p>
 <h4>Warnings on this tab</h4>
 <ul>
   <li><b>Multiple looks</b>: you have tested several subsets with Leave out, so ranges are widened (each is a stricter interval, so the whole family still carries 95%).</li>
@@ -552,7 +553,8 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">Profit / year</td><td>Cash actually withdrawn, averaged over every account including the ones that blew up. In $ mode it is after your split; in % mode, before.</td></tr>
   <tr><td class="k">Survival</td><td>Accounts still alive after 252 trading days.</td></tr>
   <tr><td class="k">Breached banks</td><td>Median cash an account that breaches had withdrawn before it died, beside a survivor's. Shown when survival is under 100%.</td></tr>
-  <tr><td class="k">Best size</td><td>The largest size whose profit is within 3% of the best <b>and</b> where 85+ accounts in 100 survive the year. Hidden under 30 trades.</td></tr>
+  <tr><td class="k">Balanced size</td><td>The largest size, up to the top of the profit plateau, where 85+ accounts in 100 survive the year <b>not only at your measured edge but in at least 9 of 10 plausible versions of it</b> (your record resampled; a slider edge is redrawn at its own trades-in-record size). The tile shows the survival, how often it holds (e.g. <b>holds 9/10</b>), and what share of the maximum profit it keeps. The chart marks it with a dashed <b>balanced</b> line beside the <b>most profit</b> bracket. Hidden under 30 trades.
+    <br><br>Why not the most profitable size: payouts come out in fixed chunks, so past a point a bigger size cannot pay more, only blow up more, and the most profitable sizes usually sit right next to a survival cliff (often the daily loss limit). A size that clears 85% only if your edge is exactly as measured is shown as <b>fragile</b> instead.</td></tr>
   <tr><td class="k">Smallest size for goal</td><td>The smallest size whose odds of reaching your goal are within 3% of the best.</td></tr>
 </table>
 <p><b>Chart:</b> profit per year against size. It rises, flattens, then falls as accounts start dying. The background shades with survival: green survives, red dies. The bracket marks the flat top: sizes that pay within 3% of the best, but that do <b>not</b> survive the same. The solid line is your size; a dashed line marks the smallest size for your goal.</p>
@@ -570,7 +572,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <table>
   <tr><td class="k">Chance to pass</td><td>End-to-end pass odds (both phases on a 2-step).</td></tr>
   <tr><td class="k">Expected fees to fund</td><td>Average cost to get funded, re-attempting until you pass: fees, resets, subscription months, activation.</td></tr>
-  <tr><td class="k">Best eval size</td><td>The eval size that funds you for the least money, measured on this firm; where several cost the same, the quickest. Under a time limit or min days, a <b>smaller</b> size can cost more.</td></tr>
+  <tr><td class="k">Best eval size</td><td>The eval size that funds you for the least money, measured on this firm; where several cost the same, the quickest that still passes 85+ attempts in 100 <b>in at least 9 of 10 plausible versions of your edge</b> (the same robustness as the Funded tab's balanced size). Under a time limit or min days, a <b>smaller</b> size can cost more.</td></tr>
   <tr><td class="k">First-year payout</td><td>Expected withdrawals over a funded year, after split.</td></tr>
   <tr><td class="k">Pass → paid</td><td>Chance one purchase ends with money withdrawn; in brackets, the odds once funded and typical days to the first payout.</td></tr>
   <tr><td class="k">Net @ 1st payout</td><td>Where you stand the day of your first withdrawal: the odds of getting there × one payout, minus the cost to fund. A firm can be worth a year and still not have repaid its fee by then.</td></tr>
@@ -594,7 +596,9 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">Pooled accounts / mirrored</td><td>Same signal in several accounts. Pick one account as Edge source.</td></tr>
   <tr><td class="k">No proven edge. Check Validate first.</td><td>Decision: expectancy ≤ 0, so the fee funds the firm, not you.</td></tr>
   <tr><td class="k">Pass odds too low to budget</td><td>Decision budget can't be bounded. Fix the edge first.</td></tr>
-  <tr><td class="k">too thin to size</td><td>Funded best size is withheld under 30 trades.</td></tr>
+  <tr><td class="k">too thin to size</td><td>The Funded balanced size is withheld under 30 trades.</td></tr>
+  <tr><td class="k">checking against your edge's range&hellip;</td><td>The balanced size (Funded) or eval size (Decision) is being tested against plausible versions of your edge. It takes a few seconds.</td></tr>
+  <tr><td class="k">fragile &middot; only at measured edge</td><td>No size keeps 85+ accounts in 100 alive in 9 of 10 plausible versions of your edge. The size shown does so only at the measured edge: treat it as a ceiling. More trades narrow the range.</td></tr>
   <tr><td class="k">none survivable</td><td>Even the smallest size loses 15+ accounts in 100 a year. The edge has to change, not the size.</td></tr>
   <tr><td class="k">the firm caps you first</td><td>Your payout goal needs more payouts than the firm's window allows in a year. Bigger account, faster-paying firm, or smaller goal.</td></tr>
   <tr><td class="k">out of reach at every size</td><td>The goal is more than this edge produces in a year. It's an account-size problem; raising risk makes it worse.</td></tr>

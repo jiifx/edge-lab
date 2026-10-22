@@ -12,7 +12,7 @@ import { ddJob, effectiveN, fitBlock, overshootProfile, maxRiskForLimit, zFor, w
 // same question about a BOUND firm, and two copies of a rule is how this app
 // previously ended up quoting one firm two different numbers on two tabs. One
 // implementation, both callers. See the header of plan.ts.
-import { riskGrid, pickFundedSize, pickEvalSize, PLATEAU_TOL, SAFE_SURV, PLAN_MIN_N, Band, bandOf, bandText, resampleRecord } from "./plan";
+import { riskGrid, pickFundedSize, pickEvalSize, PLATEAU_TOL, SAFE_SURV, PASS_BAR, PLAN_MIN_N, Band, bandOf, bandText, resampleRecord, plausibleRecord, pickBalanced, ROBUST_CONF, ROBUST_DRAWS, ROBUST_SIMS, ROBUST_EVAL_SIMS } from "./plan";
 
 // the panel ids are "p-" + tab; kept in one place so adding a tab cannot
 // half-register it (the list used to be spelled out twice)
@@ -769,12 +769,18 @@ function renderDD(n: number, nEff: number) {
   $("ddRisk").innerHTML = maxR == null
     ? ""
     : '<div class="ddrisk"><div class="rk">Largest risk per trade that fits inside a ' + lim.toFixed(1) + '% account limit</div>' +
-      '<div class="rv ' + (!view.PROP ? "" : maxR >= curRisk ? "cell-go" : "cell-stop") + '">' + maxR.toFixed(2) + "%</div>" +
+      '<div class="rv">' + maxR.toFixed(2) + "%</div>" +
       '<div class="rs">p95 drawdown over ' + h + " trades: <b>" + pt.p95.toFixed(1) + "R</b>" +
-      (!view.PROP ? "" : " &middot; Funded tab risk <b>" + curRisk.toFixed(2) + "%</b>" +
-        (maxR >= curRisk
-          ? " &mdash; inside the limit"
-          : " &mdash; <b>" + ((pt.p95 * curRisk) / lim * 100).toFixed(0) + "% of the limit</b>")) + "</div></div>";
+      // In prop firm mode this box used to colour the Funded tab's risk green or
+      // red against ITS OWN model - every peak-to-trough fall counted against
+      // the limit, no daily limit, no withdrawals - while the Funded tab sized
+      // the same account against the firm's actual floor. On the sample record
+      // the two disagreed by 60% (0.52% here, 0.82% there) with no word on why.
+      // Now it states the difference and quotes the Funded tab's answer instead.
+      (!view.PROP ? "" : " &middot; this counts every peak-to-trough fall against the limit. The Funded tab applies your firm&rsquo;s own rules " +
+        "(where the floor sits, the daily limit, withdrawals), so its sizes differ" +
+        (lastBalanced != null ? ": its balanced size is <b>" + lastBalanced.toFixed(2) + "%</b>" : "") +
+        ". Your Funded tab risk is " + curRisk.toFixed(2) + "%.") + "</div></div>";
   void n; void nEff;
 }
 
@@ -799,6 +805,38 @@ let bandPending: string | null = null;
 let bandCancel = 0;
 // A slider edge carries no sample, so it has no parameter uncertainty to show -
 // the sliders ARE the assumption. Bands only exist for a journal record.
+// ---------------- ROBUST SIZING, SHARED BY FUNDED AND CHALLENGE (2.18.7) -----
+// For each candidate size: the share of ROBUST_DRAWS plausible records (see
+// plausibleRecord) whose score clears `bar` - survival for Funded, pass rate for
+// Challenge. One record per macrotask through the shared job queue, like the
+// band job; render() runs again when it lands. Returns null while pending, and
+// never starts during a drag (FAST) - the 250ms settle starts it.
+interface RobustSlot { key: string; shares: number[] | null; seq: number }
+const robustSlots: Record<string, RobustSlot> = {};
+let lastBalanced: number | null = null;   // the Funded tab's balanced size, for Validate
+function ensureRobust(kind: string, key: string, n: number, score: () => number[], bar: number): number[] | null {
+  const slot = robustSlots[kind] || (robustSlots[kind] = { key: "", shares: null, seq: 0 });
+  if (slot.key === key) return slot.shares;
+  if (FAST || n <= 0) return null;
+  slot.key = key; slot.shares = null;
+  const my = ++slot.seq;
+  const hits = new Array<number>(n).fill(0);
+  let drawn = 0;
+  runJob(() => {
+    if (my !== slot.seq) return true;
+    const rec = plausibleRecord(9101 + drawn * 0x9e3779b1);
+    drawn++;
+    const v = withEdge(rec, score);
+    for (let i = 0; i < n; i++) if ((v[i] ?? 0) >= bar) hits[i]++;
+    return drawn >= ROBUST_DRAWS;
+  }, () => {
+    if (my !== slot.seq) return;
+    slot.shares = hits.map((h) => h / ROBUST_DRAWS);
+    render();
+  });
+  return null;
+}
+
 function bandable(): boolean { return !!(S.trades && S.trades.length >= 20); }
 function ensureBands(re: number, rf: number): EdgeBands | null {
   if (!bandable()) return null;
@@ -1214,6 +1252,21 @@ function renderChallenge() {
 // the split: all four are display-time arithmetic over these same samples.
 interface GCache { key?: string; risks: number[]; prof: number[]; surv: number[]; pays: number[][] }
 let gCache: GCache = { risks: [], prof: [], surv: [], pays: [] };
+// The balanced search runs on a finer grid (0.06%) than the curve (0.12%): its
+// answer sits where survival crosses a bar, and on the coarse grid it jumped a
+// whole step for want of the point between (0.58% fails, so 0.46% at 70% of max
+// profit, where 0.52% holds at 81%). Point survival and profit at the fine sizes
+// come from one full-count run on the record itself, cached per edge and firm.
+let fineCache: { key: string; sizes: number[]; prof: number[]; surv: number[] } | null = null;
+function fineCurve(key: string, top: number): { sizes: number[]; prof: number[]; surv: number[] } | null {
+  if (fineCache && fineCache.key === key) return fineCache;
+  if (FAST) return null;
+  const sizes: number[] = [];
+  for (let r = 0.1; r <= top + 1e-9; r += 0.06) sizes.push(Math.round(r * 100) / 100);
+  const c = fundedCurve(sizes, 240, yearSteps());
+  fineCache = { key, sizes, prof: c.prof, surv: c.surv };
+  return fineCache;
+}
 // One withdrawal in dollars, after the split and the user's haircut - the unit a
 // payout goal is quantised to, since the model only ever withdraws whole chunks.
 // Shared by renderFunded and the goal control so the two can never disagree.
@@ -1386,6 +1439,18 @@ function renderFunded() {
   // not an instruction, it is a guess. Validate refuses below 30 trades; so does
   // this. (Slider edges carry no sample, so the gate only applies to a journal.)
   const thinRecord = !!S.trades && S.trades.length < PLAN_MIN_N;
+  // ---- the balanced size: robust to the edge being only an estimate ----
+  // Candidates run from the smallest size up to the TOP of the profit plateau:
+  // past it a size pays less and survives less, so it can never be the answer.
+  const upto = flat.hi;
+  const fine = noEdge || thinRecord ? null : fineCurve(d.key + "|" + upto, d.risks[upto] ?? 0);
+  const fShares = !fine ? null
+    : ensureRobust("fund", d.key + "|" + upto + "|fine", fine.sizes.length,
+      () => fundedCurve(fine.sizes, ROBUST_SIMS, yearSteps()).surv, SAFE_SURV);
+  const bal = fShares && fine ? pickBalanced(fine.surv, fShares, fine.sizes.length - 1) : -1;
+  // a grid size's slot on the fine grid (the fine grid contains every grid size)
+  const fineAt = (gi: number) => fine ? Math.min(fine.sizes.length - 1, Math.max(0, Math.round(((d.risks[gi] ?? 0.1) - 0.1) / 0.06))) : 0;
+  lastBalanced = fine && bal >= 0 ? fine.sizes[bal] : null;
   if (noEdge) {
     $("fPeak").textContent = "n/a - no size makes this edge pay";
     $("fPeak").className = "v cell-stop";
@@ -1393,20 +1458,39 @@ function renderFunded() {
     $("fPeak").innerHTML = "too thin to size" + '<div class="sub">' + (S.trades ? S.trades.length : 0) + " trades · needs " + PLAN_MIN_N + "+</div>";
     $("fPeak").className = "v cell-caution";
     $("fPeak").title = "Validate will not call an edge real below " + PLAN_MIN_N + " resolved trades, so this tab will not issue a sizing instruction derived from one either.";
-  } else if (inPlateau >= 0) {
-    const r = d.risks[inPlateau];
-    $("fPeak").innerHTML = r.toFixed(2) + "%" + '<div class="sub">' + Math.round(d.surv[inPlateau] * 100) + "% survive the year</div>";
+  } else if (!fShares) {
+    // the robust check runs in the background; a point-estimate size shown
+    // first and then replaced would read as the app changing its mind
+    $("fPeak").innerHTML = '<span class="skel"></span><div class="sub">checking against your edge&rsquo;s range&hellip;</div>';
+    $("fPeak").className = "v";
+    $("fPeak").title = "";
+  } else if (bal >= 0 && fine) {
+    const r = fine.sizes[bal];
+    const ofTop = d.prof[pk] > 0 ? Math.min(100, Math.round((fine.prof[bal] / d.prof[pk]) * 100)) : 100;
+    const topShare = Math.round((fShares[fShares.length - 1] ?? 0) * 100);
+    // the margin's price goes on the face, not only in the title: a
+    // recommendation carries its cost (the same rule as the survival number)
+    $("fPeak").innerHTML = r.toFixed(2) + "%" + '<div class="sub">' + Math.round(fine.surv[bal] * 100) +
+      "% survive &middot; holds " + Math.round(fShares[bal] * 10) + "/10 &middot; " + ofTop + "% of max</div>";
     $("fPeak").className = "v cell-go";
-    $("fPeak").title = "The profit flat top runs " + fLo.toFixed(2) + "-" + fHi.toFixed(2) +
-      "%; every size on it pays within 3% of the best. This is the largest one that still keeps 85+ accounts in 100 alive.";
-  } else if (anywhere >= 0) {
-    // the profit peak is not survivable - lead with the size that is
-    const r = d.risks[anywhere];
-    $("fPeak").innerHTML = r.toFixed(2) + "%" + '<div class="sub">peak survives ' + Math.round((d.surv[flat.lo] ?? 0) * 100) + "% only</div>";
+    $("fPeak").title = "Balanced size: the largest size, up to the top of the profit plateau, whose 85%+ yearly survival holds " +
+      "not only at your measured edge but in at least 9 of 10 plausible versions of it (resampled from your record). " +
+      "It pays " + ofTop + "% of the most profitable size's yearly payout. " +
+      (flat.lo === flat.hi
+        ? "The most profitable size, " + fHi.toFixed(2) + "%, keeps " + Math.round((d.surv[flat.hi] ?? 0) * 100) + "% alive as measured"
+        : "The most profitable sizes, " + fLo.toFixed(2) + "-" + fHi.toFixed(2) + "%, keep " + Math.round((d.surv[flat.hi] ?? 0) * 100) + "-" +
+          Math.round((d.surv[flat.lo] ?? 0) * 100) + "% alive as measured") +
+      ", but at " + fHi.toFixed(2) + "% fewer than 85 in 100 survive in " + (100 - topShare) + "% of plausible edges.";
+  } else if (inPlateau >= 0 || anywhere >= 0) {
+    // something clears 85% at the measured edge, nothing does robustly
+    const i = inPlateau >= 0 ? inPlateau : anywhere;
+    const r = d.risks[i];
+    const holds = Math.round((fShares[fineAt(i)] ?? 0) * 100);
+    $("fPeak").innerHTML = r.toFixed(2) + "%" + '<div class="sub">fragile &middot; ' + Math.round(d.surv[i] * 100) + "% only at measured edge</div>";
     $("fPeak").className = "v cell-caution";
-    $("fPeak").title = "The most profitable size (" + fLo.toFixed(2) + "-" + fHi.toFixed(2) + "%) keeps only " +
-      Math.round((d.surv[flat.lo] ?? 0) * 100) + "% of accounts alive for a year. " + r.toFixed(2) + "% pays " +
-      Math.round(d.prof[anywhere]) + "% of account a year and keeps " + Math.round(d.surv[anywhere] * 100) + "%.";
+    $("fPeak").title = "No size up to the profit flat top keeps 85+ accounts in 100 alive in 9 of 10 plausible versions of your edge. " +
+      r.toFixed(2) + "% does at the measured edge (" + Math.round(d.surv[i] * 100) + "%), but only in " + holds +
+      "% of plausible versions. Treat it as a ceiling, not a target; more trades narrow the range.";
   } else {
     $("fPeak").innerHTML = "none survivable" + '<div class="sub">edge problem, not sizing</div>';
     $("fPeak").className = "v cell-stop";
@@ -1531,10 +1615,20 @@ function renderFunded() {
     ctx.lineWidth = 1.6; ctx.beginPath();
     ctx.moveTo(bx0, by - 4); ctx.lineTo(bx0, by); ctx.lineTo(bx1, by); ctx.lineTo(bx1, by - 4);
     ctx.stroke();
-    ctx.fillText("best " + fLo.toFixed(2) + "-" + fHi.toFixed(2) + "%", (bx0 + bx1) / 2, by - 7);
+    ctx.fillText("most profit " + fLo.toFixed(2) + "-" + fHi.toFixed(2) + "%", (bx0 + bx1) / 2, by - 7);
   } else {
     ctx.beginPath(); ctx.arc(bx0, pky, 3.5, 0, 7); ctx.fill();
-    ctx.fillText("best " + fLo.toFixed(2) + "%", bx0, pky - 8);
+    ctx.fillText("most profit " + fLo.toFixed(2) + "%", bx0, pky - 8);
+  }
+  // the balanced size (the tile's answer), dashed, labelled above the goal's
+  // label so the two never overlap
+  if (!noEdge && !thinRecord && lastBalanced != null) {
+    const bxb = X(Math.min(rmax, Math.max(rmin, lastBalanced)));
+    ctx.strokeStyle = css("--go-ink"); ctx.lineWidth = 1.6; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(bxb, pT + 14); ctx.lineTo(bxb, H - pB); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = css("--go-ink"); ctx.font = "700 10px " + css("--sans"); ctx.textAlign = "center";
+    ctx.fillText("balanced", bxb, H - pB - 17);
   }
   // the goal size goes down FIRST, so when it coincides with the current size
   // the solid "you are here" line stays on top rather than being half-erased
@@ -1607,7 +1701,8 @@ interface EvalAdvice {
   sub?: string;                // a second line under it
   tone?: string;               // the tile's class, matching the Funded tab's vocabulary
   risk?: number; cost?: number; days?: number; pass?: number;
-  barMet?: boolean;            // does the named size clear the 85% single-attempt bar
+  barMet?: boolean;            // does the named size clear the 85% bar in 9 of 10 plausible edges
+  checking?: boolean;          // the robust check is still running: barMet is the point estimate's
   cheapest?: number;           // the bottom of the band, which `cost` is within 3% of
   lo?: number; hi?: number;    // the flat bottom, in risk %
   cur?: EvalPoint;             // the nearest grid point to where the user is standing
@@ -1660,11 +1755,27 @@ function evalAdvice(curRisk: number): EvalAdvice {
   // it, fall back to the likeliest to land rather than the fastest. The rule
   // itself is pickEvalSize in plan.ts, called above, because the journal's My
   // firm surface names an eval size by exactly this rule against a BOUND firm.
-  const barMet = ep.barMet;
-  const sel = pts[ep.pick];
+  // Same robustness as the Funded tab's balanced size (2.18.7): "quickest size
+  // that still passes 85%" leans toward the largest, most fragile size in the
+  // band, and the 85% was read at the measured edge only. The bar now has to
+  // hold in 9 of 10 plausible versions of the edge. Until that check lands the
+  // point-estimate pick is shown, marked as still being checked.
+  const evShares = ensureRobust("eval", eCache.key + "|" + pl.lo + "-" + pl.hi, pl.hi - pl.lo + 1,
+    () => challengeCurve(pts.slice(pl.lo, pl.hi + 1).map((p) => p.risk), ROBUST_EVAL_SIMS).map((p) => p.pass), PASS_BAR);
+  let pickI = ep.pick, barMet = ep.barMet;
+  if (evShares) {
+    let rp = -1;
+    for (let i = pl.lo; i <= pl.hi; i++) {
+      if (pts[i].pass < PASS_BAR || (evShares[i - pl.lo] ?? 0) < ROBUST_CONF) continue;
+      if (rp < 0 || pts[i].days < pts[rp].days) rp = i;
+    }
+    if (rp >= 0) { pickI = rp; barMet = true; }
+    else { barMet = false; pickI = pl.lo; for (let i = pl.lo + 1; i <= pl.hi; i++) if (pts[i].pass > pts[pickI].pass) pickI = i; }
+  }
+  const sel = pts[pickI];
   let ci = 0, cd = 1e9;
   pts.forEach((p, i) => { const d = Math.abs(p.risk - curRisk); if (d < cd) { cd = d; ci = i; } });
-  return { ok: true, risk: sel.risk, cost: sel.cost, days: sel.days, pass: sel.pass, barMet,
+  return { ok: true, risk: sel.risk, cost: sel.cost, days: sel.days, pass: sel.pass, barMet, checking: !evShares,
     cheapest: best.cost, lo: pts[pl.lo].risk, hi: pts[pl.hi].risk, cur: pts[ci] };
 }
 function renderDecision() {
@@ -1766,15 +1877,16 @@ function renderDecision() {
       '<div class="k">yours: ' + c.risk.toFixed(2) + "% &rarr; " + money(c.cost) + "</div>";
     // and when nothing in the band clears the 85% bar, the pass rate is the
     // thing the reader most needs and it goes on the face, not in the title
-    const warn = ea.barMet ? "" : '<div class="k">' + pctEst(ea.pass as number) + " an attempt &middot; best available</div>";
+    const warn = ea.checking ? '<div class="k">checking against your edge&rsquo;s range&hellip;</div>'
+      : ea.barMet ? "" : '<div class="k">' + pctEst(ea.pass as number) + " an attempt &middot; best available</div>";
     ev.innerHTML = (ea.risk as number).toFixed(2) + "%" +
       '<div class="k">' + money(ea.cost as number) + " to fund &middot; ~" + ea.days + "d</div>" + gap + warn;
     ev.className = "v " + (worse <= 1.03 ? "cell-go" : worse >= 1.5 ? "cell-stop" : "cell-caution");
     ev.title = "Expected cost to a funded account is flattest between " + (ea.lo as number).toFixed(2) + "% and " +
       (ea.hi as number).toFixed(2) + "% - every size in that band funds you for within 3% of the same money, so what separates them is the clock and the washouts, not the cash. " +
       (ea.risk as number).toFixed(2) + "% is " + (ea.barMet
-        ? "the quickest of them that still passes 85+ attempts in 100"
-        : "the likeliest of them to land - nothing in the band clears 85 attempts in 100") +
+        ? "the quickest of them that still passes 85+ attempts in 100 in at least 9 of 10 plausible versions of your edge"
+        : "the likeliest of them to land - nothing in the band reliably clears 85 attempts in 100 (in 9 of 10 plausible versions of your edge)") +
       ": " + money(ea.cost as number) + ", about " + ea.days + " trading days, " + pctEst(ea.pass as number) +
       " per attempt. Your " + c.risk.toFixed(2) + "% costs " + money(c.cost) + " (" +
       (c.attempts >= 199 ? "many" : c.attempts.toFixed(1)) + " attempts, ~" + c.days + " days)" +
