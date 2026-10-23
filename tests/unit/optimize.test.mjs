@@ -254,6 +254,9 @@ test("settings: defaults out of the box (max payout on), garbage clamped, the en
   assert.equal(o.conf, OPT_DEFAULTS.conf);
   assert.equal(o.maxAccounts, 50, "up to 50 accounts");
   assert.equal(o.maxLifeMonths, 24);
+  // 2.22.1: the account life is no longer a setting - an old saved value is ignored
+  localStorage.setItem("pel_opt", JSON.stringify({ maxLifeMonths: 3 }));
+  assert.equal(optSettings().maxLifeMonths, 24, "a saved 3-month life must not survive");
   assert.equal(o.copy, OPT_DEFAULTS.copy);
   assert.equal(o.staggerDays, 0);
   assert.equal(o.payMax, OPT_DEFAULTS.payMax);

@@ -1674,7 +1674,6 @@ function renderFunded() {
   document.querySelectorAll<HTMLButtonElement>("button[data-sizer]").forEach((b) =>
     b.setAttribute("aria-pressed", String((b.getAttribute("data-sizer") === "cushion") === o.cushion)));
   setNum("nSurvT", String(Math.round(o.survTarget * 100)));
-  setNum("nLife", String(o.maxLifeMonths));
   const selC = $s("selConf");
   if (document.activeElement !== selC) selC.value = String(o.conf);
   $("optDefNote").textContent = isDefault(o) ? "using the defaults" : "custom settings";
@@ -1806,7 +1805,8 @@ function renderFunded() {
     d.risks.forEach((rr, i) => { const dd = Math.abs(rr - r); if (dd < bd) { bd = dd; bi = i; } });
     const e = m.econ[bi];
     return "risk " + d.risks[bi].toFixed(2) + "% per trade<br><b>" + roiTxt(e.roi) + " back per $1 of fees</b>" +
-      "<br>net " + money(pct$(e.perMonth)) + "/mo a slot &middot; " + Math.round(d.surv[bi] * 100) + "% unbreached &middot; lasts ~" + moTxt(e.liveMonths);
+      "<br>net " + money(pct$(e.perMonth)) + "/mo a slot" +
+      "<br>" + Math.round(d.surv[bi] * 100) + "% unbreached &middot; lasts ~" + moTxt(e.liveMonths);
   });
 
   renderAccounts(m, mo);
@@ -2615,11 +2615,6 @@ export function wireSim() {
     scheduleRender();
   });
   $s("selConf").addEventListener("change", function () { setOpt({ conf: Number(this.value) }); scheduleRender(); });
-  $i("nLife").addEventListener("change", function () {
-    const v = Number(this.value);
-    if (this.value !== "" && isFinite(v)) setOpt({ maxLifeMonths: Math.max(3, Math.min(60, Math.round(v))) });
-    scheduleRender();
-  });
   $("optReset").addEventListener("click", () => { resetOpt(); scheduleRender(); });
   // ---- several accounts (Funded) ----
   const setAcc = (v: number) => { setOpt({ maxAccounts: Math.max(1, Math.min(50, Math.round(v))) }); scheduleRender(); };

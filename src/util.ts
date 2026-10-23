@@ -233,7 +233,9 @@ export function chartTip(cv: HTMLCanvasElement, resolve: (x: number, y: number, 
     const vw = window.innerWidth, tw = el.offsetWidth;
     let x = e.clientX + 14;
     if (x + tw > vw - 8) x = e.clientX - tw - 14;
-    el.style.left = x + "px";
+    // chart tips are never wrapped (one fact per line), so they are as wide as
+    // their longest line - keep a wide one on screen rather than off the left edge
+    el.style.left = Math.max(8, x) + "px";
     el.style.top = Math.max(6, e.clientY - el.offsetHeight - 12) + "px";
   };
   cv.onmouseleave = () => { tip().style.display = "none"; };

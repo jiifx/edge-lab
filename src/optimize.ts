@@ -24,7 +24,7 @@ export interface OptSettings {
   survTarget: number;   // the yearly survival Balanced must clear; 1 - this caps "all down at once"
   conf: number;         // ...in this share of plausible versions of the edge
   maxAccounts: number;  // the accounts you run (1-50): the Several accounts table stars it, Decision plans for it
-  maxLifeMonths: number; // the longest an account is followed when no breach or move to live ends it
+  maxLifeMonths: number; // the longest an account is followed (fixed: 24) - see optSettings
   copy: boolean;        // several accounts: the same trades on every account
   staggerDays: number;  // several accounts: trading days between buying each one (0 = same day)
   rebuy: boolean;       // several accounts: replace a blown account
@@ -46,7 +46,11 @@ export function optSettings(): OptSettings {
     survTarget: clampN(s.survTarget, 0.5, 0.99, OPT_DEFAULTS.survTarget),
     conf: clampN(s.conf, 0.5, 0.99, OPT_DEFAULTS.conf),
     maxAccounts: Math.round(clampN(s.maxAccounts, 1, 50, OPT_DEFAULTS.maxAccounts)),
-    maxLifeMonths: Math.round(clampN(s.maxLifeMonths, 3, 60, OPT_DEFAULTS.maxLifeMonths)),
+    // Not a setting since 2.22.1: it only stops the simulation where no breach
+    // or move-to-live rule ends an account, and letting it move changed every
+    // answer (3 months made almost every size "unbreached") without changing
+    // anything real. A value saved by 2.21-2.22.0 is ignored.
+    maxLifeMonths: OPT_DEFAULTS.maxLifeMonths,
     copy: bool(s.copy, OPT_DEFAULTS.copy),
     staggerDays: Math.round(clampN(s.staggerDays, 0, 120, OPT_DEFAULTS.staggerDays)),
     rebuy: bool(s.rebuy, OPT_DEFAULTS.rebuy),
