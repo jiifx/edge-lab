@@ -510,13 +510,32 @@ export function fundedSim(risk: number, T: number, rnd: () => number, ev?: Funde
 // every replacement) reads it from its own starting step. Identical numbers to
 // replaying mulberry from the seed, without re-drawing t numbers per rebuy.
 export interface PortfolioPath { profitPct: number; rebuys: number; aliveEnd: number; allDown: 0 | 1; byMonth: number[]; bought: number }
+// What getting ONE account funded takes, drawn rather than averaged (2.21.1):
+// the attempts it needed (geometric at the pass rate), what they cost under the
+// firm's fee model, and the trades they took. `rnd` is the purchase's own
+// stream - never the trade stream, which copy-trading must keep identical.
+export interface Purchase { steps: number; cost: number }
+export type BuyFn = (rnd: () => number) => Purchase;
+export function evalBuyer(pass: number, meanFailDays: number, medDays: number, meanDaysAll: number, instant: boolean): BuyFn {
+  const tpd = tpdOf();
+  return (rnd) => {
+    if (instant) return { steps: 0, cost: costOfAttempts(1, 0).cost };
+    let a = 1;
+    if (pass <= 0.005) a = 200;
+    else while (a < 200 && rnd() > pass) a++;
+    return { steps: Math.max(0, Math.round(((a - 1) * meanFailDays + medDays) * tpd)), cost: costOfAttempts(a, meanDaysAll).cost };
+  };
+}
 // One SLOT on a stream of pre-drawn uniforms: an account bought at `start`,
 // trading until it breaches, moves to live (2.21.0) or the horizon ends, then -
 // with `rebuy` - a replacement funded `fundSteps` trades later on the same
-// stream. `cover` (a difference array) gets +1/-1 at each funded interval.
-interface SlotRun { profitPct: number; rebuys: number; up: 0 | 1 }
-function runSlot(size: number, T: number, arr: Float64Array, start: number, rebuy: boolean, fundSteps: number, cover: Int32Array, byMonth: number[] | null, stepsPerMonth: number): SlotRun {
-  let profitPct = 0, rebuys = 0, up: 0 | 1 = 0, t = start;
+// stream (or, given `buy`, after a drawn number of attempts). `cover` (a
+// difference array) gets +1/-1 at each funded interval. `fees` sums the drawn
+// purchase costs, the first account's included (0 without `buy`).
+interface SlotRun { profitPct: number; rebuys: number; up: 0 | 1; fees: number }
+function runSlot(size: number, T: number, arr: Float64Array, start: number, rebuy: boolean, fundSteps: number, cover: Int32Array, byMonth: number[] | null, stepsPerMonth: number, buy?: BuyFn, brnd?: () => number): SlotRun {
+  let profitPct = 0, rebuys = 0, up: 0 | 1 = 0, t = start, fees = 0;
+  if (buy && brnd) fees += buy(brnd).cost;      // the first account: bought before the window opens
   while (t < T) {
     let pos = t;
     const rnd = () => arr[pos++];               // join the stream at step t
@@ -528,10 +547,16 @@ function runSlot(size: number, T: number, arr: Float64Array, start: number, rebu
     cover[t]++; cover[end]--;
     if (r.alive && !r.live) { up = 1; break; }   // still trading at the horizon
     if (!rebuy) break;
-    t = end + fundSteps;
-    if (t < T) rebuys++;
+    if (buy && brnd) {
+      const pu = buy(brnd);
+      t = end + pu.steps;
+      if (t < T) { rebuys++; fees += pu.cost; }
+    } else {
+      t = end + fundSteps;
+      if (t < T) rebuys++;
+    }
   }
-  return { profitPct, rebuys, up };
+  return { profitPct, rebuys, up, fees };
 }
 // a moment with nobody up = every slot down at once (copy-trading's real risk);
 // staggered accounts not yet bought are simply not up yet
@@ -541,6 +566,8 @@ function anyGap(cover: Int32Array, T: number): 0 | 1 {
   return 0;
 }
 const streamOf = (sd: number, T: number) => { const a = new Float64Array(T); const r = mulberry(sd); for (let i = 0; i < T; i++) a[i] = r(); return a; };
+// each account's purchases draw from their own stream, seeded off the path
+const buyStream = (seed: number, k: number) => mulberry(((seed ^ 0x2545f491) + k * 0x9e3779b1) | 0);
 export function portfolioSim(sizes: number[], T: number, seed: number, independent: boolean, rebuy: boolean, fundSteps: number, staggerSteps = 0): PortfolioPath {
   const tpd = tpdOf();
   const stepsPerMonth = Math.max(1, TRADING_DAYS_PER_MONTH * tpd);
@@ -561,30 +588,32 @@ export function portfolioSim(sizes: number[], T: number, seed: number, independe
 // not depend on how many accounts run beside it - on a shared stream (copy) or
 // its own (independent), at its own stagger offset - so the first N accounts of
 // one run of `nMax` ARE an N-account portfolio. One pass gives every count in
-// `counts`, which is what makes 50 accounts affordable. Copy-traded accounts
-// bought the same day are identical, so one account is run and scaled.
-export interface PrefixStat { n: number; profitPct: number; rebuys: number; bought: number; allDown: 0 | 1 }
-export function portfolioPrefix(size: number, counts: number[], T: number, seed: number, independent: boolean, rebuy: boolean, fundSteps: number, staggerSteps = 0): PrefixStat[] {
+// `counts`, which is what makes 50 accounts affordable. Without `buy`, copy-
+// traded accounts bought the same day are identical, so one is run and scaled;
+// with it, each account's replacements wait a different drawn time, so they
+// part ways after the first breach and every account is run.
+export interface PrefixStat { n: number; profitPct: number; rebuys: number; bought: number; allDown: 0 | 1; fees: number }
+export function portfolioPrefix(size: number, counts: number[], T: number, seed: number, independent: boolean, rebuy: boolean, fundSteps: number, staggerSteps = 0, buy?: BuyFn): PrefixStat[] {
   const out: PrefixStat[] = [];
   const want = [...counts].sort((a, b) => a - b);
   const nMax = want[want.length - 1] || 0;
   const cover = new Int32Array(T + 1);
   const stepsPerMonth = Math.max(1, TRADING_DAYS_PER_MONTH * tpdOf());
   const shared = independent ? null : streamOf(seed, T);
-  if (!independent && staggerSteps <= 0) {
+  if (!independent && staggerSteps <= 0 && !buy) {
     const r = runSlot(size, T, shared as Float64Array, 0, rebuy, fundSteps, cover, null, stepsPerMonth);
     const gap = anyGap(cover, T);
-    return want.map((n) => ({ n, profitPct: r.profitPct * n, rebuys: r.rebuys * n, bought: n, allDown: gap }));
+    return want.map((n) => ({ n, profitPct: r.profitPct * n, rebuys: r.rebuys * n, bought: n, allDown: gap, fees: 0 }));
   }
-  let profitPct = 0, rebuys = 0, bought = 0, w = 0;
+  let profitPct = 0, rebuys = 0, bought = 0, fees = 0, w = 0;
   for (let k = 0; k < nMax; k++) {
     const start = Math.max(0, Math.round(k * staggerSteps));
     if (start < T) {
       bought++;
-      const r = runSlot(size, T, shared || streamOf((seed + k * 0x9e3779b1) | 0, T), start, rebuy, fundSteps, cover, null, stepsPerMonth);
-      profitPct += r.profitPct; rebuys += r.rebuys;
+      const r = runSlot(size, T, shared || streamOf((seed + k * 0x9e3779b1) | 0, T), start, rebuy, fundSteps, cover, null, stepsPerMonth, buy, buy ? buyStream(seed, k) : undefined);
+      profitPct += r.profitPct; rebuys += r.rebuys; fees += r.fees;
     }
-    while (w < want.length && want[w] === k + 1) { out.push({ n: k + 1, profitPct, rebuys, bought, allDown: anyGap(cover, T) }); w++; }
+    while (w < want.length && want[w] === k + 1) { out.push({ n: k + 1, profitPct, rebuys, bought, allDown: anyGap(cover, T), fees }); w++; }
   }
   return out;
 }
@@ -998,6 +1027,14 @@ export function costToFund(pPass: number, meanDaysAll: number): { cost: number; 
   // a hopeless edge would divide by ~0; cap it so the verdict reads
   // "not worth it" rather than Infinity
   const attempts = pPass > 0.005 ? 1 / pPass : 200;
+  return { ...costOfAttempts(attempts, meanDaysAll), attempts };
+}
+// What `attempts` evaluation attempts cost under this firm's fee model - the
+// arithmetic costToFund prices at the EXPECTED attempts, exposed so a
+// simulation can price the attempts one purchase actually took (2.21.1: the
+// Several accounts fee budget charged every purchase the average, so a run of
+// failed attempts never showed in its bad-run tail).
+export function costOfAttempts(attempts: number, meanDaysAll: number): { cost: number; months: number } {
   if (F.feeMode === "monthly") {
     // A subscription runs CONTINUOUSLY across attempts. The old form billed
     // ceil(days/21) months PER ATTEMPT, so three quick washouts inside one
@@ -1009,7 +1046,7 @@ export function costToFund(pPass: number, meanDaysAll: number): { cost: number; 
     // inside a billing month are slightly under-billed by this; that error is
     // bounded by the reset price, where the old error was unbounded in attempts.
     const months = Math.max(1, Math.ceil((attempts * meanDaysAll) / TRADING_DAYS_PER_MONTH));
-    return { cost: F.fee * months + (F.activation || 0), months, attempts };
+    return { cost: F.fee * months + (F.activation || 0), months };
   }
   const months = 1;
   // Discounted resets: many one-time-fee firms sell a re-attempt cheaper than a
@@ -1018,9 +1055,9 @@ export function costToFund(pPass: number, meanDaysAll: number): { cost: number; 
   // old behaviour. (Monthly firms never reach here - their subscription renewal
   // already IS the reset, priced continuously above.)
   if ((F.resetFee || 0) > 0 && attempts > 1) {
-    return { cost: F.fee + (attempts - 1) * (F.resetFee as number) + (F.activation || 0), months, attempts };
+    return { cost: F.fee + (attempts - 1) * (F.resetFee as number) + (F.activation || 0), months };
   }
-  return { cost: F.fee * attempts + (F.activation || 0), months, attempts };
+  return { cost: F.fee * attempts + (F.activation || 0), months };
 }
 
 // maxDD() USED TO LIVE HERE AND HAS BEEN DELETED ON PURPOSE. It walked exactly

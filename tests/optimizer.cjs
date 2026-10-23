@@ -81,8 +81,11 @@ const ok = (m) => console.log('ok: ' + m);
   else ok('Reset to defaults restores ' + sizes.balanced + '%');
 
   // ---------- 4. the other sizing rule is compared; cushion relabels the risk ----------
-  try { await page.waitForFunction(() => { const e = document.getElementById('optRuleCmp'); return e && /would return/.test(e.textContent); }, { timeout: 120000, polling: 500 }); } catch { fail('the sizing-rule comparison never finished'); }
-  ok('rule comparison: ' + (await page.evaluate(() => document.getElementById('optRuleCmp').innerText)).replace(/\s+/g, ' '));
+  try { await page.waitForFunction(() => { const e = document.getElementById('optRuleCmp'); return e && /sizing returns/.test(e.textContent); }, { timeout: 120000, polling: 500 }); } catch { fail('the sizing-rule comparison never finished'); }
+  const cmpTxt = (await page.evaluate(() => document.getElementById('optRuleCmp').innerText)).replace(/\s+/g, ' ');
+  // 2.21.1: like for like - both rules at the measured edge and the survival target
+  if (!/At your measured edge and survival target/.test(cmpTxt)) fail('the sizing-rule comparison must say it is like for like: ' + cmpTxt);
+  else ok('rule comparison: ' + cmpTxt);
   await page.evaluate(() => document.querySelector('button[data-sizer="cushion"]').click());
   await wait(1500);
   const lab = await page.evaluate(() => document.getElementById('lrfSub').textContent);

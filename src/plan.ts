@@ -133,7 +133,7 @@ export const ROBUST_EVAL_SIMS = 120;   // challenge: per size, per plausible rec
 // parametric bootstrap: the same uncertainty the Validate tab's interval puts on
 // that n. Must be called outside withEdge (it reads the live S).
 export function plausibleRecord(seed: number): number[] {
-  if (S.trades && S.trades.length) return resampleRecord(S.trades, seed);
+  if (S.trades && S.trades.length) return blockResample(S.trades, seed);
   const rnd = mulberry(seed);
   const n = Math.max(10, Math.min(5000, S.n | 0));
   const out = new Array<number>(n);
@@ -200,6 +200,25 @@ export interface Band { lo: number; mid: number; hi: number; n: number }
 // One resample of the record, with replacement. Seeded by draw index so a band
 // is deterministic: the same record and firm give the same range every time,
 // which is the property that lets a user tell a real change from a re-roll.
+// A circular BLOCK bootstrap (2.21.1) for the plausible records the robust
+// sizing reads: runs of trades are kept together, so a journal whose losses
+// cluster (tilt, regimes) keeps its streaks in every resample. An iid resample
+// breaks them up and overstates how often an account survives. Blocks of
+// about n^(1/3) trades - 10 for a 1,000-trade record - the usual choice when
+// the dependence length is unknown; on a record with no clustering it gives
+// the same answer as the iid resample.
+export function blockResample(rs: number[], seed: number): number[] {
+  const n = rs.length;
+  if (n < 30) return resampleRecord(rs, seed);
+  const b = Math.max(2, Math.round(Math.cbrt(n)));
+  const rnd = mulberry(seed);
+  const out = new Array<number>(n);
+  for (let i = 0; i < n;) {
+    const st = (rnd() * n) | 0;
+    for (let j = 0; j < b && i < n; j++, i++) out[i] = rs[(st + j) % n];
+  }
+  return out;
+}
 export function resampleRecord(rs: number[], seed: number): number[] {
   const rnd = mulberry(seed);
   const out = new Array<number>(rs.length);

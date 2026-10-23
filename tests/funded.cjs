@@ -101,7 +101,8 @@ function fail(m) { console.error('FAIL: ' + m); process.exitCode = 1; }
   await page.evaluate(() => { const e = document.getElementById('fLivePays'); e.value = '3'; e.dispatchEvent(new Event('input', { bubbles: true })); });
   await new Promise(r => setTimeout(r, 1500));
   const live = await page.evaluate(() => ({ surv: document.getElementById('fSurv').innerText, roi: document.getElementById('fRoi').innerText, firm: document.getElementById('firmSum').textContent }));
-  if (!/moved to live/.test(live.surv)) fail('a move-to-live rule should show the share moved to live: ' + live.surv);
+  if (!/to live/.test(live.surv)) fail('a move-to-live rule should show the share moved to live: ' + live.surv);
+  else if (!/mo breach/.test(live.surv)) fail('the tile should show the breach rate a month: ' + live.surv);
   else if (live.roi === before) fail('ending accounts after 3 payouts should change the return on fees');
   else if (!/live after 3 payouts/.test(live.firm)) fail('the firm summary should name the move-to-live rule: ' + live.firm);
   else console.log('ok: live after 3 payouts: ' + live.surv.replace(/\s+/g, ' ') + ' | ' + live.roi.replace(/\s+/g, ' '));

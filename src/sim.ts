@@ -1,7 +1,7 @@
 // Simulator: edge bar, firm bar, five tabs, theme, persistence, mode switch.
 import { $, $i, $s, $c, css, fit, mulberry, LS, hooks, ask, toast, esc, chartTip, pctEst, mixHex, runJob } from "./util";
 import { S, F, PRESETS, setFirm, clampFirm, withEdge, view, money, amt, ddLabel, gateLabel } from "./state";
-import { portfolioPrefix, payModel } from "./engine";
+import { portfolioPrefix, payModel, evalBuyer } from "./engine";
 import { sampleR, expectancy, sigmaR, profitFactor, phaseWalk, challengeStats, challengeCurve, evalPass, evalDays, fundedStats, fundedCurve, profitPlateau, costToFund, payoutOdds, firstPayoutPct, PAID_SIMS, PAY_CHUNK, SWEEP_HABIT_DAYS, TRADING_DAYS_PER_MONTH, TRADING_DAYS_PER_YEAR, yearSteps, tpdOf, TPD_MAX, WalkOut, ChallengeOut, EvalPoint } from "./engine";
 // The forward-drawdown engine and the uncertainty machinery the Validate tab
 // needs: horizon-aware bootstraps, effective sample size, the multiplicity
@@ -1359,21 +1359,32 @@ function edgeFp(): string {
 // Challenge and Decision tabs) at the Challenge tab's eval risk, and the
 // expected days to pass (failed attempts' mean days, then a winner's median -
 // the same arithmetic as Decision's budget tiles). Cached per firm and edge.
-interface Replace { cost: number; pct: number; fundSteps: number; days: number }
+// `pass`, `meanFailDays`, `medDays` and `meanDaysAll` let a simulation DRAW
+// how many attempts one purchase takes (evalBuyer) instead of charging the
+// average every time (2.21.1).
+interface Replace { cost: number; pct: number; fundSteps: number; days: number; pass: number; meanFailDays: number; medDays: number; meanDaysAll: number }
 let replaceCache: (Replace & { key: string }) | null = null;
-function replaceCost(): Replace {
-  const re = Number($i("src").value);
+// What getting one account funded costs under the edge in force: run inside
+// withEdge it prices a plausible record's own evaluation, which a weaker
+// version of the edge fails more often.
+function evalEcon(re: number, n: number): Replace {
   const hc = Math.max(0, Math.min(0.5, LS.get<number>("pel_haircut", 0)));
-  const key = firmRulesKey(F) + "|" + F.account + "|" + F.split + "|" + F.fee + "|" + edgeFp() + "|" + re.toFixed(2) + "|" + hc;
-  if (replaceCache && replaceCache.key === key) return replaceCache;
-  const st = challengeStats(re, FAST ? 300 : 800);
+  const st = challengeStats(re, n);
   const p = F.instant ? 1 : evalPass(st);
   const cf = costToFund(p, F.instant ? 0 : st.meanDaysAll);
   const days = F.instant ? 0 : Math.max(0, Math.round(Math.max(0, cf.attempts - 1) * st.meanFailDays + st.medDays));
   // in the curve's own unit: % of account, before the split and haircut, so a
   // replacement and a withdrawal subtract like for like
   const per1pct = (F.account * (F.split / 100) * (1 - hc)) / 100;
-  const r: Replace = { cost: cf.cost, pct: per1pct > 0 ? cf.cost / per1pct : 0, fundSteps: days * tpdOf(), days };
+  return { cost: cf.cost, pct: per1pct > 0 ? cf.cost / per1pct : 0, fundSteps: days * tpdOf(), days,
+    pass: p, meanFailDays: st.meanFailDays, medDays: st.medDays, meanDaysAll: F.instant ? 0 : st.meanDaysAll };
+}
+function replaceCost(): Replace {
+  const re = Number($i("src").value);
+  const hc = Math.max(0, Math.min(0.5, LS.get<number>("pel_haircut", 0)));
+  const key = firmRulesKey(F) + "|" + F.account + "|" + F.split + "|" + F.fee + "|" + edgeFp() + "|" + re.toFixed(2) + "|" + hc;
+  if (replaceCache && replaceCache.key === key) return replaceCache;
+  const r = evalEcon(re, FAST ? 300 : 800);
   if (!FAST) replaceCache = { key, ...r };
   return r;
 }
@@ -1455,9 +1466,16 @@ function fundedModel(): FModel {
   if (!fine) return { ...empty, pending: true };
   const fEcon = econCurve(fine.prof, fine.life, rc.pct, rc.fundSteps, spm);
   const nRob = fine.sizes.filter((r) => r <= d.risks[upRob] + 1e-9).length;
-  const raw = ensureRobust("fund", d.key + "|" + upRob + "|" + Math.round(rc.pct * 1000) + "|" + rc.fundSteps, nRob, (i) => {
+  // Each plausible record pays ITS OWN cost to get funded (2.21.1): a weaker
+  // version of the edge also fails more evaluations, and pricing every record at
+  // the measured cost overstated the worst-case return. Priced once per record,
+  // at its first size, inside the record's withEdge.
+  const re = Number($i("src").value);
+  let recEval: Replace = rc;
+  const raw = ensureRobust("fund", d.key + "|" + upRob + "|" + Math.round(rc.pct * 1000) + "|" + rc.fundSteps + "|" + re.toFixed(2), nRob, (i) => {
+    if (i === 0) recEval = evalEcon(re, 300);
     const c = fundedCurve([fine.sizes[i]], FUND_ROBUST_SIMS, T);
-    return [c.surv[0], slotEcon(c.prof[0], c.life[0], rc.pct, rc.fundSteps, spm).roi];
+    return [c.surv[0], slotEcon(c.prof[0], c.life[0], recEval.pct, recEval.fundSteps, spm).roi];
   }, FUND_ROBUST_DRAWS);
   const fineIncome = pickMostIncome(fEcon.map((e) => e.perMonth));
   // payouts a FUNDED month: past the knee a capped firm pays no more often
@@ -1522,7 +1540,7 @@ function altRule(m: FModel): { r: number; roi: number; cushion: boolean } | null
   let k = 0;
   runJob(() => {
     if (altPending !== key) return true;
-    const c = fundedCurve([risks[k]], 120, T, alt);
+    const c = fundedCurve([risks[k]], 240, T, alt);   // the same count and seeds as the curve it is compared with
     roi.push(c.surv[0] >= tgt ? slotEcon(c.prof[0], c.life[0], rc.pct, rc.fundSteps, spm).roi : -Infinity);
     return ++k >= risks.length;
   }, () => {
@@ -1574,8 +1592,16 @@ function renderFunded() {
       '<div class="sub">unbreached ~' + bank$(cur.bankedAliveMed) + "</div>";
     $("fFate").className = "v " + (cur.bankedDeadMed > 0 ? "cell-caution" : "cell-stop");
   }
+  // the breach rate per funded month reads the same at any max account life,
+  // where the share not breached falls the longer accounts are followed
+  const breachMo = (surv: number, liveMonths: number) => (liveMonths > 0 ? (1 - surv) / liveMonths : 0);
+  const bmTxt = (x: number) => (x < 0.0005 ? "<0.1%" : (x * 100).toFixed(x < 0.01 ? 1 : 0) + "%") + " a month";
+  // with the record's own 90% range when the journal is big enough (the range a
+  // resampled record puts on it), compact so the tile stays two lines
   const fBands = ensureBands(Number($i("src").value), risk);
-  $("fSurv").innerHTML = pctEst(cur.surv) + (hasLiveRule() ? '<div class="sub">' + pctEst(cur.live) + " moved to live</div>" : bandSub(fBands ? fBands.surv : null, pctEst, "measuring the range&hellip;"));
+  const rangeTxt = bandable() ? (fBands ? pctEst(fBands.surv.lo) + "&ndash;" + pctEst(fBands.surv.hi) + " &middot; " : '<span class="skel"></span> ') : "";
+  $("fSurv").innerHTML = pctEst(cur.surv) + '<div class="sub">' + rangeTxt + "~" + bmTxt(breachMo(cur.surv, curE.liveMonths)).replace(" a month", "/mo") + " breach" +
+    (hasLiveRule() ? " &middot; " + pctEst(cur.live) + " to live" : "") + "</div>";
   $("fSurv").className = "v " + (cur.surv >= o.survTarget ? "cell-go" : cur.surv >= 0.5 ? "cell-caution" : "cell-stop");
   const po = payoutOdds(risk, FAST ? 200 : PAID_SIMS, T);
   $("fPayAny").innerHTML = pctEst(po.p) + (po.medDays ? '<div class="sub">typically ~' + po.medDays + " days to the first</div>" : "");
@@ -1636,13 +1662,22 @@ function renderFunded() {
   const selC = $s("selConf");
   if (document.activeElement !== selC) selC.value = String(o.conf);
   $("optDefNote").textContent = isDefault(o) ? "using the defaults" : "custom settings";
-  const alt = m.best >= 0 && fine ? altRule(m) : null;
-  const here = m.best >= 0 && fine ? { r: fine.sizes[m.best], roi: m.fEcon[m.best].roi } : null;
-  $("optRuleCmp").innerHTML = !here ? "" : !alt ? '<span class="skel"></span>'
-    : alt.roi <= 0 ? (alt.cushion ? "Cushion" : "Fixed %") + " sizing keeps no size at your survival target here."
-      : (alt.cushion ? "Cushion" : "Fixed %") + " sizing would return " + roiTxt(alt.roi) + " per $1 at " + alt.r.toFixed(2) + "%" +
-        (alt.cushion ? " start risk" : "") + " (this rule: " + roiTxt(here.roi) + " at " + here.r.toFixed(2) + "%, measured edge)." +
-        (alt.roi > here.roi * 1.03 ? ' <button type="button" class="usebtn" id="optSwitch">Switch</button>' : "");
+  // Like for like (2.21.1): both rules' best return at the MEASURED edge among
+  // sizes that keep the survival target there, on the same coarse grid. The old
+  // line set the other rule's measured best against this rule's ROBUST pick,
+  // which made switching look ~4x better than it is.
+  const alt = !m.noEdge && !m.thin && d.risks.length ? altRule(m) : null;
+  const hereI = plateauLo(m.econ.map((e, i) => (d.surv[i] >= o.survTarget ? e.roi : -Infinity)));
+  const here = hereI >= 0 ? { r: d.risks[hereI], roi: m.econ[hereI].roi } : null;
+  const ruleName = (c: boolean) => (c ? "Cushion" : "Fixed %");
+  $("optRuleCmp").innerHTML = m.noEdge || m.thin ? "" : !alt ? '<span class="skel"></span>'
+    : alt.roi <= 0 ? ruleName(alt.cushion) + " sizing keeps no size at your survival target here."
+      : !here ? ruleName(alt.cushion) + " sizing returns " + roiTxt(alt.roi) + " per $1 at " + alt.r.toFixed(2) + "%; this rule keeps no size at your survival target." +
+        ' <button type="button" class="usebtn" id="optSwitch">Switch</button>'
+        : "At your measured edge and survival target: " + ruleName(alt.cushion).toLowerCase() + " sizing returns " + roiTxt(alt.roi) + " per $1 at " + alt.r.toFixed(2) + "%" +
+          (alt.cushion ? " start risk" : "") + ", " + ruleName(!alt.cushion).toLowerCase() + " " + roiTxt(here.roi) + " at " + here.r.toFixed(2) + "%" +
+          (alt.roi > here.roi * 1.03 ? ' (' + Math.round((alt.roi / here.roi - 1) * 100) + '% more). <button type="button" class="usebtn" id="optSwitch">Switch</button>'
+            : alt.roi < here.roi * 0.97 ? " - this rule pays more." : " - about the same.");
   const sw = document.getElementById("optSwitch");
   if (sw) sw.addEventListener("click", () => { setOpt({ cushion: !o.cushion }); scheduleRender(); });
 
@@ -1652,7 +1687,7 @@ function renderFunded() {
   const paysTxt = (paysMean: number, liveMonths: number) => (mo ? (liveMonths > 0 ? paysMean / liveMonths : 0).toFixed(1) : paysMean.toFixed(1));
   const row = (name: string, why: string, mk: string, r: number, surv: number, roi: number, floor: number | null, pays: string, e: SlotEcon, use: string) =>
     "<tr" + (use ? ' data-sug="' + use + '"' : "") + "><td>" + mk + "<b>" + name + '</b><div class="small muted">' + why + "</div></td>" +
-    "<td>" + r.toFixed(2) + "%</td><td>" + Math.round(surv * 100) + "%</td><td>" + roiTxt(roi) + "</td><td>" + (floor == null ? "&ndash;" : roiTxt(floor)) + "</td>" +
+    "<td>" + r.toFixed(2) + "%</td><td>" + Math.round(surv * 100) + '%<div class="small muted">' + bmTxt(breachMo(surv, e.liveMonths)).replace(" a month", "/mo") + "</div></td><td>" + roiTxt(roi) + "</td><td>" + (floor == null ? "&ndash;" : roiTxt(floor)) + "</td>" +
     "<td>" + pays + "</td><td>" + m$(mo ? e.perMonth : e.net) + "</td><td>" + moTxt(e.liveMonths) + "</td>" +
     "<td>" + (use ? '<button type="button" class="usebtn" data-use="' + r.toFixed(2) + '">Use</button>' : "") + "</td></tr>";
   const tbl = $("optTable");
@@ -1782,12 +1817,13 @@ function ensurePortfolio(m: FModel): PortfolioStat[][] | null {
   const stride = o.maxAccounts > 10 ? 3 : 2;
   const bases = m.fine.sizes.filter((_, i) => i % stride === 0);
   const counts = accCounts(o.maxAccounts);
-  const key = m.d.key + "|" + bases.join(",") + "|" + counts.join(",") + o.copy + o.staggerDays + o.rebuy + "|" + m.rc.fundSteps + "|" + Math.round(m.rc.cost);
+  const key = m.d.key + "|" + bases.join(",") + "|" + counts.join(",") + o.copy + o.staggerDays + o.rebuy + "|" + m.rc.fundSteps + "|" + Math.round(m.rc.cost) + "|" + m.rc.pass.toFixed(4);
   if (accCache.key === key) return accCache.rows;
   if (FAST) return null;
   accCache = { key, rows: null };
   const my = ++accSeq;
   const SIMS = 60, T = m.T, stag = o.staggerDays * tpdOf();
+  const buy = evalBuyer(m.rc.pass, m.rc.meanFailDays, m.rc.medDays, m.rc.meanDaysAll, !!F.instant);
   // per count, accumulated over the paths of the current size
   let bi = 0, s = 0;
   let pay = new Array<number>(counts.length).fill(0), down = pay.slice(), reb = pay.slice();
@@ -1795,10 +1831,11 @@ function ensurePortfolio(m: FModel): PortfolioStat[][] | null {
   const perSize: PortfolioStat[][] = [];   // [size][count]
   runJob(() => {
     if (my !== accSeq) return true;
-    const st = portfolioPrefix(bases[bi], counts, T, (5501 + s * 0x9e3779b1) | 0, !o.copy, o.rebuy, m.rc.fundSteps, stag);
+    // each purchase draws its own attempts: what it cost and how long it took
+    const st = portfolioPrefix(bases[bi], counts, T, (5501 + s * 0x9e3779b1) | 0, !o.copy, o.rebuy, m.rc.fundSteps, stag, buy);
     st.forEach((p, j) => {
       pay[j] += pct$(p.profitPct);
-      fees[j].push((p.bought + p.rebuys) * m.rc.cost);
+      fees[j].push(p.fees);
       down[j] += p.allDown; reb[j] += p.rebuys;
     });
     if (++s < SIMS) return false;
@@ -1828,7 +1865,7 @@ function renderAccounts(m: FModel, mo: boolean) {
   const allDownMax = 1 - o.survTarget, months = o.maxLifeMonths;
   $("accAssume").innerHTML = (o.copy ? "Copy-trade: every account takes the same trades." : "Independent: each account trades its own stream from the same edge.") +
     (o.staggerDays > 0 ? " One account is bought every " + o.staggerDays + " trading days." : " All bought the same day.") +
-    " Each costs " + money(m.rc.cost) + " to get funded" + (o.rebuy ? ", and is replaced when it breaches or moves to live (~" + m.rc.days + " days to pass)." : "; an ended one is not replaced.") +
+    " Each costs " + money(m.rc.cost) + " to get funded" + (o.rebuy ? ", and is replaced when it breaches or moves to live (~" + m.rc.days + " days to pass on average; each purchase draws its own failed attempts)." : "; an ended one is not replaced.") +
     " Figures cover " + months + " months of running.";
   const tbl = $("accTable");
   if (m.noEdge || m.thin) { tbl.innerHTML = '<p class="small muted">' + (m.noEdge ? "No size makes this edge pay." : "Too few trades to size.") + "</p>"; $("accRead").textContent = ""; return; }

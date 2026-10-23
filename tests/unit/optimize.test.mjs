@@ -262,3 +262,54 @@ test("settings: defaults out of the box (max payout on), garbage clamped, the en
   setPayModel(OFF);
   localStorage.removeItem("pel_opt");
 });
+
+// ---------------------------------------------------------------------------
+// 2.21.1: drawn evaluation attempts, block resampling
+// ---------------------------------------------------------------------------
+test("one purchase draws its attempts: the mean is the expected cost, the tail is not", () => {
+  setFirm(futures({ fee: 100, resetFee: 0 }));
+  const buy = E.evalBuyer(0.4, 10, 15, 12, false);
+  const rnd = mulberry(7);
+  const costs = [], steps = [];
+  for (let i = 0; i < 4000; i++) { const p = buy(rnd); costs.push(p.cost); steps.push(p.steps); }
+  const mean = costs.reduce((a, b) => a + b, 0) / costs.length;
+  const exp = E.costToFund(0.4, 12).cost;
+  assert.ok(Math.abs(mean - exp) / exp < 0.05, "mean drawn cost " + mean + " vs expected " + exp);
+  costs.sort((a, b) => a - b);
+  assert.ok(costs[Math.floor(0.95 * costs.length)] >= 2 * exp, "a bad purchase takes several attempts: p95 " + costs[Math.floor(0.95 * costs.length)]);
+  assert.ok(Math.min(...steps) === 15 * tpdOf(), "a first-time pass waits the median pass time");
+  // costToFund is costOfAttempts at the expected attempts, unchanged
+  assert.equal(E.costToFund(0.4, 12).cost, E.costOfAttempts(1 / 0.4, 12).cost);
+});
+
+test("drawn purchases leave the trades alone and fill the fee tail", () => {
+  setup();
+  const T = yearSteps();
+  const buy = E.evalBuyer(0.4, 10, 15, 12, false);
+  let tailFixed = [], tailDrawn = [];
+  for (let seed = 1; seed <= 60; seed++) {
+    // the same AVERAGE wait as the drawn purchases: (1/0.4 - 1) x 10 + 15 = 30 days
+    const fixed = portfolioPrefix(1.0, [1], T, seed, false, true, 30 * tpdOf(), 0)[0];
+    const drawn = portfolioPrefix(1.0, [1], T, seed, false, true, 50, 0, buy)[0];
+    tailFixed.push((fixed.bought + fixed.rebuys) * E.costToFund(0.4, 12).cost);
+    tailDrawn.push(drawn.fees);
+    assert.ok(drawn.fees > 0, "every account bought is paid for");
+  }
+  // the first account runs on the identical stream either way: same first-life outcome
+  const a = portfolioPrefix(0.5, [1], T, 3, false, false, 50, 0)[0], b = portfolioPrefix(0.5, [1], T, 3, false, false, 50, 0, buy)[0];
+  assert.equal(a.profitPct, b.profitPct, "without replacement the purchase draw cannot touch the trades");
+  tailFixed.sort((x, y) => x - y); tailDrawn.sort((x, y) => x - y);
+  assert.ok(tailDrawn[57] > tailFixed[57], "the bad-run budget is higher once failures are drawn: " + tailDrawn[57] + " vs " + tailFixed[57]);
+});
+
+test("plausible records keep streaks: block resampling", () => {
+  const rs = Array.from({ length: 1000 }, (_, i) => (Math.floor(i / 50) % 2 ? 1.5 : -1));   // long runs
+  const out = E.blockResample(rs, 42);
+  assert.equal(out.length, rs.length);
+  assert.ok(out.every((v) => v === 1.5 || v === -1));
+  let same = 0, sameIid = 0;
+  const iid = E.resampleRecord(rs, 42);
+  for (let i = 1; i < out.length; i++) { if (out[i] === out[i - 1]) same++; if (iid[i] === iid[i - 1]) sameIid++; }
+  assert.ok(same > 0.85 * 999, "blocks keep neighbours together: " + same);
+  assert.ok(sameIid < 0.6 * 999, "an iid resample breaks them: " + sameIid);
+});
