@@ -396,7 +396,7 @@ function cushionRisk(risk: number, eq: number, fl: number): number {
   return F.maxdd > 0 ? risk * Math.max(0, Math.min(CUSHION_CAP, (eq - fl) / F.maxdd)) : risk;
 }
 export interface FundedEvents { pays: number[]; amts: number[]; death: number }
-export function fundedSim(risk: number, T: number, rnd: () => number, ev?: FundedEvents, pm: PayModel = PM): { profit: number; alive: 0 | 1; pays: number; life: number } {
+export function fundedSim(risk: number, T: number, rnd: () => number, ev?: FundedEvents, pm: PayModel = PM): { profit: number; alive: 0 | 1; pays: number; life: number; live: 0 | 1 } {
   let eq = 0, peak = 0, peakEod = 0, banked = 0, inDay = 0, sincePay = 0, dayStart = 0, pays = 0, winCount = 0, day = 0;
   // consistency gate bookkeeping: the best single DAY and the profit earned,
   // both measured since the last payout (the app models the resetting variant,
@@ -421,13 +421,16 @@ export function fundedSim(risk: number, T: number, rnd: () => number, ev?: Funde
   const spacing = pm.payMax ? Math.max(every, F.payoutEvery || 0) : every;
   const firstDay = pm.payMax ? Math.max(spacing, F.payoutFirst || 0) : 0;
   const need = pm.payMax ? maxPayNeed() : 0;
+  // moved to live (2.21.0): the sim account closes, paid - see the Firm note
+  const liveN = Math.max(0, (F.liveAfterPays || 0) | 0);
+  const livePct = F.account > 0 ? ((F.liveAfterPaid || 0) / F.account) * 100 : 0;
   for (let i = 0; i < T; i++) {
     eq += sampleR(rnd) * (pm.cushion ? cushionRisk(risk, eq, ddFloor(peak, peakEod, F.maxdd)) : risk);
     if (eq > peak) peak = eq;
     // checked BEFORE the rollover resets dayStart, mirroring phaseWalk, where
     // every check precedes the rollover - otherwise the last trade of each day
     // would escape the limit
-    if (F.daily > 0 && eq - dayStart <= -F.daily) { if (ev) ev.death = i; return { profit: banked, alive: 0, pays, life: i + 1 }; }
+    if (F.daily > 0 && eq - dayStart <= -F.daily) { if (ev) ev.death = i; return { profit: banked, alive: 0, pays, life: i + 1, live: 0 }; }
     inDay++;
     if (inDay >= tpd) {
       // a winning day is judged on the day's CLOSE, before dayStart resets
@@ -439,7 +442,7 @@ export function fundedSim(risk: number, T: number, rnd: () => number, ev?: Funde
       inDay = 0; sincePay++; day++; if (eq > peakEod) peakEod = eq; dayStart = eq;
     }
     const fl = ddFloor(peak, peakEod, F.maxdd);
-    if (eq <= fl) { if (ev) ev.death = i; return { profit: banked, alive: 0, pays, life: i + 1 }; }
+    if (eq <= fl) { if (ev) ev.death = i; return { profit: banked, alive: 0, pays, life: i + 1, live: 0 }; }
     // A big day does not fail the account - it BLOCKS withdrawals until later
     // profit dilutes its share below the threshold. That is a delay, which is
     // why this gate keeps the provable sign the first-payout leg relies on.
@@ -476,8 +479,9 @@ export function fundedSim(risk: number, T: number, rnd: () => number, ev?: Funde
         if (eq >= w) { banked += w; eq -= w; peak -= w; peakEod -= w; dayStart -= w; sincePay = 0; pays++; winCount = 0; bestDay = 0; profitSince = 0; if (ev) { ev.pays.push(i); ev.amts.push(w); } }
       } else if (wOk && eq >= fl + F.maxdd + w) { banked += w; eq -= w; dayStart -= w; sincePay = 0; pays++; winCount = 0; bestDay = 0; profitSince = 0; if (ev) { ev.pays.push(i); ev.amts.push(w); } }
     }
+    if ((liveN > 0 && pays >= liveN) || (livePct > 0 && banked >= livePct - 1e-9)) return { profit: banked, alive: 1, pays, life: i + 1, live: 1 };
   }
-  return { profit: banked, alive: 1, pays, life: T };
+  return { profit: banked, alive: 1, pays, life: T, live: 0 };
 }
 
 // ---------------------------------------------------------------------------
@@ -506,42 +510,83 @@ export function fundedSim(risk: number, T: number, rnd: () => number, ev?: Funde
 // every replacement) reads it from its own starting step. Identical numbers to
 // replaying mulberry from the seed, without re-drawing t numbers per rebuy.
 export interface PortfolioPath { profitPct: number; rebuys: number; aliveEnd: number; allDown: 0 | 1; byMonth: number[]; bought: number }
+// One SLOT on a stream of pre-drawn uniforms: an account bought at `start`,
+// trading until it breaches, moves to live (2.21.0) or the horizon ends, then -
+// with `rebuy` - a replacement funded `fundSteps` trades later on the same
+// stream. `cover` (a difference array) gets +1/-1 at each funded interval.
+interface SlotRun { profitPct: number; rebuys: number; up: 0 | 1 }
+function runSlot(size: number, T: number, arr: Float64Array, start: number, rebuy: boolean, fundSteps: number, cover: Int32Array, byMonth: number[] | null, stepsPerMonth: number): SlotRun {
+  let profitPct = 0, rebuys = 0, up: 0 | 1 = 0, t = start;
+  while (t < T) {
+    let pos = t;
+    const rnd = () => arr[pos++];               // join the stream at step t
+    const ev: FundedEvents = { pays: [], amts: [], death: -1 };
+    const r = fundedSim(size, T - t, rnd, ev);
+    profitPct += r.profit;
+    if (byMonth) ev.pays.forEach((st, j) => { byMonth[Math.min(byMonth.length - 1, Math.floor((t + st) / stepsPerMonth))] += ev.amts[j]; });
+    const end = Math.min(T, t + r.life);
+    cover[t]++; cover[end]--;
+    if (r.alive && !r.live) { up = 1; break; }   // still trading at the horizon
+    if (!rebuy) break;
+    t = end + fundSteps;
+    if (t < T) rebuys++;
+  }
+  return { profitPct, rebuys, up };
+}
+// a moment with nobody up = every slot down at once (copy-trading's real risk);
+// staggered accounts not yet bought are simply not up yet
+function anyGap(cover: Int32Array, T: number): 0 | 1 {
+  let u = 0;
+  for (let i = 0; i < T; i++) { u += cover[i]; if (u <= 0) return 1; }
+  return 0;
+}
+const streamOf = (sd: number, T: number) => { const a = new Float64Array(T); const r = mulberry(sd); for (let i = 0; i < T; i++) a[i] = r(); return a; };
 export function portfolioSim(sizes: number[], T: number, seed: number, independent: boolean, rebuy: boolean, fundSteps: number, staggerSteps = 0): PortfolioPath {
   const tpd = tpdOf();
   const stepsPerMonth = Math.max(1, TRADING_DAYS_PER_MONTH * tpd);
-  const months = Math.max(1, Math.ceil(T / stepsPerMonth));
-  const byMonth = new Array<number>(months).fill(0);
+  const byMonth = new Array<number>(Math.max(1, Math.ceil(T / stepsPerMonth))).fill(0);
   let profitPct = 0, rebuys = 0, aliveEnd = 0, bought = 0;
-  // alive intervals of every slot, to find a moment when NO account is up
-  const cover = new Array<number>(T + 1).fill(0);
-  const streamOf = (sd: number) => { const a = new Float64Array(T); const r = mulberry(sd); for (let i = 0; i < T; i++) a[i] = r(); return a; };
-  const shared = independent ? null : streamOf(seed);
+  const cover = new Int32Array(T + 1);
+  const shared = independent ? null : streamOf(seed, T);
   for (let k = 0; k < sizes.length; k++) {
     const start = Math.max(0, Math.round(k * staggerSteps));
     if (start >= T) break;
     bought++;
-    const arr = shared || streamOf((seed + k * 0x9e3779b1) | 0);
-    let t = start;
-    while (t < T) {
-      let pos = t;
-      const rnd = () => arr[pos++];               // join the stream at step t
-      const ev: FundedEvents = { pays: [], amts: [], death: -1 };
-      const r = fundedSim(sizes[k], T - t, rnd, ev);
-      profitPct += r.profit;
-      ev.pays.forEach((st, j) => { byMonth[Math.min(months - 1, Math.floor((t + st) / stepsPerMonth))] += ev.amts[j]; });
-      const end = r.alive ? T : t + ev.death + 1;
-      cover[t]++; cover[Math.min(T, end)]--;
-      if (r.alive) { aliveEnd++; break; }
-      if (!rebuy) break;
-      t = end + fundSteps;
-      if (t < T) rebuys++;
-    }
+    const r = runSlot(sizes[k], T, shared || streamOf((seed + k * 0x9e3779b1) | 0, T), start, rebuy, fundSteps, cover, byMonth, stepsPerMonth);
+    profitPct += r.profitPct; rebuys += r.rebuys; aliveEnd += r.up;
   }
-  // a moment with nobody up = every slot dead at once (copy-trading's real risk);
-  // staggered accounts not yet bought are simply not up yet
-  let up = 0, allDown: 0 | 1 = 0;
-  for (let i = 0; i < T; i++) { up += cover[i]; if (up <= 0) { allDown = 1; break; } }
-  return { profitPct, rebuys, aliveEnd, allDown, byMonth, bought };
+  return { profitPct, rebuys, aliveEnd, allDown: anyGap(cover, T), byMonth, bought };
+}
+// Several account COUNTS from one simulation (2.21.0). Account k's outcome does
+// not depend on how many accounts run beside it - on a shared stream (copy) or
+// its own (independent), at its own stagger offset - so the first N accounts of
+// one run of `nMax` ARE an N-account portfolio. One pass gives every count in
+// `counts`, which is what makes 50 accounts affordable. Copy-traded accounts
+// bought the same day are identical, so one account is run and scaled.
+export interface PrefixStat { n: number; profitPct: number; rebuys: number; bought: number; allDown: 0 | 1 }
+export function portfolioPrefix(size: number, counts: number[], T: number, seed: number, independent: boolean, rebuy: boolean, fundSteps: number, staggerSteps = 0): PrefixStat[] {
+  const out: PrefixStat[] = [];
+  const want = [...counts].sort((a, b) => a - b);
+  const nMax = want[want.length - 1] || 0;
+  const cover = new Int32Array(T + 1);
+  const stepsPerMonth = Math.max(1, TRADING_DAYS_PER_MONTH * tpdOf());
+  const shared = independent ? null : streamOf(seed, T);
+  if (!independent && staggerSteps <= 0) {
+    const r = runSlot(size, T, shared as Float64Array, 0, rebuy, fundSteps, cover, null, stepsPerMonth);
+    const gap = anyGap(cover, T);
+    return want.map((n) => ({ n, profitPct: r.profitPct * n, rebuys: r.rebuys * n, bought: n, allDown: gap }));
+  }
+  let profitPct = 0, rebuys = 0, bought = 0, w = 0;
+  for (let k = 0; k < nMax; k++) {
+    const start = Math.max(0, Math.round(k * staggerSteps));
+    if (start < T) {
+      bought++;
+      const r = runSlot(size, T, shared || streamOf((seed + k * 0x9e3779b1) | 0, T), start, rebuy, fundSteps, cover, null, stepsPerMonth);
+      profitPct += r.profitPct; rebuys += r.rebuys;
+    }
+    while (w < want.length && want[w] === k + 1) { out.push({ n: k + 1, profitPct, rebuys, bought, allDown: anyGap(cover, T) }); w++; }
+  }
+  return out;
 }
 // `profit` is a MEAN, and the distribution behind it is heavily right-skewed: a
 // minority of long-lived accounts carry it while the median account banks far
@@ -561,14 +606,14 @@ export function portfolioSim(sizes: number[], T: number, seed: number, independe
 // accounts the user will not have. "If it dies, what did it pay me first?" is
 // the number the likely outcome actually banks. Bookkeeping only: no extra
 // draws, no reordering, every seeded anchor reads the identical stream.
-export function fundedStats(risk: number, N: number, T: number): { profit: number; surv: number; paysMed: number; paysMean: number; bankedDeadMed: number; bankedAliveMed: number; life: number } {
+export function fundedStats(risk: number, N: number, T: number): { profit: number; surv: number; paysMed: number; paysMean: number; bankedDeadMed: number; bankedAliveMed: number; life: number; live: number } {
   const rnd = mulberry(9931);
-  let sp = 0, al = 0, lf = 0;
+  let sp = 0, al = 0, lf = 0, lv = 0;
   const pays: number[] = [];
   const dead: number[] = [], alive: number[] = [];
   for (let i = 0; i < N; i++) {
     const r = fundedSim(risk, T, rnd);
-    sp += r.profit; al += r.alive; lf += r.life;
+    sp += r.profit; al += r.alive; lf += r.life; lv += r.live;
     // the sim counts its own sweeps now (gated firms withdraw variable
     // amounts, so profit/PAY_CHUNK stopped being a withdrawal count); with no
     // gates every sweep is exactly one chunk and this equals the old derivation
@@ -581,7 +626,7 @@ export function fundedStats(risk: number, N: number, T: number): { profit: numbe
   let tot = 0;
   pays.forEach((c) => { tot += c; });
   return {
-    profit: sp / N, surv: al / N, life: N ? lf / N : 0,
+    profit: sp / N, surv: al / N, life: N ? lf / N : 0, live: N ? lv / N : 0,
     paysMed: N ? pays[(N * 0.5) | 0] : 0, paysMean: N ? tot / N : 0,
     bankedDeadMed: dead.length ? dead[(dead.length * 0.5) | 0] : 0,
     bankedAliveMed: alive.length ? alive[(alive.length * 0.5) | 0] : 0,
@@ -610,19 +655,19 @@ export function fundedStats(risk: number, N: number, T: number): { profit: numbe
 // `life` is the mean number of TRADES an account stays up inside the horizon
 // (T for a survivor): with survival it gives how often a slot has to be
 // re-bought, which is what prices a size as a business (see slotEcon).
-export function fundedCurve(risks: number[], N: number, T: number, pm?: PayModel): { prof: number[]; surv: number[]; pays: number[][]; life: number[] } {
-  const prof: number[] = [], surv: number[] = [], pays: number[][] = [], life: number[] = [];
+export function fundedCurve(risks: number[], N: number, T: number, pm?: PayModel): { prof: number[]; surv: number[]; pays: number[][]; life: number[]; live: number[] } {
+  const prof: number[] = [], surv: number[] = [], pays: number[][] = [], life: number[] = [], live: number[] = [];
   for (const risk of risks) {
-    let sp = 0, al = 0, lf = 0;
+    let sp = 0, al = 0, lf = 0, lv = 0;
     const counts: number[] = [];
     for (let i = 0; i < N; i++) {
       const r = fundedSim(risk, T, mulberry((9931 + i * 0x9e3779b1) | 0), undefined, pm);
-      sp += r.profit; al += r.alive; lf += r.life;
+      sp += r.profit; al += r.alive; lf += r.life; lv += r.live;
       counts.push(r.pays);   // real sweep count - see fundedStats
     }
-    prof.push(sp / N); surv.push(al / N); pays.push(counts); life.push(lf / N);
+    prof.push(sp / N); surv.push(al / N); pays.push(counts); life.push(lf / N); live.push(lv / N);
   }
-  return { prof, surv, pays, life };
+  return { prof, surv, pays, life, live };
 }
 
 // The flat top of that curve: the contiguous run of sizes paying within `tol` of

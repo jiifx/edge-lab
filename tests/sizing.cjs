@@ -36,16 +36,19 @@ const ok = (m) => console.log('ok: ' + m);
     document.querySelector('[data-tab="funded"]').click();
   });
   // the robust check runs in the background: wait for the suggestions to resolve
-  try { await page.waitForFunction(() => document.querySelector('#optTable tr[data-sug="balanced"]') && /\/10 edges/.test(document.getElementById('fPeak').textContent), { timeout: 150000, polling: 500 }); }
+  // the Balanced row - its own, or merged into Best ROI's ("Best ROI = Balanced")
+  await page.evaluate(() => { window.__balRow = () => [...document.querySelectorAll('#optTable tr[data-sug]')].find((x) => x.querySelector('b').textContent.split(' = ').includes('Balanced')); });
+  try { await page.waitForFunction(() => window.__balRow() && /\/10 edges/.test(document.getElementById('fPeak').textContent), { timeout: 150000, polling: 500 }); }
   catch { fail('the balanced size never resolved'); }
   const f = await page.evaluate(() => {
-    const r = document.querySelector('#optTable tr[data-sug="balanced"]');
+    const r = window.__balRow();
     return { bal: r ? parseFloat(r.children[1].textContent) : NaN, surv: r ? r.children[2].textContent : '', why: r ? r.children[0].innerText : '',
       label: document.getElementById('fPeak').previousElementSibling.textContent, text: document.getElementById('fPeak').innerText, title: document.getElementById('fPeak').title };
   });
   if (!(f.bal > 0.2 && f.bal < 0.82)) fail('balanced size should sit below the old 0.82% pick, got ' + f.bal);
   else ok('Funded Balanced: ' + f.bal + '% at ' + f.surv + ' survival (' + f.why.replace(/\n/g, ' | ') + ')');
   if (!/9 of 10 edges/.test(f.why)) fail('Balanced must say how sure it is: ' + f.why);
+  if (!/unbreached/.test(f.why)) fail('2.21.0: survival is "unbreached" over the account life, not a year: ' + f.why);
   // 2.20.0: the headline tile is Best ROI, robust in the same way
   if (f.label !== 'Best ROI size') fail('the headline tile should be Best ROI size, is "' + f.label + '"');
   if (!/plausible versions of your edge/.test(f.title) || !/fees/.test(f.title)) fail('the Best ROI tooltip must state the robustness and the fees: ' + f.title);

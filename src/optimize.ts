@@ -23,14 +23,15 @@ export interface OptSettings {
   cushion: boolean;     // size by the distance to the drawdown floor (else fixed %)
   survTarget: number;   // the yearly survival Balanced must clear; 1 - this caps "all down at once"
   conf: number;         // ...in this share of plausible versions of the edge
-  maxAccounts: number;  // several accounts: compare 1 up to this many
+  maxAccounts: number;  // several accounts: compare 1 up to this many (up to 50)
+  maxLifeMonths: number; // the longest an account is followed when no breach or move to live ends it
   copy: boolean;        // several accounts: the same trades on every account
   staggerDays: number;  // several accounts: trading days between buying each one (0 = same day)
   rebuy: boolean;       // several accounts: replace a blown account
 }
 export const OPT_DEFAULTS: OptSettings = {
   payMax: true, cushion: false, survTarget: SAFE_SURV, conf: ROBUST_CONF,
-  maxAccounts: 5, copy: true, staggerDays: 0, rebuy: true,
+  maxAccounts: 5, maxLifeMonths: 24, copy: true, staggerDays: 0, rebuy: true,
 };
 const clampN = (v: unknown, lo: number, hi: number, d: number) => {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
@@ -44,7 +45,8 @@ export function optSettings(): OptSettings {
     cushion: bool(s.cushion, OPT_DEFAULTS.cushion),
     survTarget: clampN(s.survTarget, 0.5, 0.99, OPT_DEFAULTS.survTarget),
     conf: clampN(s.conf, 0.5, 0.99, OPT_DEFAULTS.conf),
-    maxAccounts: Math.round(clampN(s.maxAccounts, 1, 10, OPT_DEFAULTS.maxAccounts)),
+    maxAccounts: Math.round(clampN(s.maxAccounts, 1, 50, OPT_DEFAULTS.maxAccounts)),
+    maxLifeMonths: Math.round(clampN(s.maxLifeMonths, 3, 60, OPT_DEFAULTS.maxLifeMonths)),
     copy: bool(s.copy, OPT_DEFAULTS.copy),
     staggerDays: Math.round(clampN(s.staggerDays, 0, 120, OPT_DEFAULTS.staggerDays)),
     rebuy: bool(s.rebuy, OPT_DEFAULTS.rebuy),
@@ -86,32 +88,28 @@ export function floorAt(mat: number[][], conf: number): number[] {
 }
 
 // ---------------------------------------------------------------------------
-// the economics of one account SLOT
+// the economics of one ACCOUNT, and of the slot it fills
 // ---------------------------------------------------------------------------
-// One cycle of a slot: a funded account trades until it breaches or the horizon
-// T ends; a breach costs `costPct` and `fundSteps` trades to get funded again.
-// By the renewal-reward theorem the long-run rate is E[reward per cycle] /
-// E[length per cycle], so over a year of T trades:
-//   cycles = T / (life + (1 - surv) * fundSteps)
-//   payouts = prof * cycles,  re-buys = (1 - surv) * cycles
-//   fees    = costPct * (1 + re-buys)       - the first purchase plus each re-buy
-//   return  = payouts / fees               - $ back per $1 of fees
-// A survivor that reaches T starts a fresh cycle without a purchase: it keeps
-// the account but is treated as if it lost its built-up cushion, which
-// under-credits sizes that keep accounts alive - a conservative error.
+// An account's life (2.21.0): bought for `costPct` (the expected cost to get
+// funded, retries included), `fundSteps` trades to pass, then funded until it
+// breaches, moves to live, or the modelled life ends - `life` trades on
+// average, withdrawing `prof` in that time. Every ending frees the slot for a
+// new account, so the slot's rate is per account over its whole cycle:
+//   return    = prof / costPct                          - $ back per $1 of fees
+//   per month = (prof - costPct) / (fundSteps + life)   - net, per slot, in time
+// No calendar year anywhere: a funded account rarely lives one, and a firm
+// that moves accounts to live ends them on its own clock.
 // `prof` and `costPct` must share a unit (the curve's % of account, before the
 // split, with the cost converted to it), so `roi` is unit-free.
-export interface SlotEcon { pay: number; fees: number; net: number; roi: number; rebuys: number; cycles: number }
-export function slotEcon(prof: number, surv: number, life: number, T: number, costPct: number, fundSteps: number): SlotEcon {
-  const s = Math.max(0, Math.min(1, surv)), c = Math.max(0, costPct);
-  const cycleLen = Math.max(1, life + (1 - s) * Math.max(0, fundSteps));
-  const cycles = T / cycleLen;
-  const pay = Math.max(0, prof) * cycles, rebuys = (1 - s) * cycles;
-  const fees = c * (1 + rebuys);
-  return { pay, fees, net: pay - fees, roi: fees > 0 ? pay / fees : 0, rebuys, cycles };
+export interface SlotEcon { pay: number; fees: number; net: number; roi: number; months: number; liveMonths: number; perMonth: number }
+export function slotEcon(prof: number, life: number, costPct: number, fundSteps: number, stepsPerMonth: number): SlotEcon {
+  const c = Math.max(0, costPct), spm = Math.max(1, stepsPerMonth);
+  const months = Math.max(1, life + Math.max(0, fundSteps)) / spm;
+  const pay = Math.max(0, prof);
+  return { pay, fees: c, net: pay - c, roi: c > 0 ? pay / c : 0, months, liveMonths: Math.max(0, life) / spm, perMonth: (pay - c) / months };
 }
-export function econCurve(prof: number[], surv: number[], life: number[], T: number, costPct: number, fundSteps: number): SlotEcon[] {
-  return prof.map((p, i) => slotEcon(p, surv[i] ?? 0, life[i] ?? 0, T, costPct, fundSteps));
+export function econCurve(prof: number[], life: number[], costPct: number, fundSteps: number, stepsPerMonth: number): SlotEcon[] {
+  return prof.map((p, i) => slotEcon(p, life[i] ?? 0, costPct, fundSteps, stepsPerMonth));
 }
 
 // ---------------------------------------------------------------------------
@@ -130,14 +128,19 @@ export function plateauLo(vals: number[], tol = 0.03): number {
   return best;
 }
 // Best ROI (the default): the most $ back per $1 of fees that holds in `conf`
-// of plausible versions of the edge - the robust floor, not the point estimate.
-export function pickBestRoi(roiFloor: number[]): number { return plateauLo(roiFloor); }
+// of plausible versions of the edge - the robust floor, not the point estimate -
+// among the sizes that keep the survival target (`ok`, Balanced's own test).
+// Uncapped, a strong edge on a cheap evaluation made this the biggest size
+// tested: fees were too small next to payouts to hold anything back.
+export function pickBestRoi(roiFloor: number[], ok: boolean[]): number {
+  return plateauLo(roiFloor.map((v, i) => (ok[i] ? v : -Infinity)));
+}
 // Most income: the most net $ a slot earns (payouts minus every fee), at the
 // measured edge. The aggressive end, shown so the trade-off is visible.
 export function pickMostIncome(net: number[]): number { return plateauLo(net); }
 // Max payout: with a dollar cap per payout, past some size an account already
 // takes the full cap at almost every window and more size only adds risk. The
-// least size that gets (within 3%) the most max payouts a year.
+// least size that gets (within 3%) the most max payouts a funded month.
 export function pickMaxPayout(paysMean: number[]): number { return plateauLo(paysMean); }
 // Balanced: the largest size up to `upto` that clears `target` at the measured
 // edge AND in at least `conf` of plausible records.
@@ -153,13 +156,13 @@ export function pickBalancedAt(surv: number[], shares: number[], upto: number, t
 // ---------------------------------------------------------------------------
 export interface PortfolioStat {
   n: number; base: number;
-  payYear: number;      // mean payouts in a year, trader $, all accounts
-  feesYear: number;     // mean fees in that year: every account bought + every re-buy
-  fees95: number;       // fees in a bad year (95th percentile) - the budget to hold
-  netYear: number;      // payYear - feesYear
-  roi: number;          // payYear / feesYear
-  pAllDown: number;     // share of years with a moment when NO account is up
-  rebuys: number;       // mean re-buys a year
+  pay: number;          // mean payouts over the plan window, trader $, all accounts
+  fees: number;         // mean fees in it: every account bought + every replacement
+  fees95: number;       // fees in a bad run (95th percentile) - the budget to hold
+  net: number;          // pay - fees
+  roi: number;          // pay / fees
+  pAllDown: number;     // share of runs with a moment when NO funded account is up
+  rebuys: number;       // mean replacements (breached or moved to live)
 }
 // In expectation the return per fee dollar does not depend on how many accounts
 // run - payouts and fees both scale with the count. What the count changes is

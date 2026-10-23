@@ -82,15 +82,17 @@ To update, install the new version over the old one. Your journal is not touched
 - Firm rules: static / trailing / end-of-day drawdown, daily loss, targets, min days, consistency,
   fees, payout gates
 - **Challenge** pass odds, and the eval size that funds you cheapest and fastest
-- **Funded** is a sizing optimizer that treats each account as a business slot (buy, pass, withdraw,
-  re-buy when it breaches): it measures **$ back per $1 of fees** at every size and suggests **Best
-  ROI**, **Balanced**, **Max payout** and **Most income** (marked on the chart, one click to use), each
-  robust to your edge being an estimate. Payouts take the firm's **max each time** on its own schedule
-  (or small weekly sweeps); sizing is **fixed %** or **cushion-based** (risk scales with distance to the
-  drawdown floor), compared side by side. Defaults work out of the box; everything is configurable
-- **Several accounts**: copy-traded or independent, bought the same day or staggered, blown accounts
-  replaced - per account count, the size, income, fees, fee budget and the chance every account is
-  down at once
+- **Funded** is a sizing optimizer that treats funded accounts as a business: each account is bought,
+  withdraws, and ends (it breaches, the firm moves it to live, or a max life of 24 months runs out),
+  then is replaced. It measures **$ back per $1 of fees** per account at every size and suggests **Best
+  ROI** (capped at your survival target), **Balanced**, **Max payout** and **Most income** (marked on the
+  chart, one click to use), each robust to your edge being an estimate. Payouts take the firm's **max
+  each time** on its own schedule (or small weekly sweeps); sizing is **fixed %** or **cushion-based**
+  (risk scales with distance to the drawdown floor), compared side by side. Defaults work out of the
+  box; everything is configurable
+- **Several accounts** (up to 50): copy-traded or independent, bought the same day or staggered, ended
+  accounts replaced - per account count, the size, income, fees, fee budget and the chance every
+  account is down at once
 - **Decision** net expected value of buying in, and a plan per optimization (eval + funded size, $ per
   $1 of fees)
 - **Rule guard**: live distance to a bound account's drawdown floor, daily limit and target

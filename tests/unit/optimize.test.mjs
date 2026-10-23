@@ -10,7 +10,7 @@ import { buildOnce } from "./build.mjs";
 
 installDom();
 const E = await import(await buildOnce("optimize"));
-const { S, setFirm, fundedSim, fundedStats, portfolioSim, mulberry, yearSteps, setPayModel, payModel, maxPayNeed, tpdOf,
+const { S, setFirm, fundedSim, fundedStats, portfolioSim, portfolioPrefix, mulberry, yearSteps, setPayModel, payModel, maxPayNeed, tpdOf,
   sharesAt, floorAt, slotEcon, plateauLo, pickBestRoi, pickMostIncome, pickMaxPayout, pickBalancedAt, pickPerCount,
   optSettings, setOpt, resetOpt, OPT_DEFAULTS } = E;
 
@@ -159,18 +159,54 @@ test("rebuy: a blown account is replaced and keeps earning on the shared stream"
 // ---------------------------------------------------------------------------
 // the economics of a slot
 // ---------------------------------------------------------------------------
-test("slot economics: a survivor pays its one purchase back; deaths cost re-buys and time", () => {
-  // never dies: one cycle a year, fees = one purchase
-  const keep = slotEcon(20, 1, 1000, 1000, 2, 100);
-  assert.deepEqual([keep.cycles, keep.rebuys, keep.fees, keep.pay, keep.roi], [1, 0, 2, 20, 10]);
-  // always dies at mid-year, 100 trades to re-fund: cycle 600, 1000/600 cycles
-  const die = slotEcon(6, 0, 500, 1000, 2, 100);
-  assert.ok(Math.abs(die.cycles - 1000 / 600) < 1e-12);
-  assert.ok(Math.abs(die.rebuys - 1000 / 600) < 1e-12);
-  assert.ok(Math.abs(die.fees - 2 * (1 + 1000 / 600)) < 1e-12);
-  assert.ok(Math.abs(die.roi - (6 * 1000 / 600) / (2 * (1 + 1000 / 600))) < 1e-12);
+test("account economics: per account over its life, no calendar year", () => {
+  // 20% of account withdrawn over 400 trades, costing 2% and 100 trades to get funded
+  const e = slotEcon(20, 400, 2, 100, 100);
+  assert.equal(e.roi, 10, "$10 back per $1");
+  assert.equal(e.net, 18);
+  assert.equal(e.months, 5, "100 trades to fund + 400 funded, at 100 a month");
+  assert.equal(e.liveMonths, 4);
+  assert.ok(Math.abs(e.perMonth - 18 / 5) < 1e-12, "the slot's net spread over the whole cycle");
   // a dearer evaluation lowers the return, all else equal
-  assert.ok(slotEcon(6, 0, 500, 1000, 4, 100).roi < die.roi);
+  assert.ok(slotEcon(20, 400, 4, 100, 100).roi < e.roi);
+});
+
+test("moved to live: the account ends paid after N payouts or $X, in step with the sim", () => {
+  setFirm(futures({ liveAfterPays: 3 })); S.trades = edge(0.6, 1.5, 100); setPayModel(OFF);
+  let ended = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    const ev = { pays: [], amts: [], death: -1 };
+    const r = fundedSim(0.6, yearSteps() * 2, mulberry(seed), ev);
+    if (r.live) { ended++; assert.equal(r.pays, 3); assert.equal(r.alive, 1); assert.equal(r.life, ev.pays[2] + 1, "ends on the third payout"); }
+    else assert.ok(r.pays < 3, "an account that paid three times must have moved to live");
+  }
+  assert.ok(ended > 10, "the fixture should move accounts to live: " + ended);
+  setFirm(futures({ liveAfterPaid: 6000 }));   // 12% of $50k
+  for (let seed = 1; seed <= 20; seed++) {
+    const r = fundedSim(0.6, yearSteps() * 2, mulberry(seed));
+    if (r.live) assert.ok(r.profit >= 12 - 1e-9 && r.profit < 12 + 5 + 1e-9, "ends on the payout that crosses $6,000: " + r.profit);
+  }
+  // off: never
+  setFirm(futures()); assert.equal(fundedSim(0.6, yearSteps() * 2, mulberry(1)).live, 0);
+});
+
+test("several counts from one run: the first N accounts ARE an N-account portfolio", () => {
+  setup();
+  const T = yearSteps(), stag = 10 * tpdOf();
+  for (const ind of [false, true]) {
+    for (let seed = 1; seed <= 8; seed++) {
+      const pre = portfolioPrefix(0.9, [1, 2, 5], T, seed, ind, true, 50, stag);
+      for (const p of pre) {
+        const full = portfolioSim(new Array(p.n).fill(0.9), T, seed, ind, true, 50, stag);
+        assert.ok(Math.abs(full.profitPct - p.profitPct) < 1e-9, (ind ? "independent" : "copy") + " n=" + p.n + " profit");
+        assert.equal(full.rebuys, p.rebuys); assert.equal(full.bought, p.bought); assert.equal(full.allDown, p.allDown);
+      }
+    }
+  }
+  // copy-trade, same day: one account scaled
+  const same = portfolioPrefix(0.9, [1, 50], T, 3, false, true, 50, 0);
+  assert.ok(Math.abs(same[1].profitPct - 50 * same[0].profitPct) < 1e-9);
+  assert.equal(same[1].allDown, same[0].allDown);
 });
 
 test("robust floors, plateaus and the picks", () => {
@@ -180,7 +216,11 @@ test("robust floors, plateaus and the picks", () => {
   // the least size within 3% of the best; nothing positive = -1
   assert.equal(plateauLo([1, 9.8, 10, 4]), 1);
   assert.equal(plateauLo([-1, -2]), -1);
-  assert.equal(pickBestRoi([2, 3.12, 3.2, 3.15]), 1);
+  assert.equal(pickBestRoi([2, 3.12, 3.2, 3.15], [true, true, true, true]), 1);
+  // capped by the survival test: the best size that keeps it
+  assert.equal(pickBestRoi([2, 3.12, 3.2, 3.15], [true, true, false, false]), 1);
+  assert.equal(pickBestRoi([2, 3.0, 3.2, 3.15], [true, true, false, false]), 1);
+  assert.equal(pickBestRoi([2, 3.12, 3.2], [false, false, false]), -1);
   assert.equal(pickMostIncome([5, 9, 12, 11.8]), 2);
   assert.equal(pickMaxPayout([4, 10, 10.1, 10.1]), 1, "past the knee more size takes no more max payouts");
   // Balanced: largest clearing 85% measured AND in 90% of plausible edges
@@ -210,7 +250,8 @@ test("settings: defaults out of the box (max payout on), garbage clamped, the en
   const o = optSettings();
   assert.equal(o.survTarget, 0.99);
   assert.equal(o.conf, OPT_DEFAULTS.conf);
-  assert.equal(o.maxAccounts, 10);
+  assert.equal(o.maxAccounts, 50, "up to 50 accounts");
+  assert.equal(o.maxLifeMonths, 24);
   assert.equal(o.copy, OPT_DEFAULTS.copy);
   assert.equal(o.staggerDays, 0);
   assert.equal(o.payMax, OPT_DEFAULTS.payMax);

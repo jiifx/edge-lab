@@ -53,6 +53,12 @@ export interface Firm {
   payoutCons?: number;             // max % of profit-since-last-payout from one day (0 = no rule)
   winDays?: number;                // trading days with day-P&L >= winAmt required before a payout
   winAmt?: number;                 // the per-day profit ($) a day must clear to count as a winning day
+  // --- the END of the funded stage (2.21.0). Many firms move a simulated funded
+  // account to a live one after a number of payouts or a total paid out, and
+  // close the sim account: its economics end there, like a breach but paid.
+  // 0 = no such rule (the account runs until it breaches or the modelled life ends).
+  liveAfterPays?: number;          // moved to live after this many payouts
+  liveAfterPaid?: number;          // ...or once this many $ have been paid out in total
   resetFee?: number;               // discounted re-attempt price in dollars (0/absent = full fee per attempt)
   kind?: "futures" | "cfd";        // market family, for the firm suggester
 }
@@ -138,10 +144,11 @@ const FIRM_BOUNDS: Record<string, [number, number]> = {
   payoutMin: [0, 10000000], payoutEvery: [0, 365], payoutFirst: [0, 365],
   payoutBuffer: [0, 10000000], payoutCap: [0, 100], payoutCapAmt: [0, 10000000],
   payoutCons: [0, 100], winDays: [0, 365], winAmt: [0, 10000000], resetFee: [0, 1000000],
+  liveAfterPays: [0, 1000], liveAfterPaid: [0, 100000000],
 };
 // Integer fields, where a fractional value is not merely odd but changes the
 // meaning of a loop or a counter.
-const FIRM_INTS = new Set(["tpd", "minDays", "timeLimit", "payoutEvery", "payoutFirst", "winDays", "ddLock"]);
+const FIRM_INTS = new Set(["tpd", "minDays", "timeLimit", "payoutEvery", "payoutFirst", "winDays", "ddLock", "liveAfterPays"]);
 export function clampFirm<T extends Partial<Firm>>(f: T): T {
   const o = f as unknown as Record<string, unknown>;
   for (const k of Object.keys(FIRM_BOUNDS)) {
@@ -178,6 +185,7 @@ export function setFirm(src: Firm) {
   F.timeLimit = 0; F.feeMode = "once"; F.activation = 0; F.instant = false;
   F.payoutMin = 0; F.payoutEvery = 0; F.payoutFirst = 0; F.resetFee = 0;
   F.payoutBuffer = 0; F.payoutCap = 0; F.payoutCapAmt = 0; F.payoutCons = 0; F.winDays = 0; F.winAmt = 0;
+  F.liveAfterPays = 0; F.liveAfterPaid = 0;
   delete F.name; delete F.kind;
   // Catalogue-only metadata has to be scrubbed too: the suggester swaps dozens of
   // CatalogFirm records through this singleton, and without the deletes the FIRST
@@ -226,13 +234,15 @@ export function ddLabel(f: { ddType: string; ddLock?: number }): string {
 // how a firm's payout GATES read in one phrase - empty when it has none. Shared
 // by the Firms table and the journal card: a modelled input the user cannot see
 // is half a lie, and these move real ranking dollars since 2.8.0.
-export function gateLabel(f: { payoutBuffer?: number; payoutCap?: number; payoutCapAmt?: number; payoutCons?: number; winDays?: number; winAmt?: number }): string {
+export function gateLabel(f: { payoutBuffer?: number; payoutCap?: number; payoutCapAmt?: number; payoutCons?: number; winDays?: number; winAmt?: number; liveAfterPays?: number; liveAfterPaid?: number }): string {
   const parts: string[] = [];
   if (f.payoutBuffer && f.payoutBuffer > 0) parts.push("$" + Math.round(f.payoutBuffer / 100) / 10 + "k buffer");
   if (f.payoutCap && f.payoutCap > 0) parts.push(f.payoutCap + "% cap");
   if (f.payoutCapAmt && f.payoutCapAmt > 0) parts.push("max $" + Math.round(f.payoutCapAmt).toLocaleString() + "/payout");
   if (f.payoutCons && f.payoutCons > 0) parts.push(f.payoutCons + "% max day");
   if (f.winDays && f.winDays > 0) parts.push(f.winDays + " win days" + (f.winAmt ? " $" + f.winAmt + "+" : ""));
+  if (f.liveAfterPays && f.liveAfterPays > 0) parts.push("live after " + f.liveAfterPays + " payouts");
+  if (f.liveAfterPaid && f.liveAfterPaid > 0) parts.push("live after $" + Math.round(f.liveAfterPaid).toLocaleString() + " paid");
   return parts.length ? "gates: " + parts.join(", ") : "";
 }
 
