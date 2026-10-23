@@ -1,6 +1,6 @@
 [package]
 name = "edge-lab"
-version = "2.22.1"
+version = "2.23.0"
 description = "Edge Lab - trading journal + edge simulator. Produced by jiidc."
 authors = ["jiidc"]
 license = "MIT"

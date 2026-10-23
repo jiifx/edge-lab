@@ -91,7 +91,7 @@ function wireNum(numId: string, rangeId: string) {
   numEl.addEventListener("change", function () { this.value = rangeEl().value; }); // clamp to slider range on blur
 }
 
-const fFields = ["fAccount", "fType", "fInstant", "fP1", "fP2", "fMaxdd", "fDdType", "fDdLock", "fDaily", "fMinDays", "fCons", "fTpd", "fSplit", "fFee", "fTimeLimit", "fFeeMode", "fActivation", "fResetFee", "fPayEvery", "fPayFirst", "fPayMin", "fPayBuffer", "fPayCap", "fPayCapAmt", "fPayCons", "fWinDays", "fWinAmt", "fLivePays", "fLivePaid"];
+const fFields = ["fAccount", "fType", "fInstant", "fP1", "fP2", "fMaxdd", "fDdType", "fDdLock", "fDaily", "fMinDays", "fCons", "fTpd", "fSplit", "fFee", "fTimeLimit", "fFeeMode", "fActivation", "fResetFee", "fPayEvery", "fPayFirst", "fPayMin", "fPayBuffer", "fPayCap", "fPayCapAmt", "fPayCons", "fWinDays", "fWinAmt", "fLivePays", "fLivePaid", "fLiveTotal", "fLiveChance"];
 
 // user-saved firm presets (localStorage; selected via "c:<name>" values in the preset dropdown)
 let CUSTOM: Record<string, import("./state").Firm> = LS.get("pel_presets", {});
@@ -142,7 +142,7 @@ function firmRulesKey(f: Partial<import("./state").Firm>): string {
     f.cons || 0, f.tpd, f.split, f.fee, f.timeLimit || 0, f.feeMode || "once", f.activation || 0,
     f.resetFee || 0, f.payoutEvery || 0, f.payoutFirst || 0, f.payoutMin || 0, f.instant ? 1 : 0,
     f.payoutBuffer || 0, f.payoutCap || 0, f.payoutCapAmt || 0, f.payoutCons || 0, f.winDays || 0, f.winAmt || 0,
-    f.liveAfterPays || 0, f.liveAfterPaid || 0].join("|");
+    f.liveAfterPays || 0, f.liveAfterPaid || 0, f.liveAfterTotalPays || 0, f.liveChance == null ? 100 : f.liveChance].join("|");
 }
 function syncPresetSel() {
   const sel = document.getElementById("fPreset") as HTMLSelectElement | null;
@@ -187,6 +187,8 @@ export function firmToForm() {
   $i("fWinAmt").value = String(F.winAmt || 0);
   $i("fLivePays").value = String(F.liveAfterPays || 0);
   $i("fLivePaid").value = String(F.liveAfterPaid || 0);
+  $i("fLiveTotal").value = String(F.liveAfterTotalPays || 0);
+  $i("fLiveChance").value = String(F.liveChance == null ? 100 : F.liveChance);
   syncP2();
 }
 // phase-2 target only applies to 2-step firms: keep the cell in the grid
@@ -252,6 +254,8 @@ function formToFirm() {
   F.winAmt = Math.max(0, numOr($i("fWinAmt").value, F.winAmt || 0));
   F.liveAfterPays = Math.max(0, Math.round(numOr($i("fLivePays").value, F.liveAfterPays || 0)));
   F.liveAfterPaid = Math.max(0, numOr($i("fLivePaid").value, F.liveAfterPaid || 0));
+  F.liveAfterTotalPays = Math.max(0, Math.round(numOr($i("fLiveTotal").value, F.liveAfterTotalPays || 0)));
+  F.liveChance = Math.min(100, Math.max(0, numOr($i("fLiveChance").value, F.liveChance == null ? 100 : F.liveChance)));
   // THE FORM IS A ROUTE INTO F LIKE ANY OTHER, and this one writes field by field
   // rather than through setFirm, so it was the one route the domain table did not
   // cover. Typing 10,000,000 into Trades per day left F.tpd at ten million: the
@@ -1321,7 +1325,9 @@ function lifeSteps(): number { return optSettings().maxLifeMonths * stepsPerMont
 // over a different life.
 function modelKey(): string {
   const m = payModel();
-  return (m.payMax ? "M" : "h") + (m.cushion ? "C" : "f") + optSettings().maxLifeMonths;
+  // the account count only moves a single-account run through "N payouts across
+  // all your accounts", so it busts the curves only when the firm has that rule
+  return (m.payMax ? "M" : "h") + (m.cushion ? "C" : "f") + optSettings().maxLifeMonths + ((F.liveAfterTotalPays || 0) > 0 ? "n" + (m.accounts || 1) : "");
 }
 // What one withdrawal is under the model in force, in words for the tiles.
 function payoutSizeText(): string {
@@ -1336,13 +1342,16 @@ function payoutSizeText(): string {
 }
 // How an account's funded stage ends at this firm, in a few words.
 function endText(): string {
-  const n = F.liveAfterPays || 0, d = F.liveAfterPaid || 0;
-  if (n > 0 && d > 0) return "live after " + n + " payouts or " + money(d);
-  if (n > 0) return "live after " + n + " payouts";
-  if (d > 0) return "live after " + money(d) + " paid";
-  return "followed up to " + optSettings().maxLifeMonths + " months";
+  const n = F.liveAfterPays || 0, d = F.liveAfterPaid || 0, tot = F.liveAfterTotalPays || 0;
+  const ch = F.liveChance == null ? 100 : F.liveChance;
+  const parts: string[] = [];
+  if (n > 0) parts.push(n + " payouts");
+  if (d > 0) parts.push(money(d) + " paid");
+  if (tot > 0) parts.push(tot + " payouts across your accounts");
+  if (!parts.length) return "followed up to " + optSettings().maxLifeMonths + " months";
+  return "live-eligible after " + parts.join(" or ") + (ch < 100 ? ", then moved at " + ch + "% of payouts" : "") + "; otherwise followed up to " + optSettings().maxLifeMonths + " months";
 }
-const hasLiveRule = () => (F.liveAfterPays || 0) > 0 || (F.liveAfterPaid || 0) > 0;
+const hasLiveRule = () => (F.liveAfterPays || 0) > 0 || (F.liveAfterPaid || 0) > 0 || (F.liveAfterTotalPays || 0) > 0;
 // Fingerprint the trade CONTENT, not just its length: keying on length alone
 // left the profit-vs-risk curve and its "peak %" sizing advice stale for the
 // rest of the session after correcting a trade's P&L. Both size curves cache on
@@ -1609,7 +1618,9 @@ function renderFunded() {
   }
   // the breach rate per funded month reads the same at any max account life,
   // where the share not breached falls the longer accounts are followed
-  const breachMo = (surv: number, liveMonths: number) => (liveMonths > 0 ? (1 - surv) / liveMonths : 0);
+  // as a probability a month: 1 - e^(-breaches per funded month), so an account
+  // that lives weeks reads ~74%/mo, never "134%"
+  const breachMo = (surv: number, liveMonths: number) => (liveMonths > 0 ? 1 - Math.exp(-(1 - surv) / liveMonths) : 0);
   const bmTxt = (x: number) => (x < 0.0005 ? "<0.1%" : (x * 100).toFixed(x < 0.01 ? 1 : 0) + "%") + " a month";
   // with the record's own 90% range when the journal is big enough (the range a
   // resampled record puts on it), compact so the tile stays two lines
@@ -1728,6 +1739,9 @@ function renderFunded() {
   $("optNote").innerHTML = m.noEdge || m.thin ? "" :
     "Each account costs " + money(m.rc.cost) + (m.rc.days ? " and ~" + m.rc.days + " trading days" : "") + " to get funded (Challenge tab&rsquo;s " + Number($i("src").value).toFixed(2) +
     "% eval risk), then trades until it breaches or ends: " + endText() + "." +
+    (hasLiveRule() && cur.live > 0 ? " A move to live closes every sim account; about " + money(pct$(cur.leftLive)) + " of profit is still in one when it moves, and is treated as lost." : "") +
+    ((F.liveAfterTotalPays || 0) > 0 ? " &ldquo;Across your accounts&rdquo; is read here as " + Math.ceil((F.liveAfterTotalPays || 0) / Math.max(1, o.maxAccounts)) + " on each of your " + o.maxAccounts +
+      " - exact for copy-traded accounts bought together; Several accounts simulates it exactly." : "") +
     (m.safe.some((x) => x.i < 0) ? " No size keeps " + m.safe.filter((x) => x.i < 0).map((x) => Math.round(x.t * 100) + "%").join(" or ") + " of accounts unbreached in " + Math.round(o.conf * 10) + " of 10 versions of your edge." : "") +
     (atTop(m, m.ev) ? ' <b class="cell-caution">Max EV sits at the top of the sizes tested (' + m.d.risks[m.d.risks.length - 1].toFixed(1) +
       "%): what stops you there is outside the model - the firm&rsquo;s limits on size, slippage, account caps, and whether the edge holds at that size.</b>" : "");
@@ -1856,7 +1870,7 @@ function ensurePortfolio(m: FModel): PortfolioStat[][] | null {
   const buy = evalBuyer(m.rc.pass, m.rc.meanFailDays, m.rc.medDays, m.rc.meanDaysAll, !!F.instant);
   // per count, accumulated over the paths of the current size
   let bi = 0, s = 0;
-  let pay = new Array<number>(counts.length).fill(0), down = pay.slice(), reb = pay.slice();
+  let pay = new Array<number>(counts.length).fill(0), down = pay.slice(), reb = pay.slice(), mv = pay.slice();
   let fees: number[][] = counts.map(() => []);
   const perSize: PortfolioStat[][] = [];   // [size][count]
   runJob(() => {
@@ -1866,15 +1880,15 @@ function ensurePortfolio(m: FModel): PortfolioStat[][] | null {
     st.forEach((p, j) => {
       pay[j] += pct$(p.profitPct);
       fees[j].push(p.fees);
-      down[j] += p.allDown; reb[j] += p.rebuys;
+      down[j] += p.allDown; reb[j] += p.rebuys; mv[j] += p.moves || 0;
     });
     if (++s < SIMS) return false;
     perSize.push(counts.map((n, j) => {
       const f = fees[j].sort((a, b) => a - b), fm = f.reduce((a, b) => a + b, 0) / SIMS;
       return { n, base: bases[bi], pay: pay[j] / SIMS, fees: fm, fees95: f[Math.min(SIMS - 1, Math.floor(0.95 * SIMS))], net: pay[j] / SIMS - fm,
-        roi: fm > 0 ? pay[j] / SIMS / fm : 0, pAllDown: down[j] / SIMS, rebuys: reb[j] / SIMS };
+        roi: fm > 0 ? pay[j] / SIMS / fm : 0, pAllDown: down[j] / SIMS, rebuys: reb[j] / SIMS, moves: mv[j] / SIMS };
     }));
-    s = 0; pay = pay.map(() => 0); down = down.map(() => 0); reb = reb.map(() => 0); fees = counts.map(() => []);
+    s = 0; pay = pay.map(() => 0); down = down.map(() => 0); reb = reb.map(() => 0); mv = mv.map(() => 0); fees = counts.map(() => []);
     return ++bi >= bases.length;
   }, () => {
     if (my !== accSeq) return;
@@ -1923,7 +1937,14 @@ function renderAccounts(m: FModel, mo: boolean) {
       : o.copy && o.staggerDays === 0
         ? "Copy-traded and bought the same day, the accounts rise and fall together, so the size does not change with the count - more accounts multiply income, fees and budget together. Stagger the purchases or trade them independently to make them cover for each other."
         : "Here the size does not change with the count: one account already runs the best size within the risk bar. More accounts multiply income, fees and budget.") +
-    (picks.some((p) => !p.ok) ? " Grey rows: no size keeps every account from being down at once that rarely; the safest is shown." : "");
+    (picks.some((p) => !p.ok) ? " Grey rows: no size keeps every account from being down at once that rarely; the safest is shown." : "") +
+    (() => {
+      const mine = picks.find((p) => p.stat.n === o.maxAccounts);
+      return hasLiveRule() && mine && (mine.stat.moves || 0) > 0
+        ? " With " + o.maxAccounts + " account" + (o.maxAccounts > 1 ? "s" : "") + " the firm moves you to live about " + (Math.round((mine.stat.moves || 0) * 10) / 10) + " time" + ((mine.stat.moves || 0) >= 1.05 ? "s" : "") +
+          " in " + months + " months; each move closes every sim account" + (o.rebuy ? " and a fresh set is bought." : ".")
+        : "";
+    })();
 }
 
 // ---------------- DECISION ----------------

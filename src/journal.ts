@@ -643,7 +643,7 @@ function firmKey(f: Firm): string {
     // (buffer/cap/winning days) move BOTH legs and belong here for the same reason
     "|" + (f.payoutFirst || 0) + "/" + (f.payoutMin || 0) + "/" + (f.resetFee || 0) + (f.instant ? "|I" : "") +
     "|" + (f.payoutBuffer || 0) + "/" + (f.payoutCap || 0) + "/" + (f.payoutCapAmt || 0) + "/" + (f.payoutCons || 0) + "/" + (f.winDays || 0) + "/" + (f.winAmt || 0) +
-    "|" + (f.liveAfterPays || 0) + "/" + (f.liveAfterPaid || 0);
+    "|" + (f.liveAfterPays || 0) + "/" + (f.liveAfterPaid || 0) + "/" + (f.liveAfterTotalPays || 0) + "/" + (f.liveChance == null ? 100 : f.liveChance);
 }
 function oddsKey(rs: number[], re: number, rf: number, f: Firm): string {
   let sum = 0;

@@ -23,7 +23,8 @@ const setup = () => { setFirm(twoStep()); S.trades = edge(0.45, 1.6, 200); setPa
 // ---------------------------------------------------------------------------
 test("model off is the pre-2.20 path exactly; the default model is off", () => {
   setup();
-  assert.deepEqual(payModel(), OFF);
+  const pmFlags = () => ({ payMax: payModel().payMax, cushion: payModel().cushion });
+  assert.deepEqual(pmFlags(), OFF);
   const T = yearSteps();
   for (const seed of [3, 4, 5]) {
     assert.deepEqual(fundedSim(0.8, T, mulberry(seed)), fundedSim(0.8, T, mulberry(seed), undefined, OFF));
@@ -261,9 +262,11 @@ test("settings: defaults out of the box (max payout on), garbage clamped, the en
   assert.equal(o.staggerDays, 0);
   assert.equal(o.payMax, OPT_DEFAULTS.payMax);
   setOpt({ payMax: false, cushion: true });
-  assert.deepEqual(payModel(), { payMax: false, cushion: true }, "setOpt must reach the engine at once");
+  const pmFlags = () => ({ payMax: payModel().payMax, cushion: payModel().cushion });
+  assert.deepEqual(pmFlags(), { payMax: false, cushion: true }, "setOpt must reach the engine at once");
+  assert.equal(payModel().accounts, OPT_DEFAULTS.maxAccounts, "and so must the account count");
   resetOpt();
-  assert.deepEqual(payModel(), { payMax: true, cushion: false });
+  assert.deepEqual(pmFlags(), { payMax: true, cushion: false });
   setPayModel(OFF);
   localStorage.removeItem("pel_opt");
 });
@@ -317,4 +320,64 @@ test("plausible records keep streaks: block resampling", () => {
   for (let i = 1; i < out.length; i++) { if (out[i] === out[i - 1]) same++; if (iid[i] === iid[i - 1]) sameIid++; }
   assert.ok(same > 0.85 * 999, "blocks keep neighbours together: " + same);
   assert.ok(sameIid < 0.6 * 999, "an iid resample breaks them: " + sameIid);
+});
+
+// ---------------------------------------------------------------------------
+// 2.23.0: live eligibility, the firm's chance, and coupled accounts
+// ---------------------------------------------------------------------------
+test("eligible is not moved: the chance per payout, drawn without touching the trades", () => {
+  setFirm(futures({ liveAfterPays: 3, liveChance: 0 })); S.trades = edge(0.6, 1.5, 100); setPayModel({ payMax: true, cushion: false, accounts: 1 });
+  const T = yearSteps() * 2;
+  let never = 0, some = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    // 0% = never moved: identical to having no rule at all
+    const a = fundedSim(0.6, T, mulberry(seed), undefined, payModel(), E.liveStream(seed));
+    setFirm(futures({ liveChance: 100 }));
+    const b = fundedSim(0.6, T, mulberry(seed));
+    setFirm(futures({ liveAfterPays: 3, liveChance: 0 }));
+    assert.equal(a.profit, b.profit); assert.equal(a.live, 0);
+    never++;
+  }
+  setFirm(futures({ liveAfterPays: 3, liveChance: 50 }));
+  for (let seed = 1; seed <= 60; seed++) {
+    const r = fundedSim(0.6, T, mulberry(seed), undefined, payModel(), E.liveStream(seed));
+    if (r.live) { some++; assert.ok(r.pays >= 3, "moved before it was eligible: " + r.pays); }
+  }
+  assert.ok(never === 30 && some > 5, "a 50% chance moves some eligible accounts: " + some);
+  setPayModel(OFF);
+});
+
+test("coupled accounts: copy-traded and bought together, a move closes all of them at once", () => {
+  S.trades = edge(0.6, 1.5, 100); setPayModel({ payMax: true, cushion: false, accounts: 1 });
+  const T = yearSteps() * 2;
+  // per-account rule: three identical accounts move together, so 3 x one account
+  setFirm(futures({ liveAfterPays: 3 }));
+  for (let seed = 1; seed <= 12; seed++) {
+    const one = portfolioSim([0.6], T, seed, false, false, 0);
+    const three = portfolioSim([0.6, 0.6, 0.6], T, seed, false, false, 0);
+    assert.ok(Math.abs(three.profitPct - 3 * one.profitPct) < 1e-9, "seed " + seed + ": " + three.profitPct + " vs 3 x " + one.profitPct);
+  }
+  // "10 across all accounts" with 4 copy-traded accounts = 3 payouts on each
+  setFirm(futures({ liveAfterTotalPays: 10 }));
+  setPayModel({ accounts: 4 });
+  for (let seed = 1; seed <= 12; seed++) {
+    const single = fundedSim(0.6, T, mulberry(seed), undefined, payModel(), E.liveStream(seed));
+    const four = portfolioSim([0.6, 0.6, 0.6, 0.6], T, seed, false, false, 0);
+    assert.ok(Math.abs(four.profitPct - 4 * single.profit) < 1e-9, "seed " + seed + ": coupled " + four.profitPct + " vs 4 x " + single.profit);
+  }
+  setPayModel(OFF);
+});
+
+test("coupled accounts: independent ones close when the FIRST is moved", () => {
+  S.trades = edge(0.6, 1.5, 100); setPayModel({ payMax: true, cushion: false, accounts: 1 });
+  const T = yearSteps() * 2;
+  setFirm(futures({ liveAfterPays: 3 }));
+  let coupled = 0, apart = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    coupled += portfolioSim([0.6, 0.6, 0.6], T, seed, true, false, 0).profitPct;
+    // the same three accounts, each moved on its own (no closing of the others)
+    for (let k = 0; k < 3; k++) apart += fundedSim(0.6, T, mulberry((seed + k * 0x9e3779b1) | 0), undefined, payModel(), E.liveStream(seed)).profit;
+  }
+  assert.ok(coupled < apart, "closing all on the first move banks less: " + coupled + " vs " + apart);
+  setPayModel(OFF);
 });

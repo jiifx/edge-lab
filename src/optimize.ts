@@ -61,7 +61,7 @@ export function optSettings(): OptSettings {
 // reach it at once - and at start-up, before anything is computed.
 export function applyPayModel() {
   const o = optSettings();
-  setPayModel({ payMax: o.payMax, cushion: o.cushion });
+  setPayModel({ payMax: o.payMax, cushion: o.cushion, accounts: o.maxAccounts });
 }
 export function setOpt(patch: Partial<OptSettings>) { LS.set("pel_opt", { ...optSettings(), ...patch }); applyPayModel(); }
 export function resetOpt() { LS.set("pel_opt", { ...OPT_DEFAULTS }); applyPayModel(); }
@@ -163,6 +163,7 @@ export interface PortfolioStat {
   roi: number;          // pay / fees
   pAllDown: number;     // share of runs with a moment when NO funded account is up
   rebuys: number;       // mean replacements (breached or moved to live)
+  moves?: number;       // mean moves to live (each closes every sim account) - 2.23.0
 }
 // In expectation the return per fee dollar does not depend on how many accounts
 // run - payouts and fees both scale with the count. What the count changes is

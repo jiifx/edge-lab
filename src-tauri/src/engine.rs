@@ -54,6 +54,16 @@ pub struct Firm {
     pub live_after_pays: i64,
     #[serde(default, rename = "liveAfterPaid")]
     pub live_after_paid: f64,
+    // 2.23.0: eligible after N payouts across ALL accounts (read per account as
+    // N / accounts - exact for copy-traded, bought-together accounts), and the
+    // % chance the firm actually moves an eligible account at each payout
+    #[serde(default, rename = "liveAfterTotalPays")]
+    pub live_after_total_pays: i64,
+    #[serde(default = "hundred", rename = "liveChance")]
+    pub live_chance: f64,
+    // from the frontend's pay model, like pay_max/cushion: the accounts the trader runs
+    #[serde(default = "one")]
+    pub accounts: i64,
     #[serde(default, rename = "payMax")]
     pub pay_max: bool,
     #[serde(default)]
@@ -104,6 +114,10 @@ impl Rng {
 const SWEEP_HABIT_DAYS: i64 = 5;
 // mirrors PAY_CHUNK in src/engine.ts - one withdrawal, in percent of account
 const PAY_CHUNK: f64 = 5.0;
+fn hundred() -> f64 { 100.0 }
+fn one() -> i64 { 1 }
+// mirrors liveStream() in src/engine.ts: the move-to-live draws' own stream
+const LIVE_SALT: u32 = 0x0051_ED27;
 // mirrors CUSHION_CAP / MIN_REQ_PCT / maxPayNeed() in src/engine.ts
 const CUSHION_CAP: f64 = 2.0;
 const MIN_REQ_PCT: f64 = 1.0;
@@ -338,6 +352,10 @@ pub fn funded_stats_e(e: Edge, f: &Firm, risk: f64, n: usize, t_steps: usize, se
     let need = if f.pay_max { max_pay_need(f) } else { 0.0 };
     let live_n = f.live_after_pays.max(0);
     let live_pct = if f.account > 0.0 { f.live_after_paid / f.account * 100.0 } else { 0.0 };
+    let live_tot = f.live_after_total_pays.max(0);
+    let live_tot_each = if live_tot > 0 { (live_tot + f.accounts.max(1) - 1) / f.accounts.max(1) } else { 0 };
+    let live_q = (f.live_chance / 100.0).clamp(0.0, 1.0);
+    let mut lrnd = Rng::new(seed ^ LIVE_SALT);
     let (mut sum_profit, mut alive_n) = (0.0f64, 0usize);
     for _ in 0..n {
         let (mut eq, mut peak, mut peak_eod, mut banked) = (0.0f64, 0.0f64, 0.0f64, 0.0f64);
@@ -349,6 +367,7 @@ pub fn funded_stats_e(e: Edge, f: &Firm, risk: f64, n: usize, t_steps: usize, se
         let mut day = 0i64;
         let mut pays = 0i64;
         for _ in 0..t_steps {
+            let pays_before = pays;
             let r_now = if f.cushion { cushion_risk(f, risk, eq, dd_floor(f, peak, peak_eod, f.maxdd)) } else { risk };
             eq += e.draw(&mut rnd) * r_now;
             if eq > peak {
@@ -441,7 +460,11 @@ pub fn funded_stats_e(e: Edge, f: &Firm, risk: f64, n: usize, t_steps: usize, se
                     profit_since = 0.0;
                 }
             }
-            if (live_n > 0 && pays >= live_n) || (live_pct > 0.0 && banked >= live_pct - 1e-9) {
+            // eligibility only changes on a payout, and the firm decides on a payout
+            if pays > pays_before
+                && ((live_n > 0 && pays >= live_n) || (live_pct > 0.0 && banked >= live_pct - 1e-9) || (live_tot_each > 0 && pays >= live_tot_each))
+                && (live_q >= 1.0 || (live_q > 0.0 && lrnd.next() < live_q))
+            {
                 break;
             }
         }
@@ -592,7 +615,7 @@ mod tests {
             type_: "1phase".into(), account: 100000.0, p1: 8.0, p2: 0.0, maxdd: 8.0,
             dd_type: "static".into(), dd_lock: 1, time_limit: 0, daily: 4.0, min_days: 0, cons: 0.0,
             tpd: 5, split: 90.0, fee: 400.0,
-            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, live_after_pays: 0, live_after_paid: 0.0, pay_max: false, cushion: false,
+            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, live_after_pays: 0, live_after_paid: 0.0, live_after_total_pays: 0, live_chance: 100.0, accounts: 1, pay_max: false, cushion: false,
         }
     }
 
@@ -615,7 +638,7 @@ mod tests {
             type_: "futures".into(), account: 50000.0, p1: 6.0, p2: 0.0, maxdd: 4.0,
             dd_type: dd_type.into(), dd_lock, time_limit, daily: 0.0, min_days: 0, cons: 0.0,
             tpd: 5, split: 90.0, fee: 150.0,
-            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, live_after_pays: 0, live_after_paid: 0.0, pay_max: false, cushion: false,
+            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, live_after_pays: 0, live_after_paid: 0.0, live_after_total_pays: 0, live_chance: 100.0, accounts: 1, pay_max: false, cushion: false,
         }
     }
 
@@ -875,6 +898,26 @@ mod tests {
         assert!((p - 10.17).abs() < 1e-6 && (s - 0.83).abs() < 1e-9, "max payouts, live after $6k: {p} {s}");
     }
 
+    // Live ELIGIBILITY (2.23.0): a 50% chance per eligible payout, drawn on its
+    // own stream, and "10 payouts across 4 accounts" read as 3 on each. Anchors
+    // minted from the TS engine on 2026-10-23.
+    #[test]
+    fn live_eligibility_matches_js() {
+        let rs = edge(0.55, 1.5, 100);
+        let mut a = firm_futures("trailing-eod", 1, 0);
+        a.pay_max = true;
+        a.live_after_pays = 3;
+        a.live_chance = 50.0;
+        let (p, s) = funded_stats(&rs, &a, 0.8, 400, 750, 9931);
+        assert!((p - 20.715999999999998).abs() < 1e-6 && (s - 0.705).abs() < 1e-9, "50% chance once eligible: {p} {s}");
+        let mut b = firm_futures("trailing-eod", 1, 0);
+        b.pay_max = true;
+        b.live_after_total_pays = 10;
+        b.accounts = 4;
+        let (p, s) = funded_stats(&rs, &b, 0.8, 400, 750, 9931);
+        assert!((p - 15.856999999999996).abs() < 1e-6 && (s - 0.7375).abs() < 1e-9, "10 across 4 accounts: {p} {s}");
+    }
+
     // The consistency PAYOUT gate (2.9.2) - 9 of 23 catalogued firms run one.
     // Same structural argument as the other gates on the first-payout leg: a
     // big day blocks the request until later profit dilutes its share, which
@@ -967,7 +1010,7 @@ mod tests {
             type_: "futures".into(), account: 50000.0, p1: 6.0, p2: 0.0, maxdd: 4.0,
             dd_type: "trailing-eod".into(), dd_lock: 1, time_limit: 0, daily: 2.0,
             min_days: 2, cons: 50.0, tpd: 5, split: 90.0, fee: 49.0,
-            payout_min: 0.0, payout_every: 5, payout_first: 5, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, live_after_pays: 0, live_after_paid: 0.0, pay_max: false, cushion: false,
+            payout_min: 0.0, payout_every: 5, payout_first: 5, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, live_after_pays: 0, live_after_paid: 0.0, live_after_total_pays: 0, live_chance: 100.0, accounts: 1, pay_max: false, cushion: false,
         };
         // (the same three walks the removed firm scorer ran, called directly)
         let chal = challenge_stats_e(Edge::Trades(&rs), &ts, 0.75, SCORE_CHAL_SIMS, 12345);
@@ -985,7 +1028,7 @@ mod tests {
             type_: "2step".into(), account: 50000.0, p1: 10.0, p2: 5.0, maxdd: 10.0,
             dd_type: "static".into(), dd_lock: 0, time_limit: 0, daily: 5.0,
             min_days: 4, cons: 0.0, tpd: 5, split: 80.0, fee: 375.0,
-            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, live_after_pays: 0, live_after_paid: 0.0, pay_max: false, cushion: false,
+            payout_min: 0.0, payout_every: 0, payout_first: 0, payout_buffer: 0.0, payout_cap: 0.0, payout_cap_amt: 0.0, payout_cons: 0.0, win_days: 0, win_amt: 0.0, live_after_pays: 0, live_after_paid: 0.0, live_after_total_pays: 0, live_chance: 100.0, accounts: 1, pay_max: false, cushion: false,
         };
         let ch = challenge_stats_e(Edge::Trades(&rs), &two, 0.75, 1200, 12345);
         assert!((ch.pass - 0.8967).abs() < 0.005, "2step both {}", ch.pass);

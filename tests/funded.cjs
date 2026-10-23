@@ -104,8 +104,26 @@ function fail(m) { console.error('FAIL: ' + m); process.exitCode = 1; }
   if (!/to live/.test(live.surv)) fail('a move-to-live rule should show the share moved to live: ' + live.surv);
   else if (!/mo breach/.test(live.surv)) fail('the tile should show the breach rate a month: ' + live.surv);
   else if (live.roi === before) fail('ending accounts after 3 payouts should change the return on fees');
-  else if (!/live after 3 payouts/.test(live.firm)) fail('the firm summary should name the move-to-live rule: ' + live.firm);
+  else if (!/live-eligible after 3 payouts/.test(live.firm)) fail('the firm summary should name the live rule: ' + live.firm);
   else console.log('ok: live after 3 payouts: ' + live.surv.replace(/\s+/g, ' ') + ' | ' + live.roi.replace(/\s+/g, ' '));
+  // 2.23.0: eligible is not moved - a 50% chance per payout, and a rule across accounts
+  await page.evaluate(() => {
+    const set = (id, v) => { const e = document.getElementById(id); e.value = String(v); e.dispatchEvent(new Event('input', { bubbles: true })); };
+    set('fLiveChance', 50); set('fLiveTotal', 10);
+  });
+  await new Promise(r => setTimeout(r, 1500));
+  const half = await page.evaluate(() => ({ surv: document.getElementById('fSurv').innerText, roi: document.getElementById('fRoi').innerText, firm: document.getElementById('firmSum').textContent, note: document.getElementById('optNote').innerText }));
+  // eligible accounts are moved later at 50% a payout, so they last longer
+  const lasts = (t) => parseFloat((t.match(/lasts ~([\d.]+)/) || [])[1]);
+  if (!(lasts(half.roi) > lasts(live.roi))) fail('a 50% chance should keep accounts longer than always: ' + half.roi + ' vs ' + live.roi);
+  else if (!/10 across accounts \(50% moved per payout\)/.test(half.firm)) fail('the firm summary should name the chance and the across-accounts rule: ' + half.firm);
+  else console.log('ok: 50% chance per payout: ' + half.surv.replace(/\s+/g, ' '));
+  if (half.note && !/treated as lost/.test(half.note) && !/No size makes/.test(half.note)) fail('the note should say the leftover at a move is lost: ' + half.note);
+  await page.evaluate(() => {
+    const set = (id, v) => { const e = document.getElementById(id); e.value = String(v); e.dispatchEvent(new Event('input', { bubbles: true })); };
+    set('fLiveChance', 100); set('fLiveTotal', 0);
+  });
+  await new Promise(r => setTimeout(r, 700));
   await page.evaluate(() => { const e = document.getElementById('fLivePays'); e.value = '0'; e.dispatchEvent(new Event('input', { bubbles: true })); });
   await new Promise(r => setTimeout(r, 700));
   // per account relabels (2.21.0: there is no year - an account ends when it breaches or moves to live)
