@@ -46,8 +46,12 @@ function ok(m) { console.log('ok - ' + m); }
       Object.entries(f).forEach(([k, v]) => set(k, v));
       [...document.querySelectorAll('.tabs button')].find((b) => /decision/i.test(b.textContent))?.click();
     }, fields);
-    // the full-quality pass lands 250ms after the last input; give it room
+    // the full-quality pass lands 250ms after the last input; give it room - and
+    // since 2.21.0 the eval-size curve is computed in the background, so wait
+    // for the tile to hold a number rather than its placeholder (a fixed wait
+    // read an empty tile on a slow CI machine)
     await new Promise((r) => setTimeout(r, 1400));
+    await page.waitForFunction(() => { const e = document.getElementById('dEvalSize'); return e && !e.querySelector('.skel') && /%|no size|n\/a|thin/i.test(e.innerText); }, { timeout: 120000, polling: 250 }).catch(() => {});
     return page.evaluate(() => ({
       size: document.getElementById('dEvalSize').innerText.replace(/\s+/g, ' ').trim(),
       title: document.getElementById('dEvalSize').title,
