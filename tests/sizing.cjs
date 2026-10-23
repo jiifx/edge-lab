@@ -37,7 +37,7 @@ const ok = (m) => console.log('ok: ' + m);
   });
   // the robust check runs in the background: wait for the suggestions to resolve
   // the Balanced row - its own, or merged into Best ROI's ("Best ROI = Balanced")
-  await page.evaluate(() => { window.__balRow = () => [...document.querySelectorAll('#optTable tr[data-sug]')].find((x) => x.querySelector('b').textContent.split(' = ').includes('Balanced')); });
+  await page.evaluate(() => { window.__balRow = () => [...document.querySelectorAll('#optTable tr[data-sug]')].find((x) => x.querySelector('b').textContent.split(' = ').some((n) => n.startsWith('90% survival'))); });
   try { await page.waitForFunction(() => window.__balRow() && /\/10 edges/.test(document.getElementById('fPeak').textContent), { timeout: 150000, polling: 500 }); }
   catch { fail('the balanced size never resolved'); }
   const f = await page.evaluate(() => {
@@ -50,8 +50,9 @@ const ok = (m) => console.log('ok: ' + m);
   if (!/9 of 10 edges/.test(f.why)) fail('Balanced must say how sure it is: ' + f.why);
   if (!/unbreached/.test(f.why)) fail('2.21.0: survival is "unbreached" over the account life, not a year: ' + f.why);
   // 2.20.0: the headline tile is Best ROI, robust in the same way
-  if (f.label !== 'Best ROI size') fail('the headline tile should be Best ROI size, is "' + f.label + '"');
-  if (!/plausible versions of your edge/.test(f.title) || !/fees/.test(f.title)) fail('the Best ROI tooltip must state the robustness and the fees: ' + f.title);
+  if (f.label !== 'Size at your target') fail('the headline tile should be Size at your target, is "' + f.label + '"');
+  if (Math.abs(parseFloat(f.text) - f.bal) > 0.001) fail('the tile and the 90% row must name the same size: ' + f.text + ' vs ' + f.bal);
+  if (!/plausible versions of/.test(f.title) || !/per \$1/.test(f.title)) fail('the tile tooltip must state the robustness and the return per $1: ' + f.title);
   else ok('Best ROI tile: ' + f.text.replace(/\n/g, ' | '));
 
   // Challenge eval pick on the Decision tab, after its robust check
@@ -67,7 +68,7 @@ const ok = (m) => console.log('ok: ' + m);
   await wait(4000);
   const v = await page.evaluate(() => { const r = document.querySelector('#ddRisk .rv'); return { cls: r ? r.className : '', text: document.getElementById('ddRisk').innerText }; });
   if (/cell-(go|stop)/.test(v.cls)) fail('Validate must not grade the Funded risk with its own model: ' + v.cls);
-  if (!/balanced size is \d+\.\d+%/.test(v.text) || !/firm.s own rules/.test(v.text)) fail('Validate should quote the Funded balanced size and say why it differs: ' + v.text);
+  if (!/survival target is \d+\.\d+%/.test(v.text) || !/firm.s own rules/.test(v.text)) fail('Validate should quote the Funded size at your survival target and say why it differs: ' + v.text);
   else ok('Validate: ' + v.text.replace(/\n/g, ' | ').slice(0, 260));
 
   if (errs.length) fail('page errors: ' + errs.join(' | '));

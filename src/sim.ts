@@ -13,7 +13,7 @@ import { ddJob, effectiveN, fitBlock, overshootProfile, maxRiskForLimit, zFor, w
 // same question about a BOUND firm, and two copies of a rule is how this app
 // previously ended up quoting one firm two different numbers on two tabs. One
 // implementation, both callers. See the header of plan.ts.
-import { sharesAt, floorAt, optSettings, setOpt, resetOpt, isDefault, applyPayModel, econCurve, slotEcon, SlotEcon, plateauLo, pickBestRoi, pickMostIncome, pickMaxPayout, pickBalancedAt, pickPerCount, PortfolioStat } from "./optimize";
+import { sharesAt, floorAt, optSettings, setOpt, resetOpt, isDefault, applyPayModel, econCurve, slotEcon, SlotEcon, plateauLo, pickMaxEv, pickMaxPayout, pickBalancedAt, pickPerCount, PortfolioStat, SURV_PRESETS } from "./optimize";
 import { riskGrid, pickFundedSize, pickEvalSize, PLATEAU_TOL, SAFE_SURV, PASS_BAR, PLAN_MIN_N, Band, bandOf, bandText, resampleRecord, plausibleRecord, pickBalanced, ROBUST_CONF, ROBUST_DRAWS, ROBUST_SIMS, ROBUST_EVAL_SIMS } from "./plan";
 
 // the panel ids are "p-" + tab; kept in one place so adding a tab cannot
@@ -786,7 +786,7 @@ function renderDD(n: number, nEff: number) {
       // Now it states the difference and quotes the Funded tab's answer instead.
       (!view.PROP ? "" : " &middot; this counts every peak-to-trough fall against the limit. The Funded tab applies your firm&rsquo;s own rules " +
         "(where the floor sits, the daily limit, withdrawals), so its sizes differ" +
-        (lastBalanced != null ? ": its balanced size is <b>" + lastBalanced.toFixed(2) + "%</b>" : "") +
+        (lastBalanced != null ? ": its size at your " + Math.round(optSettings().survTarget * 100) + "% survival target is <b>" + lastBalanced.toFixed(2) + "%</b>" : "") +
         ". Your Funded tab risk is " + curRisk.toFixed(2) + "%.") + "</div></div>";
   void n; void nEff;
 }
@@ -1433,9 +1433,18 @@ interface FModel {
   fine: FineCurve | null; fEcon: SlotEcon[];
   mat: number[][] | null;                 // not-breached share, plausible record x fine size
   roiMat: number[][] | null;              // return per fee $, same layout
-  sharesT: number[]; roiFloor: number[];  // per fine size; up to the robust span
-  best: number; income: number; bal: number; maxPay: number;   // fine indices, -1 = none
+  roiFloor: number[];                     // per fine size, up to the robust span
+  ev: number; maxPay: number;             // fine indices, -1 = none
+  safe: { t: number; i: number }[];       // per survival level: the largest size keeping it (-1 = none)
+  tgtI: number;                           // the size at YOUR survival target
   capped: boolean; pending: boolean;
+}
+// The survival levels every sizing table offers (2.22.0), plus the user's own
+// target when it is not one of them, safest first.
+function survLevels(target: number): number[] {
+  const l = [...SURV_PRESETS];
+  if (!l.some((t) => Math.abs(t - target) < 1e-9)) l.push(target);
+  return l.sort((x, y) => y - x);
 }
 function fundedModel(): FModel {
   const { d, fresh } = ensureCurve();
@@ -1448,19 +1457,21 @@ function fundedModel(): FModel {
   // A sizing instruction from a record the app will not call an edge is a guess.
   const thin = !!S.trades && S.trades.length < PLAN_MIN_N;
   const capped = payModel().payMax && (F.payoutCapAmt || 0) > 0;
-  const empty: FModel = { d, noEdge, thin, rc, T, spm, econ, fine: null, fEcon: [], mat: null, roiMat: null, sharesT: [], roiFloor: [], best: -1, income: -1, bal: -1, maxPay: -1, capped, pending: false };
+  const levels = survLevels(o.survTarget);
+  const empty: FModel = { d, noEdge, thin, rc, T, spm, econ, fine: null, fEcon: [], mat: null, roiMat: null, roiFloor: [], ev: -1, maxPay: -1,
+    safe: levels.map((t) => ({ t, i: -1 })), tgtI: -1, capped, pending: false };
   // a curve still computing (none yet, or the previous firm's/edge's on screen)
   if (!fresh) return { ...empty, noEdge: expectancy() <= 0, pending: expectancy() > 0 && !thin };
   if (noEdge || thin) return empty;
-  // The fine grid runs to one step past the coarse peak of income per month -
-  // past it a size earns less and dies more - and the robust pass to one step
-  // past whichever is later: the coarse peak of return per fee $, or the last
-  // size still clearing the survival target.
-  const argmax = (v: number[]) => v.reduce((b, x, i) => (x > v[b] ? i : b), 0);
+  // The fine grid runs to one step past whichever is later: the coarse peak of
+  // expected profit per account, or the last size still keeping the loosest
+  // survival level. Past both, a size earns less AND dies more.
+  const argmax = (v: number[]) => v.reduce((bi, x, i) => (x > v[bi] ? i : bi), 0);
   const last = d.risks.length - 1;
-  const upInc = Math.min(last, Math.max(argmax(econ.map((e) => e.perMonth)), argmax(econ.map((e) => e.roi))) + 1);
+  const loosest = levels[levels.length - 1];
   let lastSafe = 0;
-  d.surv.forEach((s2, i) => { if (s2 >= o.survTarget) lastSafe = i; });
+  d.surv.forEach((s2, i) => { if (s2 >= loosest) lastSafe = i; });
+  const upInc = Math.min(last, Math.max(argmax(econ.map((e) => e.net)), lastSafe) + 1);
   const upRob = Math.min(upInc, lastSafe + 1);
   const fine = fineCurve(d.key + "|" + upInc, d.risks[upInc]);
   if (!fine) return { ...empty, pending: true };
@@ -1477,38 +1488,42 @@ function fundedModel(): FModel {
     const c = fundedCurve([fine.sizes[i]], FUND_ROBUST_SIMS, T);
     return [c.surv[0], slotEcon(c.prof[0], c.life[0], recEval.pct, recEval.fundSteps, spm).roi];
   }, FUND_ROBUST_DRAWS);
-  const fineIncome = pickMostIncome(fEcon.map((e) => e.perMonth));
+  // Max EV needs no robust pass: the most expected profit per account after
+  // what it cost to get funded, at the measured edge.
+  const ev = pickMaxEv(fEcon.map((e) => e.net));
   // payouts a FUNDED month: past the knee a capped firm pays no more often
   const maxPay = capped ? pickMaxPayout(fine.paysMean.map((p, i) => (fEcon[i].liveMonths > 0 ? p / fEcon[i].liveMonths : 0))) : -1;
-  if (!raw) return { ...empty, fine, fEcon, income: fineIncome, maxPay, pending: true };
+  if (!raw) return { ...empty, fine, fEcon, ev, maxPay, pending: true };
   const mat = raw.map((row) => row.map((x) => x[0]));
   const roiMat = raw.map((row) => row.map((x) => x[1]));
-  const sharesT = sharesAt(mat, o.survTarget);
   const roiFloor = floorAt(roiMat, o.conf);
-  // Balanced's test, per size: the survival target at the measured edge AND in
-  // `conf` of plausible versions of it. Best ROI is capped by the same test.
-  const ok = roiFloor.map((_, i) => fine.surv[i] >= o.survTarget && (sharesT[i] ?? 0) >= o.conf);
-  return {
-    d, noEdge, thin, rc, T, spm, econ, fine, fEcon, mat, roiMat, sharesT, roiFloor,
-    best: pickBestRoi(roiFloor, ok),
-    income: fineIncome,
-    bal: pickBalancedAt(fine.surv, sharesT, nRob - 1, o.survTarget, o.conf),
-    maxPay, capped, pending: false,
-  };
+  // each survival level: the largest size keeping it at the measured edge AND in
+  // `conf` of plausible versions of it (the old Balanced test, per level)
+  const safe = levels.map((t) => ({ t, i: pickBalancedAt(fine.surv, sharesAt(mat, t), nRob - 1, t, o.conf) }));
+  const tgt = safe.find((x) => Math.abs(x.t - o.survTarget) < 1e-9);
+  return { d, noEdge, thin, rc, T, spm, econ, fine, fEcon, mat, roiMat, roiFloor, ev, maxPay, safe, tgtI: tgt ? tgt.i : -1, capped, pending: false };
 }
 
 // Every optimization's size, in one list: the chart markers, the Funded
-// suggestions table and the Decision plans all read this.
+// suggestions table and the Decision plans all read this. 2.22.0: the survival
+// levels (safest first), Max payout where the firm caps payouts in dollars, and
+// Max EV. "Most income" - the growth-maximising, Kelly-like pick - is gone: on a
+// prop account it mostly meant sizing to blow up and re-buy.
 interface Sug { key: string; name: string; why: string; i: number; r: number; color: string }
 function suggestions(m: FModel): Sug[] {
   const o = optSettings(), out: Sug[] = [];
   const fine = m.fine;
   if (m.noEdge || m.thin || !fine || m.pending) return out;
-  const conf10 = Math.round(o.conf * 10), tgt = Math.round(o.survTarget * 100);
-  if (m.best >= 0) out.push({ key: "best", name: "Best ROI", why: "most $ back per $1 of fees, " + tgt + "% unbreached, in " + conf10 + " of 10 edges", i: m.best, r: fine.sizes[m.best], color: css("--go-ink") });
-  if (m.bal >= 0) out.push({ key: "balanced", name: "Balanced", why: "largest size with " + tgt + "% unbreached, in " + conf10 + " of 10 edges", i: m.bal, r: fine.sizes[m.bal], color: css("--ink") });
+  const conf10 = Math.round(o.conf * 10);
+  m.safe.forEach(({ t, i }) => {
+    if (i < 0) return;
+    const pct = Math.round(t * 100), mine = Math.abs(t - o.survTarget) < 1e-9;
+    out.push({ key: "s" + pct, name: pct + "% survival" + (mine ? " \u2605" : ""),
+      why: "largest size keeping " + pct + "% of accounts unbreached, in " + conf10 + " of 10 edges" + (mine ? " - your target" : ""),
+      i, r: fine.sizes[i], color: css(mine ? "--go-ink" : "--ink") });
+  });
   if (m.maxPay >= 0) out.push({ key: "maxpay", name: "Max payout", why: "least size that takes the " + money(F.payoutCapAmt || 0) + " max as often as any size", i: m.maxPay, r: fine.sizes[m.maxPay], color: css("--caution-ink") });
-  if (m.income >= 0) out.push({ key: "income", name: "Most income", why: "most net $ a month per slot; no survival bar", i: m.income, r: fine.sizes[m.income], color: css("--stop-ink") });
+  if (m.ev >= 0) out.push({ key: "ev", name: "Max EV", why: "most expected profit per account after the cost to get funded (also the most $ back per $1); no survival bar", i: m.ev, r: fine.sizes[m.ev], color: css("--stop-ink") });
   // two optimizations that land on the same size are one row, named for both
   const merged: Sug[] = [];
   out.forEach((g) => {
@@ -1623,9 +1638,10 @@ function renderFunded() {
     $("fRoi").className = "v " + (curE.roi >= 2 ? "cell-go" : curE.roi >= 1 ? "cell-caution" : "cell-stop");
   }
 
-  // ---- the Best ROI tile ----
+  // ---- the size at YOUR survival target (2.22.0) ----
   const fine = m.fine;
-  lastBalanced = fine && m.bal >= 0 ? fine.sizes[m.bal] : null;
+  lastBalanced = fine && m.tgtI >= 0 ? fine.sizes[m.tgtI] : null;
+  const tgtPct = Math.round(o.survTarget * 100);
   if (m.noEdge) {
     $("fPeak").textContent = "n/a - no size makes this edge pay";
     $("fPeak").className = "v cell-stop";
@@ -1638,18 +1654,18 @@ function renderFunded() {
     $("fPeak").innerHTML = '<span class="skel"></span><div class="sub">checking against your edge&rsquo;s range&hellip;</div>';
     $("fPeak").className = "v";
     $("fPeak").title = "";
-  } else if (m.best >= 0) {
-    const i = m.best;
-    $("fPeak").innerHTML = fine.sizes[i].toFixed(2) + "%" + '<div class="sub">' + roiTxt(m.roiFloor[i]) + "/$1 in " + Math.round(o.conf * 10) +
-      "/10 edges &middot; " + Math.round(fine.surv[i] * 100) + "% ok</div>";
+  } else if (m.tgtI >= 0) {
+    const i = m.tgtI;
+    $("fPeak").innerHTML = fine.sizes[i].toFixed(2) + "%" + '<div class="sub">' + roiTxt(m.fEcon[i].roi) + "/$1 &middot; " + roiTxt(i < m.roiFloor.length ? m.roiFloor[i] : 0) +
+      " in " + Math.round(o.conf * 10) + "/10 edges</div>";
     $("fPeak").className = "v cell-go";
-    $("fPeak").title = "Best ROI: among the sizes that keep " + Math.round(o.survTarget * 100) + "% of accounts unbreached (at your measured edge and in " +
-      Math.round(o.conf * 100) + "% of plausible versions of it), the one whose return per $1 of fees - payouts over the account's life against the cost to get it funded - is highest in " +
-      Math.round(o.conf * 100) + "% of plausible versions of your edge. At your measured edge it returns " + roiTxt(m.fEcon[i].roi) + " per $1.";
+    $("fPeak").title = "The largest size that keeps " + tgtPct + "% of accounts unbreached, at your measured edge and in " + Math.round(o.conf * 100) +
+      "% of plausible versions of it. Each account returns " + roiTxt(m.fEcon[i].roi) + " per $1 it cost to get funded at your measured edge, and at least " +
+      roiTxt(i < m.roiFloor.length ? m.roiFloor[i] : 0) + " in " + Math.round(o.conf * 100) + "% of plausible versions of it.";
   } else {
-    $("fPeak").innerHTML = "none keeps " + Math.round(o.survTarget * 100) + "%" + '<div class="sub">in ' + Math.round(o.conf * 10) + "/10 edges</div>";
+    $("fPeak").innerHTML = "none keeps " + tgtPct + "%" + '<div class="sub">in ' + Math.round(o.conf * 10) + "/10 edges</div>";
     $("fPeak").className = "v cell-stop";
-    $("fPeak").title = "No size keeps " + Math.round(o.survTarget * 100) + "% of accounts unbreached in " + Math.round(o.conf * 100) + "% of plausible versions of your edge. Lower the survival target, or log more trades to narrow the range.";
+    $("fPeak").title = "No size keeps " + tgtPct + "% of accounts unbreached in " + Math.round(o.conf * 100) + "% of plausible versions of your edge. Lower the survival target, or log more trades to narrow the range.";
   }
 
   // ---- settings readout ----
@@ -1713,7 +1729,8 @@ function renderFunded() {
   $("optNote").innerHTML = m.noEdge || m.thin ? "" :
     "Each account costs " + money(m.rc.cost) + (m.rc.days ? " and ~" + m.rc.days + " trading days" : "") + " to get funded (Challenge tab&rsquo;s " + Number($i("src").value).toFixed(2) +
     "% eval risk), then trades until it breaches or ends: " + endText() + "." +
-    (atTop(m, m.income) ? ' <b class="cell-caution">Most income sits at the top of the sizes tested (' + m.d.risks[m.d.risks.length - 1].toFixed(1) +
+    (m.safe.some((x) => x.i < 0) ? " No size keeps " + m.safe.filter((x) => x.i < 0).map((x) => Math.round(x.t * 100) + "%").join(" or ") + " of accounts unbreached in " + Math.round(o.conf * 10) + " of 10 versions of your edge." : "") +
+    (atTop(m, m.ev) ? ' <b class="cell-caution">Max EV sits at the top of the sizes tested (' + m.d.risks[m.d.risks.length - 1].toFixed(1) +
       "%): what stops you there is outside the model - the firm&rsquo;s limits on size, slippage, account caps, and whether the edge holds at that size.</b>" : "");
 
   // ---- the chart: return per $1 of fees vs size, every suggestion marked ----
@@ -1802,10 +1819,23 @@ function renderFunded() {
 // budget in a bad run, and how often no funded account is up at all; then the
 // best-ROI size whose all-down risk stays within 1 - the survival target.
 const ACC_COUNTS = [1, 2, 3, 5, 10, 20, 30, 50];
-function accCounts(max: number): number[] {
-  const c = ACC_COUNTS.filter((n) => n <= max);
-  if (c[c.length - 1] !== max) c.push(max);
-  return c;
+// Counts compared: the standard steps up to at least 5 - so one account still
+// sees what more would do - and always YOUR count (2.22.0).
+function accCounts(n: number): number[] {
+  const top = Math.max(5, n);
+  const c = ACC_COUNTS.filter((x) => x <= top);
+  if (!c.includes(n)) c.push(n);
+  return c.sort((a, b) => a - b);
+}
+// The best size for YOUR account count, off the Several accounts run: the most
+// $ back per $1 whose chance of every account being down at once stays under
+// 1 - the survival target. Null while that run computes.
+function bestForN(m: FModel): { stat: PortfolioStat; ok: boolean } | null {
+  const o = optSettings();
+  const all = ensurePortfolio(m);
+  if (!all) return null;
+  const j = accCounts(o.maxAccounts).indexOf(o.maxAccounts);
+  return j >= 0 && all[j] ? pickPerCount(all[j], 1 - o.survTarget) : null;
 }
 interface AccCache { key: string; rows: PortfolioStat[][] | null }
 let accCache: AccCache = { key: "", rows: null };
@@ -1814,7 +1844,7 @@ function ensurePortfolio(m: FModel): PortfolioStat[][] | null {
   const o = optSettings();
   if (!m.fine) return null;
   // every second fine size, every third past ten accounts: the cost grows with the count
-  const stride = o.maxAccounts > 10 ? 3 : 2;
+  const stride = Math.max(5, o.maxAccounts) > 10 ? 3 : 2;
   const bases = m.fine.sizes.filter((_, i) => i % stride === 0);
   const counts = accCounts(o.maxAccounts);
   const key = m.d.key + "|" + bases.join(",") + "|" + counts.join(",") + o.copy + o.staggerDays + o.rebuy + "|" + m.rc.fundSteps + "|" + Math.round(m.rc.cost) + "|" + m.rc.pass.toFixed(4);
@@ -1870,13 +1900,13 @@ function renderAccounts(m: FModel, mo: boolean) {
   const tbl = $("accTable");
   if (m.noEdge || m.thin) { tbl.innerHTML = '<p class="small muted">' + (m.noEdge ? "No size makes this edge pay." : "Too few trades to size.") + "</p>"; $("accRead").textContent = ""; return; }
   const all = ensurePortfolio(m);
-  if (!all) { tbl.innerHTML = '<span class="skel"></span><p class="small muted">simulating up to ' + o.maxAccounts + " accounts&hellip;</p>"; $("accRead").textContent = ""; return; }
+  if (!all) { tbl.innerHTML = '<span class="skel"></span><p class="small muted">simulating up to ' + Math.max(5, o.maxAccounts) + " accounts&hellip;</p>"; $("accRead").textContent = ""; return; }
   const picks = all.map((stats) => pickPerCount(stats, allDownMax)).filter((p): p is { stat: PortfolioStat; ok: boolean } => !!p);
   const per = (v: number) => money(mo ? v / months : v);
   tbl.innerHTML = '<div class="scroll"><table class="breakdown"><thead><tr><th>Accounts</th><th>Size each</th><th>Payouts ' + (mo ? "/mo" : "/" + months + " mo") + "</th>" +
     '<th title="Every account bought, plus every replacement">Fees ' + (mo ? "/mo" : "/" + months + " mo") + "</th><th>Net " + (mo ? "/mo" : "/" + months + " mo") + '</th><th title="Payouts per $1 of fees">$ per $1</th>' +
     '<th title="Share of runs with a moment when NO funded account is up">All down</th><th title="Fees over ' + months + ' months in a bad run (95th percentile): the budget to hold for evaluations">Fee budget</th><th></th></tr></thead><tbody>' +
-    picks.map(({ stat: r, ok }) => '<tr data-n="' + r.n + '"' + (ok ? "" : ' class="warnrow"') + "><td>" + r.n + "</td><td>" + r.base.toFixed(2) + "%</td><td>" + per(r.pay) +
+    picks.map(({ stat: r, ok }) => '<tr data-n="' + r.n + '"' + (r.n === o.maxAccounts ? ' class="rec"' : ok ? "" : ' class="warnrow"') + "><td>" + (r.n === o.maxAccounts ? "&#9733; " : "") + r.n + "</td><td>" + r.base.toFixed(2) + "%</td><td>" + per(r.pay) +
       "</td><td>" + per(r.fees) + "</td><td>" + per(r.net) + "</td><td>" + roiTxt(r.roi) + "</td><td" + (ok ? "" : ' class="cell-stop"') + ">" + pctEst(r.pAllDown) +
       "</td><td>" + money(r.fees95) + '</td><td><button type="button" class="usebtn" data-use="' + r.base.toFixed(2) + '">Use</button></td></tr>').join("") +
     "</tbody></table></div>";
@@ -1887,12 +1917,12 @@ function renderAccounts(m: FModel, mo: boolean) {
   const first = picks[0], lastP = picks[picks.length - 1];
   if (!first || !lastP) { $("accRead").textContent = ""; return; }
   const moves = lastP.stat.base > first.stat.base + 1e-9;
-  $("accRead").innerHTML = "Each row is the best-ROI size whose chance of every account being down at once stays under " + Math.round(allDownMax * 100) + "%, at your measured edge (Best ROI above also has to hold in " + Math.round(o.conf * 10) + " of 10 versions of it, so it can be smaller). " +
+  $("accRead").innerHTML = "&#9733; = the accounts you run (" + o.maxAccounts + "), which the Decision tab plans for. Each row is the size with the most $ back per $1 whose chance of every account being down at once stays under " + Math.round(allDownMax * 100) + "%, at your measured edge (the survival sizes above also have to hold in " + Math.round(o.conf * 10) + " of 10 versions of it, so they can be smaller). " +
     (moves
       ? "More accounts cover for each other, so each can run bigger: <b>" + first.stat.base.toFixed(2) + "%</b> on one account, <b>" + lastP.stat.base.toFixed(2) + "%</b> each on " + lastP.stat.n + "."
       : o.copy && o.staggerDays === 0
         ? "Copy-traded and bought the same day, the accounts rise and fall together, so the size does not change with the count - more accounts multiply income, fees and budget together. Stagger the purchases or trade them independently to make them cover for each other."
-        : "Here the size does not change with the count: one account already runs the best-ROI size within the risk bar. More accounts multiply income, fees and budget.") +
+        : "Here the size does not change with the count: one account already runs the best size within the risk bar. More accounts multiply income, fees and budget.") +
     (picks.some((p) => !p.ok) ? " Grey rows: no size keeps every account from being down at once that rarely; the safest is shown." : "");
 }
 
@@ -2072,13 +2102,35 @@ function renderDecision() {
   // final pass. Whole attempts, whole months - this is a floor for planning,
   // never a forecast to two decimals.
   const bud = $("dBudget");
+  const oD = optSettings(), nD = oD.maxAccounts;
+  setNum("nAccD", String(nD));
+  $("dBudgetHead").textContent = nD > 1 ? "Budget to get " + nD + " accounts funded" : "Budget to funded";
   if (F.instant) {
     bud.innerHTML = '<div class="tile" style="grid-column:1/-1"><div class="k">Nothing to budget</div><div class="v" style="font-size:13px;font-weight:400">Instant funding &middot; one purchase, ' +
       money(cf.cost) + ".</div></div>";
   } else if (pPass <= 0.005 || expectancy() <= 0) {
     bud.innerHTML = '<div class="tile" style="grid-column:1/-1"><div class="k">No budget to plan</div><div class="v" style="font-size:13px;font-weight:400">Pass odds too low to budget.</div></div>';
   } else {
+    // Several accounts (2.22.0): copy-traded evaluations take the same trades, so
+    // they pass or fail TOGETHER - the budget is N times one account's streak.
+    // Independent ones diversify: the total of N separate streaks, simulated.
+    const indepQ = nD > 1 && !oD.copy ? (() => {
+      const buy = evalBuyer(pPass, st.meanFailDays, st.medDays, st.meanDaysAll, false);
+      const rnd = mulberry(4242), cash: number[] = [], days: number[] = [];
+      for (let k = 0; k < 4000; k++) {
+        let c = 0, t = 0;
+        for (let a = 0; a < nD; a++) { const pu = buy(rnd); c += pu.cost; t = Math.max(t, pu.steps); }
+        cash.push(c); days.push(t / tpdOf());
+      }
+      cash.sort((a, b) => a - b); days.sort((a, b) => a - b);
+      return (q: number) => ({ cash: cash[Math.min(cash.length - 1, Math.floor(q * cash.length))], days: days[Math.min(days.length - 1, Math.floor(q * days.length))] });
+    })() : null;
     bud.innerHTML = [0.5, 0.8, 0.95].map((q) => {
+      if (indepQ) {
+        const r = indepQ(q), months = Math.max(1, Math.round(r.days / TRADING_DAYS_PER_MONTH));
+        return '<div class="tile"><div class="k">' + Math.round(q * 100) + '% confident</div><div class="v">' + money(r.cash) +
+          '</div><div class="ts">' + nD + " independent accounts &middot; ~" + months + " month" + (months > 1 ? "s" : "") + "</div></div>";
+      }
       const nq = Math.max(1, Math.ceil(Math.log(1 - q) / Math.log(1 - pPass)));
       const days = Math.round((nq - 1) * st.meanFailDays + st.medDays);
       const months = Math.max(1, Math.round(days / TRADING_DAYS_PER_MONTH));
@@ -2087,8 +2139,8 @@ function renderDecision() {
       const cash = F.feeMode === "monthly"
         ? F.fee * Math.max(1, Math.ceil(days / TRADING_DAYS_PER_MONTH)) + (F.activation || 0)
         : F.fee + (nq - 1) * ((F.resetFee || 0) > 0 ? (F.resetFee as number) : F.fee) + (F.activation || 0);
-      return '<div class="tile"><div class="k">' + Math.round(q * 100) + '% confident</div><div class="v">' + money(cash) +
-        '</div><div class="ts">' + nq + " attempt" + (nq > 1 ? "s" : "") + " &middot; ~" + months + " month" + (months > 1 ? "s" : "") + "</div></div>";
+      return '<div class="tile"><div class="k">' + Math.round(q * 100) + '% confident</div><div class="v">' + money(cash * nD) +
+        '</div><div class="ts">' + nq + " attempt" + (nq > 1 ? "s" : "") + (nD > 1 ? " each, together" : "") + " &middot; ~" + months + " month" + (months > 1 ? "s" : "") + "</div></div>";
     }).join("");
   }
   const dBands = ensureBands(re, rf);
@@ -2176,31 +2228,95 @@ function renderDecision() {
 // first year the way this tab prices everything: payouts at that funded size,
 // minus the expected cost to get funded at that eval size. Apply sets both
 // sliders, so the verdict above re-reads the plan.
+// The cost and time to get funded at the PLAN's eval size (the Decision tab's
+// pick), with what a simulation needs to draw attempts - cached per firm, edge
+// and size.
+let planEvalCache: { key: string; r: Replace } | null = null;
+function planEval(evalR: number): Replace {
+  const key = firmRulesKey(F) + "|" + F.account + "|" + edgeFp() + "|" + evalR.toFixed(2);
+  if (planEvalCache && planEvalCache.key === key) return planEvalCache.r;
+  const r = evalEcon(evalR, 400);
+  planEvalCache = { key, r };
+  return r;
+}
+// The tails for YOUR account count at each plan's funded size: how often all of
+// them are down at once, and the fee budget in a bad run - simulated, with each
+// purchase drawing its own failed attempts. Expected income needs no
+// simulation: it is N times one account's, whatever the correlation.
+interface PlanRisk { down: number; fees95: number }
+let planRiskCache: { key: string; risk: Record<string, PlanRisk> | null } = { key: "", risk: null };
+let planRiskSeq = 0;
+function ensurePlanRisk(m: FModel, sizes: number[], ev: Replace): Record<string, PlanRisk> | null {
+  const o = optSettings(), N = o.maxAccounts;
+  const key = m.d.key + "|" + sizes.map((r) => r.toFixed(2)).join(",") + "|" + N + o.copy + o.staggerDays + o.rebuy + "|" + Math.round(ev.cost) + "|" + ev.pass.toFixed(4);
+  if (planRiskCache.key === key) return planRiskCache.risk;
+  if (FAST) return null;
+  planRiskCache = { key, risk: null };
+  const my = ++planRiskSeq;
+  const SIMS = 60, T = m.T, stag = o.staggerDays * tpdOf();
+  const buy = evalBuyer(ev.pass, ev.meanFailDays, ev.medDays, ev.meanDaysAll, !!F.instant);
+  const out: Record<string, PlanRisk> = {};
+  let k = 0, s2 = 0, down = 0, fees: number[] = [];
+  runJob(() => {
+    if (my !== planRiskSeq) return true;
+    const p = portfolioPrefix(sizes[k], [N], T, (5501 + s2 * 0x9e3779b1) | 0, !o.copy, o.rebuy, ev.fundSteps, stag, buy)[0];
+    down += p.allDown; fees.push(p.fees);
+    if (++s2 < SIMS) return false;
+    fees.sort((a, b) => a - b);
+    out[sizes[k].toFixed(2)] = { down: down / SIMS, fees95: fees[Math.min(SIMS - 1, Math.floor(0.95 * SIMS))] };
+    s2 = 0; down = 0; fees = [];
+    return ++k >= sizes.length;
+  }, () => {
+    if (my !== planRiskSeq) return;
+    planRiskCache = { key, risk: out };
+    render();
+  });
+  return null;
+}
 function renderPlans(ea: EvalAdvice) {
   const el = $("dPlans");
   const m = fundedModel();
-  const mo = perPeriod() === "mo", perS = mo ? "/mo" : "/acct";
+  const o = optSettings(), N = o.maxAccounts;
+  const mo = perPeriod() === "mo";
+  $("dPlansHead").textContent = N > 1 ? "Plans for your " + N + " accounts" : "Plans by optimization";
   if (m.noEdge) { el.innerHTML = '<p class="small muted">No size makes this edge pay its fees back, so there is no plan to price.</p>'; $("dPlansNote").textContent = ""; return; }
   if (m.thin) { el.innerHTML = '<p class="small muted">Too few trades to size (needs ' + PLAN_MIN_N + "+).</p>"; $("dPlansNote").textContent = ""; return; }
   if (!ea.ok && ea.checking) { el.innerHTML = '<span class="skel"></span><p class="small muted">measuring every eval size&hellip;</p>'; $("dPlansNote").textContent = ""; return; }
   if (!ea.ok) { el.innerHTML = '<p class="small muted">' + (ea.why || "No eval size to plan with.") + "</p>"; $("dPlansNote").textContent = ""; return; }
-  const sugs = suggestions(m);
   if (m.pending || ea.checking || !m.fine) { el.innerHTML = '<span class="skel"></span><p class="small muted">checking every size against your edge&rsquo;s range&hellip;</p>'; $("dPlansNote").textContent = ""; return; }
   const fine = m.fine;
+  const sugs = suggestions(m);
+  // the size more accounts allow, when they cover for each other (2.22.0)
+  if (N > 1) {
+    const pk = bestForN(m);
+    if (pk && pk.ok) {
+      const i = fine.sizes.findIndex((r) => Math.abs(r - pk.stat.base) < 1e-9);
+      const same = sugs.find((g) => g.i === i);
+      if (i >= 0 && same) same.name += " = Best for " + N;
+      else if (i >= 0) sugs.unshift({ key: "bestN", name: "Best for " + N + " accounts", why: "most $ back per $1 with all " + N + " down at once under " + Math.round((1 - o.survTarget) * 100) + "% (measured edge)", i, r: pk.stat.base, color: css("--go-ink") });
+    }
+  }
   const evalR = ea.risk as number, cost = ea.cost as number;
   // the plan's own eval size sets what each account costs, and how long it takes
+  const pe = planEval(evalR);
   const per1 = pct$(1);
   const costPct = per1 > 0 ? cost / per1 : 0;
   const fundSteps = Math.max(0, ea.days || 0) * tpdOf();
-  el.innerHTML = '<div class="scroll"><table class="breakdown"><thead><tr><th>Plan</th><th>Eval size</th><th>Funded size</th><th>Not breached</th><th>Payouts ' + (mo ? "/mo" : "/acct") +
-    '</th><th title="Payouts over the account&rsquo;s life per $1 it cost to get funded at the eval size">$ per $1</th><th title="' + (mo ? "Net per month for one account slot: payouts minus the cost of each account, over the time to pass plus its funded life" : "Payouts over the account&rsquo;s life minus what it cost to get funded") + '">Net ' + perS + "</th><th></th></tr></thead><tbody>" +
+  const risk = ensurePlanRisk(m, sugs.map((g) => g.r), pe);
+  const acc = N > 1 ? " (" + N + " accts)" : "";
+  el.innerHTML = '<div class="scroll"><table class="breakdown"><thead><tr><th>Plan</th><th>Eval size</th><th>Funded size</th><th>Not breached</th><th>Payouts ' + (mo ? "/mo" + acc : "/acct") +
+    '</th><th title="Payouts over the account&rsquo;s life per $1 it cost to get funded at the eval size - the same for one account or many">$ per $1</th><th title="' + (mo ? "Net per month: payouts minus the cost of each account, over the time to pass plus its funded life" + (N > 1 ? ", for all " + N + " accounts" : "") : "Payouts over the account&rsquo;s life minus what it cost to get funded") + '">Net ' + (mo ? "/mo" + acc : "/acct") +
+    '</th><th title="Share of runs over ' + o.maxLifeMonths + ' months with a moment when none of your ' + N + " account" + (N > 1 ? "s is" : " is") + ' funded">All down</th><th></th></tr></thead><tbody>' +
     sugs.map((g) => {
       const e = slotEcon(fine.prof[g.i], fine.life[g.i], costPct, fundSteps, m.spm);
-      const net$ = pct$(mo ? e.perMonth : e.net);
-      const pays = mo ? (e.liveMonths > 0 ? fine.paysMean[g.i] / e.liveMonths : 0) : fine.paysMean[g.i];
+      // expected income is N times one account's, whatever the correlation
+      const net$ = pct$(mo ? e.perMonth * N : e.net);
+      const pays = mo ? (e.liveMonths > 0 ? (fine.paysMean[g.i] / e.liveMonths) * N : 0) : fine.paysMean[g.i];
+      const rk = risk ? risk[g.r.toFixed(2)] : null;
       return '<tr data-plan="' + g.key + '"><td><span class="mk" style="color:' + g.color + '"></span><b>' + g.name + '</b><div class="small muted">' + g.why + "</div></td>" +
         "<td>" + evalR.toFixed(2) + "%</td><td>" + g.r.toFixed(2) + "%</td><td>" + Math.round(fine.surv[g.i] * 100) + "%</td><td>" + pays.toFixed(1) +
         "</td><td>" + roiTxt(e.roi) + '</td><td class="' + (net$ > 0 ? "cell-go" : "cell-stop") + '">' + money(net$) +
+        "</td><td>" + (rk ? pctEst(rk.down) : '<span class="skel"></span>') +
         '</td><td><button type="button" class="usebtn" data-apply="' + evalR.toFixed(2) + "|" + g.r.toFixed(2) + '">Apply</button></td></tr>';
     }).join("") + "</tbody></table></div>";
   el.querySelectorAll<HTMLButtonElement>("button[data-apply]").forEach((b) => b.addEventListener("click", () => {
@@ -2208,9 +2324,14 @@ function renderPlans(ea: EvalAdvice) {
     $i("srde").value = e; $i("srde").dispatchEvent(new Event("input", { bubbles: true }));
     $i("srdf").value = f; $i("srdf").dispatchEvent(new Event("input", { bubbles: true }));
   }));
-  const o = optSettings();
-  $("dPlansNote").innerHTML = "One account at a time, replaced when it breaches or moves to live (" + endText() + "). Eval size: the quickest that still passes " + Math.round(PASS_BAR * 100) + "+ attempts in 100 in " +
-    Math.round(o.conf * 100) + "% of plausible edges (" + money(cost) + " to fund). Funded sizes and settings are the Funded tab&rsquo;s" +
+  const tgtRow = sugs.find((g) => g.key === "s" + Math.round(o.survTarget * 100));
+  const tgtRisk = tgtRow && risk ? risk[tgtRow.r.toFixed(2)] : null;
+  $("dPlansNote").innerHTML = (N > 1
+    ? "Your " + N + " accounts, " + (o.copy ? "copy-traded" : "trading independently") + (o.staggerDays > 0 ? ", bought " + o.staggerDays + " trading days apart" : ", bought together") +
+      " (Funded tab, Several accounts). The eval size does not change with the count: " + (o.copy ? "copy-traded evaluations take the same trades, so they pass or fail together and the cheapest size per account is the same" : "each account&rsquo;s cheapest eval size is the same") +
+      "; the count changes the budget below and how often everything is down at once." + (tgtRisk ? " Fees over " + o.maxLifeMonths + " months in a bad run at your target size: " + money(tgtRisk.fees95) + "." : "") + " "
+    : "One account, replaced when it breaches or moves to live (" + endText() + "). ") +
+    "Eval size: the quickest that still passes " + Math.round(PASS_BAR * 100) + "+ attempts in 100 in " + Math.round(o.conf * 100) + "% of plausible edges (" + money(cost) + " per account to fund). Funded sizes and settings are the Funded tab&rsquo;s" +
     (o.payMax ? ", withdrawing the firm&rsquo;s max each time" : ", withdrawing 5% a week") + ".";
 }
 
@@ -2504,6 +2625,7 @@ export function wireSim() {
   const setAcc = (v: number) => { setOpt({ maxAccounts: Math.max(1, Math.min(50, Math.round(v))) }); scheduleRender(); };
   $i("sAcc").addEventListener("input", function () { setNum("nAcc", this.value); setAcc(Number(this.value)); });
   $i("nAcc").addEventListener("change", function () { if (this.value !== "" && isFinite(Number(this.value))) setAcc(Number(this.value)); });
+  $i("nAccD").addEventListener("change", function () { if (this.value !== "" && isFinite(Number(this.value))) setAcc(Number(this.value)); });
   document.querySelectorAll<HTMLButtonElement>("button[data-acm]").forEach((b) =>
     b.addEventListener("click", () => { setOpt({ copy: b.getAttribute("data-acm") === "copy" }); scheduleRender(); }));
   $i("nStag").addEventListener("change", function () {

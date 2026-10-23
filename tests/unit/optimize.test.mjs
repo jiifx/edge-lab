@@ -11,7 +11,7 @@ import { buildOnce } from "./build.mjs";
 installDom();
 const E = await import(await buildOnce("optimize"));
 const { S, setFirm, fundedSim, fundedStats, portfolioSim, portfolioPrefix, mulberry, yearSteps, setPayModel, payModel, maxPayNeed, tpdOf,
-  sharesAt, floorAt, slotEcon, plateauLo, pickBestRoi, pickMostIncome, pickMaxPayout, pickBalancedAt, pickPerCount,
+  sharesAt, floorAt, slotEcon, plateauLo, pickMaxEv, SURV_PRESETS, pickMaxPayout, pickBalancedAt, pickPerCount,
   optSettings, setOpt, resetOpt, OPT_DEFAULTS } = E;
 
 const OFF = { payMax: false, cushion: false };
@@ -216,12 +216,12 @@ test("robust floors, plateaus and the picks", () => {
   // the least size within 3% of the best; nothing positive = -1
   assert.equal(plateauLo([1, 9.8, 10, 4]), 1);
   assert.equal(plateauLo([-1, -2]), -1);
-  assert.equal(pickBestRoi([2, 3.12, 3.2, 3.15], [true, true, true, true]), 1);
-  // capped by the survival test: the best size that keeps it
-  assert.equal(pickBestRoi([2, 3.12, 3.2, 3.15], [true, true, false, false]), 1);
-  assert.equal(pickBestRoi([2, 3.0, 3.2, 3.15], [true, true, false, false]), 1);
-  assert.equal(pickBestRoi([2, 3.12, 3.2], [false, false, false]), -1);
-  assert.equal(pickMostIncome([5, 9, 12, 11.8]), 2);
+  // Max EV: the least size within 3% of the most expected profit per account
+  assert.equal(pickMaxEv([5, 9, 12, 11.8]), 2);
+  assert.equal(pickMaxEv([5, 11.7, 12, 11.8]), 1);
+  assert.equal(pickMaxEv([-3, -1]), -1, "nothing nets money after fees");
+  // the standard survival levels, safest first
+  assert.deepEqual(SURV_PRESETS, [0.99, 0.95, 0.9, 0.8]);
   assert.equal(pickMaxPayout([4, 10, 10.1, 10.1]), 1, "past the knee more size takes no more max payouts");
   // Balanced: largest clearing 85% measured AND in 90% of plausible edges
   const surv = [1, 0.98, 0.94, 0.9, 0.86, 0.6], shares = [1, 1, 0.95, 0.85, 0.6, 0];
@@ -246,6 +246,8 @@ test("settings: defaults out of the box (max payout on), garbage clamped, the en
   localStorage.removeItem("pel_opt");
   assert.deepEqual(optSettings(), OPT_DEFAULTS);
   assert.equal(OPT_DEFAULTS.payMax, true);
+  assert.equal(OPT_DEFAULTS.survTarget, 0.9, "the default target is one of the presets");
+  assert.equal(OPT_DEFAULTS.maxAccounts, 1, "one account until you say otherwise");
   localStorage.setItem("pel_opt", JSON.stringify({ survTarget: 7, conf: "x", maxAccounts: 99, copy: "yes", staggerDays: -4, payMax: 1 }));
   const o = optSettings();
   assert.equal(o.survTarget, 0.99);

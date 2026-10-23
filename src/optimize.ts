@@ -12,7 +12,7 @@
 // the old 5%-a-week withdrawal habit) capped income so that most sizes looked
 // the same.
 import { LS } from "./util";
-import { SAFE_SURV, ROBUST_CONF } from "./plan";
+import { ROBUST_CONF } from "./plan";
 import { setPayModel } from "./engine";
 
 // ---------------------------------------------------------------------------
@@ -23,15 +23,15 @@ export interface OptSettings {
   cushion: boolean;     // size by the distance to the drawdown floor (else fixed %)
   survTarget: number;   // the yearly survival Balanced must clear; 1 - this caps "all down at once"
   conf: number;         // ...in this share of plausible versions of the edge
-  maxAccounts: number;  // several accounts: compare 1 up to this many (up to 50)
+  maxAccounts: number;  // the accounts you run (1-50): the Several accounts table stars it, Decision plans for it
   maxLifeMonths: number; // the longest an account is followed when no breach or move to live ends it
   copy: boolean;        // several accounts: the same trades on every account
   staggerDays: number;  // several accounts: trading days between buying each one (0 = same day)
   rebuy: boolean;       // several accounts: replace a blown account
 }
 export const OPT_DEFAULTS: OptSettings = {
-  payMax: true, cushion: false, survTarget: SAFE_SURV, conf: ROBUST_CONF,
-  maxAccounts: 5, maxLifeMonths: 24, copy: true, staggerDays: 0, rebuy: true,
+  payMax: true, cushion: false, survTarget: 0.9, conf: ROBUST_CONF,
+  maxAccounts: 1, maxLifeMonths: 24, copy: true, staggerDays: 0, rebuy: true,
 };
 const clampN = (v: unknown, lo: number, hi: number, d: number) => {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
@@ -127,17 +127,13 @@ export function plateauLo(vals: number[], tol = 0.03): number {
   for (let i = 0; i <= best; i++) if (vals[i] >= cut) return i;
   return best;
 }
-// Best ROI (the default): the most $ back per $1 of fees that holds in `conf`
-// of plausible versions of the edge - the robust floor, not the point estimate -
-// among the sizes that keep the survival target (`ok`, Balanced's own test).
-// Uncapped, a strong edge on a cheap evaluation made this the biggest size
-// tested: fees were too small next to payouts to hold anything back.
-export function pickBestRoi(roiFloor: number[], ok: boolean[]): number {
-  return plateauLo(roiFloor.map((v, i) => (ok[i] ? v : -Infinity)));
-}
-// Most income: the most net $ a slot earns (payouts minus every fee), at the
-// measured edge. The aggressive end, shown so the trade-off is visible.
-export function pickMostIncome(net: number[]): number { return plateauLo(net); }
+// Max EV (2.22.0): the most expected profit per account after what it cost to
+// get funded. That cost does not depend on the FUNDED size, so this is also the
+// most $ back per $1 - and it is not the reckless end: an account that blows up
+// early stops paying, so over its life the biggest sizes earn less.
+export function pickMaxEv(net: number[]): number { return plateauLo(net); }
+// The survival levels every sizing table offers, safest first.
+export const SURV_PRESETS = [0.99, 0.95, 0.9, 0.8];
 // Max payout: with a dollar cap per payout, past some size an account already
 // takes the full cap at almost every window and more size only adds risk. The
 // least size that gets (within 3%) the most max payouts a funded month.

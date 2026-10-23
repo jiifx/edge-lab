@@ -84,17 +84,17 @@ To update, install the new version over the old one. Your journal is not touched
 - **Challenge** pass odds, and the eval size that funds you cheapest and fastest
 - **Funded** is a sizing optimizer that treats funded accounts as a business: each account is bought,
   withdraws, and ends (it breaches, the firm moves it to live, or a max life of 24 months runs out),
-  then is replaced. It measures **$ back per $1 of fees** per account at every size and suggests **Best
-  ROI** (capped at your survival target), **Balanced**, **Max payout** and **Most income** (marked on the
-  chart, one click to use), each robust to your edge being an estimate. Payouts take the firm's **max
-  each time** on its own schedule (or small weekly sweeps); sizing is **fixed %** or **cushion-based**
-  (risk scales with distance to the drawdown floor), compared side by side. Defaults work out of the
-  box; everything is configurable
+  then is replaced. It suggests the largest size for **99% / 95% / 90% / 80% survival** (your target
+  starred), **Max payout** for firms with a dollar cap, and **Max EV** (the most expected profit per
+  account after fees), each robust to your edge being an estimate, marked on the chart and one click
+  to use. Payouts take the firm's **max each time** on its own schedule (or small weekly sweeps);
+  sizing is **fixed %** or **cushion-based** (risk scales with distance to the drawdown floor),
+  compared side by side
 - **Several accounts** (up to 50): copy-traded or independent, bought the same day or staggered, ended
   accounts replaced - per account count, the size, income, fees, fee budget and the chance every
   account is down at once
-- **Decision** net expected value of buying in, and a plan per optimization (eval + funded size, $ per
-  $1 of fees)
+- **Decision** net expected value of buying in, the budget to get all your accounts funded, and a
+  plan per suggestion for your account count (eval + funded size, income, $ per $1, all-down risk)
 - **Rule guard**: live distance to a bound account's drawdown floor, daily limit and target
 
 The explanations live in the **user manual** (the **?** button in the app, or
