@@ -1,7 +1,7 @@
 // Simulator: edge bar, firm bar, five tabs, theme, persistence, mode switch.
 import { $, $i, $s, $c, css, fit, mulberry, LS, hooks, ask, toast, esc, chartTip, pctEst, mixHex, runJob } from "./util";
 import { S, F, PRESETS, setFirm, clampFirm, withEdge, view, money, amt, ddLabel, gateLabel } from "./state";
-import { portfolioPrefix, payModel, evalBuyer } from "./engine";
+import { portfolioPrefix, payModel, evalBuyer, Tape, fundSlot } from "./engine";
 import { sampleR, expectancy, sigmaR, profitFactor, phaseWalk, challengeStats, challengeCurve, evalPass, evalDays, fundedStats, fundedCurve, profitPlateau, costToFund, payoutOdds, firstPayoutPct, PAID_SIMS, PAY_CHUNK, SWEEP_HABIT_DAYS, TRADING_DAYS_PER_MONTH, TRADING_DAYS_PER_YEAR, yearSteps, tpdOf, TPD_MAX, WalkOut, ChallengeOut, EvalPoint } from "./engine";
 // The forward-drawdown engine and the uncertainty machinery the Validate tab
 // needs: horizon-aware bootstraps, effective sample size, the multiplicity
@@ -13,7 +13,7 @@ import { ddJob, effectiveN, fitBlock, overshootProfile, maxRiskForLimit, zFor, w
 // same question about a BOUND firm, and two copies of a rule is how this app
 // previously ended up quoting one firm two different numbers on two tabs. One
 // implementation, both callers. See the header of plan.ts.
-import { sharesAt, floorAt, optSettings, setOpt, resetOpt, isDefault, applyPayModel, econCurve, slotEcon, SlotEcon, plateauLo, pickMaxEv, pickMaxPayout, pickBalancedAt, pickPerCount, PortfolioStat, SURV_PRESETS } from "./optimize";
+import { sharesAt, floorAt, optSettings, setOpt, resetOpt, isDefault, applyPayModel, econCurve, slotEcon, SlotEcon, plateauLo, pickMaxEv, pickMaxPayout, pickBalancedAt, pickPerCount, PortfolioStat, SURV_PRESETS, BatchPoint, batchQuantiles, pickBatchBudget, pickBatchFastest, EVAL_CAP_AUTO } from "./optimize";
 import { riskGrid, pickFundedSize, pickEvalSize, PLATEAU_TOL, SAFE_SURV, PASS_BAR, PLAN_MIN_N, Band, bandOf, bandText, resampleRecord, plausibleRecord, pickBalanced, ROBUST_CONF, ROBUST_DRAWS, ROBUST_SIMS, ROBUST_EVAL_SIMS } from "./plan";
 
 // the panel ids are "p-" + tab; kept in one place so adding a tab cannot
@@ -2132,36 +2132,17 @@ function renderDecision() {
   } else if (pPass <= 0.005 || expectancy() <= 0) {
     bud.innerHTML = '<div class="tile" style="grid-column:1/-1"><div class="k">No budget to plan</div><div class="v" style="font-size:13px;font-weight:400">Pass odds too low to budget.</div></div>';
   } else {
-    // Several accounts (2.22.0): copy-traded evaluations take the same trades, so
-    // they pass or fail TOGETHER - the budget is N times one account's streak.
-    // Independent ones diversify: the total of N separate streaks, simulated.
-    const indepQ = nD > 1 && !oD.copy ? (() => {
-      const buy = evalBuyer(pPass, st.meanFailDays, st.medDays, st.meanDaysAll, false);
-      const rnd = mulberry(4242), cash: number[] = [], days: number[] = [];
-      for (let k = 0; k < 4000; k++) {
-        let c = 0, t = 0;
-        for (let a = 0; a < nD; a++) { const pu = buy(rnd); c += pu.cost; t = Math.max(t, pu.steps); }
-        cash.push(c); days.push(t / tpdOf());
-      }
-      cash.sort((a, b) => a - b); days.sort((a, b) => a - b);
-      return (q: number) => ({ cash: cash[Math.min(cash.length - 1, Math.floor(q * cash.length))], days: days[Math.min(days.length - 1, Math.floor(q * days.length))] });
-    })() : null;
-    bud.innerHTML = [0.5, 0.8, 0.95].map((q) => {
-      if (indepQ) {
-        const r = indepQ(q), months = Math.max(1, Math.round(r.days / TRADING_DAYS_PER_MONTH));
-        return '<div class="tile"><div class="k">' + Math.round(q * 100) + '% confident</div><div class="v">' + money(r.cash) +
-          '</div><div class="ts">' + nD + " independent accounts &middot; ~" + months + " month" + (months > 1 ? "s" : "") + "</div></div>";
-      }
-      const nq = Math.max(1, Math.ceil(Math.log(1 - q) / Math.log(1 - pPass)));
-      const days = Math.round((nq - 1) * st.meanFailDays + st.medDays);
-      const months = Math.max(1, Math.round(days / TRADING_DAYS_PER_MONTH));
-      // monthly = the subscription runs for the whole streak (same continuous
-      // billing as costToFund); once = full price first, resets after if priced
-      const cash = F.feeMode === "monthly"
-        ? F.fee * Math.max(1, Math.ceil(days / TRADING_DAYS_PER_MONTH)) + (F.activation || 0)
-        : F.fee + (nq - 1) * ((F.resetFee || 0) > 0 ? (F.resetFee as number) : F.fee) + (F.activation || 0);
-      return '<div class="tile"><div class="k">' + Math.round(q * 100) + '% confident</div><div class="v">' + money(cash * nD) +
-        '</div><div class="ts">' + nq + " attempt" + (nq > 1 ? "s" : "") + (nD > 1 ? " each, together" : "") + " &middot; ~" + months + " month" + (months > 1 ? "s" : "") + "</div></div>";
+    // 2.24.0: every account count, copied or independent, staggered or not, is
+    // priced by the one batch simulation the Eval size table uses - at the eval
+    // risk slider's own size, over plausible versions of the edge. One account
+    // is a batch of one, so the tiles read the same way at any count.
+    const bt = ensureBatchAt(re);
+    const how = nD > 1 ? (oD.copy ? "copy-traded" : nD + " independent accounts") + (oD.staggerDays > 0 ? ", " + oD.staggerDays + "d apart" : ", together") : "one account";
+    bud.innerHTML = ([[0.5, "cost50", "days50"], [0.8, "cost80", "days80"], [0.95, "cost95", "days95"]] as [number, "cost50" | "cost80" | "cost95", "days50" | "days80" | "days95"][]).map(([q, ck, dk]) => {
+      if (!bt) return '<div class="tile"><div class="k">' + Math.round(q * 100) + '% confident</div><div class="v"><span class="skel"></span></div><div class="ts">' + how + "</div></div>";
+      const months = Math.max(1, Math.round(bt[dk] / TRADING_DAYS_PER_MONTH));
+      return '<div class="tile"><div class="k">' + Math.round(q * 100) + '% confident</div><div class="v">' + money(bt[ck]) +
+        '</div><div class="ts">' + how + " &middot; all funded in ~" + months + " month" + (months > 1 ? "s" : "") + "</div></div>";
     }).join("");
   }
   const dBands = ensureBands(re, rf);
@@ -2241,6 +2222,7 @@ function renderDecision() {
       : notWorth;
   $("dEdgeMsg").textContent = "No proven edge. Check Validate first.";
   $("dEdgeNote").className = mu <= 0 ? "note warn" : "note warn hide";
+  renderEvalBatch(ea, re, pPass);
   renderPlans(ea);
 }
 
@@ -2294,6 +2276,183 @@ function ensurePlanRisk(m: FModel, sizes: number[], ev: Replace): Record<string,
   });
   return null;
 }
+// ---- Decision: the eval size for YOUR accounts (2.24.0) ----
+// batchFund over every eval size on the grid, for the accounts you run, copied
+// or independent, staggered or not - and over plausible versions of the edge,
+// so the 95% figures allow for it being weaker than measured. The same seeds at
+// every size (common random numbers) and for the slider's own size, so a slider
+// standing on a grid size reads the table's numbers exactly.
+const BATCH_RECS = 40, BATCH_SIMS = 10;
+const batchRec = (r: number) => (7301 + r * 0x9e3779b1) | 0;
+const batchSeed = (r: number, j: number) => (91337 + r * 7919 + j * 104729) | 0;
+function batchKey(): string {
+  const o = optSettings();
+  return [F.type, F.p1, F.p2, F.maxdd, F.ddType, F.ddLock, F.daily, F.minDays, F.cons, F.tpd,
+    F.timeLimit || 0, F.fee, F.feeMode, F.activation || 0, F.resetFee || 0, edgeFp(),
+    o.maxAccounts, o.copy ? "c" : "i", o.staggerDays].join("|");
+}
+// One account's walk per job step: a single walk is bounded (200 attempts at
+// most), a step of whole batches was not - ten of them at a size that rarely
+// passes, with no time limit, held the main thread past the 250ms budget.
+function batchAt(risks: number[], onDone: (pts: BatchPoint[]) => void, isLive: () => boolean) {
+  const o = optSettings(), N = o.maxAccounts, ind = !o.copy && N > 1, stag = o.staggerDays, tpd = tpdOf();
+  const together = !ind && (stag === 0 || N === 1);
+  const costs = risks.map(() => [] as number[]), days = risks.map(() => [] as number[]), short = risks.map(() => 0);
+  const P = Math.max(2 * N, 60);
+  let r = 0, k = 0, rec: number[] = [];
+  // per (record, size): j = batch, a = account within it, plus the batch's own
+  // tape and running totals (copy-traded staggered) or the pool (independent)
+  let j = 0, a = 0, tape: Tape | null = null, bc = 0, bd = 0, bf = 0;
+  let pool: { cost: number; days: number; funded: boolean }[] = [];
+  const nextCell = () => { j = 0; a = 0; tape = null; bc = 0; bd = 0; bf = 0; pool = []; if (++k >= risks.length) { k = 0; r++; } };
+  runJob(() => {
+    if (!isLive()) return true;
+    if (r >= BATCH_RECS) return true;
+    if (k === 0 && j === 0 && a === 0 && !pool.length) rec = plausibleRecord(batchRec(r));
+    const risk = risks[k];
+    withEdge(rec, () => {
+      if (together) {
+        // copy-traded and bought together: one account's run, N times over
+        const sl = fundSlot(risk, new Tape(batchSeed(r, j)), 0);
+        costs[k].push(sl.cost * N); days[k].push(sl.days); if (!sl.funded) short[k]++;
+        if (++j >= BATCH_SIMS) nextCell();
+      } else if (ind) {
+        // independent accounts share only the edge: a pool of single accounts
+        // per record, each batch dealt from it (50 accounts x 10 batches would be
+        // 500 walks; the pool is max(2N, 60))
+        pool.push(fundSlot(risk, new Tape(batchSeed(r, 1000 + pool.length)), 0));
+        if (pool.length >= P) {
+          for (let b = 0; b < BATCH_SIMS; b++) {
+            const deal = mulberry(batchSeed(r, b) ^ 0x6a09e667);
+            let c = 0, d = 0, f = 0;
+            for (let x = 0; x < N; x++) { const sl = pool[(deal() * P) | 0]; c += sl.cost; d = Math.max(d, x * stag + sl.days); if (sl.funded) f++; }
+            costs[k].push(c); days[k].push(d); if (f < N) short[k]++;
+          }
+          nextCell();
+        }
+      } else {
+        // copy-traded, staggered: every account reads the batch's one tape, account
+        // a starting stag*a trading days after the first
+        if (!tape) tape = new Tape(batchSeed(r, j));
+        const sl = fundSlot(risk, tape, a * stag * tpd);
+        bc += sl.cost; bd = Math.max(bd, a * stag + sl.days); if (sl.funded) bf++;
+        if (++a >= N) {
+          costs[k].push(bc); days[k].push(bd); if (bf < N) short[k]++;
+          a = 0; tape = null; bc = 0; bd = 0; bf = 0;
+          if (++j >= BATCH_SIMS) nextCell();
+        }
+      }
+    });
+    return r >= BATCH_RECS;
+  }, () => {
+    if (!isLive()) return;
+    const pts = eCache.pts;
+    onDone(risks.map((risk, i) => {
+      const p = pts.find((x) => Math.abs(x.risk - risk) < 1e-9);
+      return batchQuantiles(risk, p ? p.pass : NaN, costs[i], days[i], short[i] / (BATCH_RECS * BATCH_SIMS));
+    }));
+    render();
+  });
+}
+// Sizes that almost never pass at the measured edge are not candidates for
+// either pick (their budget is the 200-attempt cap) and are the slowest to walk,
+// so the grid waits for the eval curve and leaves them out.
+const BATCH_MIN_PASS = 0.05;
+let batchGrid: { key: string; pts: BatchPoint[] | null } = { key: "", pts: null };
+function ensureBatchGrid(): BatchPoint[] | null {
+  const key = batchKey();
+  if (batchGrid.key === key) return batchGrid.pts;
+  if (FAST) return null;
+  const curve = evalCurve();
+  if (!curve.length) return null;
+  const risks = curve.filter((p) => p.pass >= BATCH_MIN_PASS).map((p) => p.risk);
+  batchGrid = { key, pts: null };
+  if (!risks.length) { batchGrid = { key, pts: [] }; return batchGrid.pts; }
+  batchAt(risks, (pts) => { batchGrid = { key, pts }; }, () => batchGrid.key === key);
+  return null;
+}
+let batchOne: { key: string; pt: BatchPoint | null } = { key: "", pt: null };
+function ensureBatchAt(re: number): BatchPoint | null {
+  const key = batchKey() + "|" + re.toFixed(2);
+  if (batchOne.key === key) return batchOne.pt;
+  // a slider on a grid size reads the grid's own numbers
+  const g = batchGrid.key === batchKey() && batchGrid.pts ? batchGrid.pts.find((p) => Math.abs(p.risk - re) < 1e-9) : null;
+  if (g) { batchOne = { key, pt: g }; return g; }
+  if (FAST) return null;
+  batchOne = { key, pt: null };
+  batchAt([re], (pts) => { batchOne = { key, pt: pts[0] }; }, () => batchOne.key === key);
+  return null;
+}
+// The two batch picks, plus the per-account one for comparison. null while the
+// grid is still being measured.
+interface BatchPicks { pts: BatchPoint[]; budget: number; fast: number; cap: number; capAuto: boolean }
+function batchPicks(): BatchPicks | null {
+  const pts = ensureBatchGrid();
+  if (!pts) return null;
+  if (!pts.length) return { pts, budget: -1, fast: -1, cap: 0, capAuto: true };
+  const budget = pickBatchBudget(pts);
+  const o = optSettings();
+  const capAuto = !(o.evalCap > 0);
+  const cap = capAuto ? (budget >= 0 ? pts[budget].cost95 * EVAL_CAP_AUTO : 0) : o.evalCap;
+  return { pts, budget, fast: pickBatchFastest(pts, cap), cap, capAuto };
+}
+const daysTxt = (d: number) => {
+  const m = d / TRADING_DAYS_PER_MONTH;
+  return Math.round(d) + "d" + (m >= 1.5 ? " (~" + Math.round(m) + " mo)" : "");
+};
+function renderEvalBatch(ea: EvalAdvice, re: number, rePass: number) {
+  const el = $("dEvalBatch"), o = optSettings(), N = o.maxAccounts;
+  $("dEvalBatchHead").textContent = N > 1 ? "Eval size for your " + N + " accounts" : "Eval size for your account";
+  setNum("nEvalCap", o.evalCap > 0 ? String(o.evalCap) : "");
+  const mode = N > 1 ? (o.copy ? "copy-traded" : "trading independently") + (o.staggerDays > 0 ? ", bought " + o.staggerDays + " trading days apart" : ", bought together") : "";
+  if (F.instant) { el.innerHTML = '<p class="small muted">Instant funding: there is no evaluation to size.</p>'; $("dEvalBatchNote").textContent = ""; return; }
+  if (S.trades && S.trades.length < PLAN_MIN_N) { el.innerHTML = '<p class="small muted">Too few trades to size (needs ' + PLAN_MIN_N + "+).</p>"; $("dEvalBatchNote").textContent = ""; return; }
+  if (expectancy() <= 0) { el.innerHTML = '<p class="small muted">No proven edge, so no eval size to plan.</p>'; $("dEvalBatchNote").textContent = ""; return; }
+  const bp = batchPicks();
+  if (!bp) { el.innerHTML = '<span class="skel"></span><p class="small muted">simulating ' + (N > 1 ? "all " + N + " accounts" : "the account") + " at every eval size&hellip;</p>"; $("dEvalBatchNote").textContent = ""; return; }
+  const { pts } = bp;
+  if (!pts.length) { el.innerHTML = '<p class="small muted">No eval size passes often enough (' + Math.round(BATCH_MIN_PASS * 100) + "%+ of attempts) to plan a batch on. That is the edge or the firm&rsquo;s rules, not sizing.</p>"; $("dEvalBatchNote").textContent = ""; return; }
+  const per = ea.ok ? pts.findIndex((p) => Math.abs(p.risk - (ea.risk as number)) < 1e-9) : -1;
+  const rows: { name: string; why: string; i: number; color: string }[] = [];
+  const all = N > 1 ? "all " + N + " accounts" : "the account";
+  if (bp.budget >= 0) rows.push({ name: "Lowest bad-case budget", why: "least cash to be 95% sure " + all + (N > 1 ? " get" : " gets") + " funded", i: bp.budget, color: css("--go-ink") });
+  rows.push(bp.fast >= 0
+    ? { name: "Fastest to funded", why: "95% sure " + all + (N > 1 ? " are" : " is") + " funded soonest, within " + money(bp.cap) + (bp.capAuto ? " (" + EVAL_CAP_AUTO + "&times; the lowest budget; set your own cap)" : " (your cap)"), i: bp.fast, color: css("--caution-ink") }
+    : { name: "Fastest to funded", why: "no size fits a " + money(bp.cap) + " budget in a bad run", i: -1, color: css("--muted") });
+  if (per >= 0) rows.push({ name: "Cheapest per account", why: "the Best eval size tile: least average cost, one account at a time", i: per, color: css("--muted") });
+  // merge rows that land on one size, the way the suggestion tables do
+  const merged: typeof rows = [];
+  for (const r of rows) {
+    const same = r.i >= 0 ? merged.find((m) => m.i === r.i) : null;
+    if (same) same.name += " = " + r.name; else merged.push({ ...r });
+  }
+  const cell = (p: BatchPoint) => "<td>" + p.risk.toFixed(2) + "%</td><td>" + (isFinite(p.pass) ? pctEst(p.pass) : "&ndash;") + "</td><td>" + money(p.cost50) + "</td><td><b>" + money(p.cost95) + "</b></td><td>" + daysTxt(p.days50) + "</td><td><b>" + daysTxt(p.days95) + "</b></td>";
+  const at = ensureBatchAt(re);
+  const mine = at ? { ...at, pass: isFinite(at.pass) ? at.pass : rePass } : null;
+  el.innerHTML = '<div class="scroll"><table class="breakdown"><thead><tr><th>Pick</th><th>Eval size</th><th title="One attempt passing, at your measured edge">Pass / attempt</th>' +
+    '<th title="Typical total cash for evaluations until ' + all + ' are funded: half of runs cost less">Budget, typical</th><th title="95% of runs cost less, allowing for your edge being weaker than measured">Budget, 95% sure</th>' +
+    '<th title="Typical trading days from the first purchase until the last account is funded">Funded in, typical</th><th title="95% of runs have ' + all + ' funded within this">Funded in, 95% sure</th><th></th></tr></thead><tbody>' +
+    merged.map((r) => {
+      if (r.i < 0) return '<tr><td><span class="mk" style="color:' + r.color + '"></span><b>' + r.name + '</b><div class="small muted">' + r.why + '</div></td><td colspan="7" class="muted">&ndash;</td></tr>';
+      const p = pts[r.i];
+      return '<tr data-batch="' + r.name + '"><td><span class="mk" style="color:' + r.color + '"></span><b>' + r.name + '</b><div class="small muted">' + r.why + "</div></td>" + cell(p) +
+        '<td><button type="button" class="usebtn" data-evaluse="' + p.risk.toFixed(2) + '">Use</button></td></tr>';
+    }).join("") +
+    '<tr class="mine"><td><b>Your eval size</b><div class="small muted">the eval risk slider</div></td>' + (mine ? cell(mine) : '<td>' + re.toFixed(2) + '%</td><td colspan="5"><span class="skel"></span></td>') + "<td></td></tr>" +
+    "</tbody></table></div>";
+  el.querySelectorAll<HTMLButtonElement>("button[data-evaluse]").forEach((b) => b.addEventListener("click", () => {
+    $i("srde").value = b.getAttribute("data-evaluse") || ""; $i("srde").dispatchEvent(new Event("input", { bubbles: true }));
+  }));
+  const bud = bp.budget >= 0 ? pts[bp.budget] : null, chp = per >= 0 ? pts[per] : null;
+  const gap = bud && chp && chp.cost95 > bud.cost95 * 1.03
+    ? " Here the cheapest size per account needs " + money(chp.cost95 - bud.cost95) + " more set aside to be as sure."
+    : bud && chp && bp.budget === per ? " Here the cheapest size per account is also the safest batch." : "";
+  $("dEvalBatchNote").innerHTML = (N > 1 ? "Your " + N + " accounts, " + mode + " (Funded tab, Several accounts). " +
+      (o.copy && o.staggerDays === 0 ? "Copy-traded evaluations bought together take the same trades, so they pass or fail together: one bad run costs every account its fee at once. " :
+        o.copy ? "Staggered, copy-traded evaluations meet the same trades at different points, so their bad runs only partly overlap. " :
+          "Independent evaluations fail on their own, so their bad runs offset. ") : "") +
+    "Each account re-buys until it passes; the budget is every fee and reset until the last one is funded. The 95% figures are over plausible versions of your edge, not only the measured one." + gap;
+}
 function renderPlans(ea: EvalAdvice) {
   const el = $("dPlans");
   const m = fundedModel();
@@ -2317,12 +2476,18 @@ function renderPlans(ea: EvalAdvice) {
       else if (i >= 0) sugs.unshift({ key: "bestN", name: "Best for " + N + " accounts", why: "most $ back per $1 with all " + N + " down at once under " + Math.round((1 - o.survTarget) * 100) + "% (measured edge)", i, r: pk.stat.base, color: css("--go-ink") });
     }
   }
-  const evalR = ea.risk as number, cost = ea.cost as number;
+  // Several accounts (2.24.0): the eval size is the batch's - the least cash to be
+  // 95% sure all of them get funded - not one account's cheapest on average.
+  const bp = batchPicks();
+  if (!bp) { el.innerHTML = '<span class="skel"></span><p class="small muted">simulating ' + (N > 1 ? "your " + N + " evaluations" : "the evaluation") + "&hellip;</p>"; $("dPlansNote").textContent = ""; return; }
+  const useBatch = !!(bp && bp.budget >= 0);
+  const evalR = useBatch && bp ? bp.pts[bp.budget].risk : (ea.risk as number);
   // the plan's own eval size sets what each account costs, and how long it takes
   const pe = planEval(evalR);
+  const cost = useBatch ? pe.cost : (ea.cost as number);
   const per1 = pct$(1);
   const costPct = per1 > 0 ? cost / per1 : 0;
-  const fundSteps = Math.max(0, ea.days || 0) * tpdOf();
+  const fundSteps = useBatch ? pe.fundSteps : Math.max(0, ea.days || 0) * tpdOf();
   const risk = ensurePlanRisk(m, sugs.map((g) => g.r), pe);
   const acc = N > 1 ? " (" + N + " accts)" : "";
   el.innerHTML = '<div class="scroll"><table class="breakdown"><thead><tr><th>Plan</th><th>Eval size</th><th>Funded size</th><th>Not breached</th><th>Payouts ' + (mo ? "/mo" + acc : "/acct") +
@@ -2349,10 +2514,13 @@ function renderPlans(ea: EvalAdvice) {
   const tgtRisk = tgtRow && risk ? risk[tgtRow.r.toFixed(2)] : null;
   $("dPlansNote").innerHTML = (N > 1
     ? "Your " + N + " accounts, " + (o.copy ? "copy-traded" : "trading independently") + (o.staggerDays > 0 ? ", bought " + o.staggerDays + " trading days apart" : ", bought together") +
-      " (Funded tab, Several accounts). The eval size does not change with the count: " + (o.copy ? "copy-traded evaluations take the same trades, so they pass or fail together and the cheapest size per account is the same" : "each account&rsquo;s cheapest eval size is the same") +
-      "; the count changes the budget below and how often everything is down at once." + (tgtRisk ? " Fees over " + o.maxLifeMonths + " months in a bad run at your target size: " + money(tgtRisk.fees95) + "." : "") + " "
-    : "One account, replaced when it breaches or moves to live (" + endText() + "). ") +
-    "Eval size: the quickest that still passes " + Math.round(PASS_BAR * 100) + "+ attempts in 100 in " + Math.round(o.conf * 100) + "% of plausible edges (" + money(cost) + " per account to fund). Funded sizes and settings are the Funded tab&rsquo;s" +
+      " (Funded tab, Several accounts)." + (tgtRisk ? " Fees over " + o.maxLifeMonths + " months in a bad run at your target size: " + money(tgtRisk.fees95) + "." : "") + " " +
+      (useBatch ? "Eval size: the lowest bad-case budget for all " + N + " (Eval size for your " + N + " accounts, above; " + money(cost) + " per account to fund on average). "
+        : "Eval size: the quickest that still passes " + Math.round(PASS_BAR * 100) + "+ attempts in 100 in " + Math.round(o.conf * 100) + "% of plausible edges (" + money(cost) + " per account to fund). ")
+    : "One account, replaced when it breaches or moves to live (" + endText() + "). " +
+      (useBatch ? "Eval size: the lowest bad-case budget (Eval size for your account, above; " + money(cost) + " to fund on average). "
+        : "Eval size: the quickest that still passes " + Math.round(PASS_BAR * 100) + "+ attempts in 100 in " + Math.round(o.conf * 100) + "% of plausible edges (" + money(cost) + " per account to fund). ")) +
+    "Funded sizes and settings are the Funded tab&rsquo;s" +
     (o.payMax ? ", withdrawing the firm&rsquo;s max each time" : ", withdrawing 5% a week") + ".";
 }
 
@@ -2641,6 +2809,7 @@ export function wireSim() {
   const setAcc = (v: number) => { setOpt({ maxAccounts: Math.max(1, Math.min(50, Math.round(v))) }); scheduleRender(); };
   $i("sAcc").addEventListener("input", function () { setNum("nAcc", this.value); setAcc(Number(this.value)); });
   $i("nAcc").addEventListener("change", function () { if (this.value !== "" && isFinite(Number(this.value))) setAcc(Number(this.value)); });
+  $i("nEvalCap").addEventListener("change", function () { const v = Number(this.value); setOpt({ evalCap: this.value === "" || !isFinite(v) ? 0 : Math.max(0, Math.min(10000000, Math.round(v))) }); scheduleRender(); });
   $i("nAccD").addEventListener("change", function () { if (this.value !== "" && isFinite(Number(this.value))) setAcc(Number(this.value)); });
   document.querySelectorAll<HTMLButtonElement>("button[data-acm]").forEach((b) =>
     b.addEventListener("click", () => { setOpt({ copy: b.getAttribute("data-acm") === "copy" }); scheduleRender(); }));

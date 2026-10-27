@@ -969,6 +969,10 @@
         <div class="vh" style="margin-top:18px" id="dBudgetHead">Budget to funded</div>
 
         <div class="statgrid" id="dBudget" style="margin-bottom:4px"></div>
+        <div class="vh" style="margin-top:18px" id="dEvalBatchHead">Eval size for your account</div>
+        <div class="ctrl" style="max-width:420px;margin-bottom:8px"><div class="row"><span title="The most you are willing to spend on evaluations, in a bad run (95% sure), to get every account funded. The Fastest pick has to fit it. Empty = 1.5 times the lowest bad-case budget.">Eval budget cap ($)</span><input type="number" class="numin" id="nEvalCap" min="0" max="10000000" step="50" value="" placeholder="auto" aria-label="Eval budget cap"></div></div>
+        <div id="dEvalBatch"><span class="skel"></span></div>
+        <p class="small muted" id="dEvalBatchNote" style="margin-top:6px"></p>
         <div class="vh" style="margin-top:18px" id="dPlansHead">Plans by optimization</div>
         <div id="dPlans"><span class="skel"></span></div>
         <p class="small muted" id="dPlansNote" style="margin-top:6px"></p>

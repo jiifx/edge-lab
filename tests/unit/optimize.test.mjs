@@ -381,3 +381,74 @@ test("coupled accounts: independent ones close when the FIRST is moved", () => {
   assert.ok(coupled < apart, "closing all on the first move banks less: " + coupled + " vs " + apart);
   setPayModel(OFF);
 });
+
+// ---------------------------------------------------------------------------
+// several evaluations at once (2.24.0)
+// ---------------------------------------------------------------------------
+const q95 = (a) => a.slice().sort((x, y) => x - y)[Math.floor(0.95 * a.length)];
+const evalSetup = () => { setFirm(futures({ ddType: "trailing" })); S.trades = edge(0.5, 1.5, 200); setPayModel(OFF); };
+
+test("batch, copy-traded together: one account's run, N times over", () => {
+  evalSetup();
+  for (let seed = 1; seed <= 25; seed++) {
+    const one = E.batchFund(0.8, 1, seed, false, 0), five = E.batchFund(0.8, 5, seed, false, 0);
+    assert.equal(five.cost, 5 * one.cost, "seed " + seed);
+    assert.equal(five.days, one.days);
+  }
+});
+
+test("batch of one: its average cost is the eval curve's cost to fund", () => {
+  evalSetup();
+  const risk = 1.0, n = 1500;
+  let c = 0;
+  for (let s = 1; s <= n; s++) c += E.batchFund(risk, 1, s, false, 0).cost;
+  const curve = E.challengeCurve([risk], 1500)[0].cost;
+  assert.ok(Math.abs(c / n - curve) / curve < 0.08, "batch mean " + (c / n).toFixed(0) + " vs curve " + curve.toFixed(0));
+});
+
+test("batch: independent evaluations need less set aside per account than copy-traded ones", () => {
+  evalSetup();
+  const N = 8, risk = 1.2, copy = [], ind = [], copyMean = [], indMean = [];
+  for (let s = 1; s <= 400; s++) {
+    const c = E.batchFund(risk, N, s, false, 0).cost, i = E.batchFund(risk, N, s, true, 0).cost;
+    copy.push(c); ind.push(i);
+  }
+  const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  assert.ok(q95(ind) < q95(copy), "95% budget: independent " + q95(ind) + " vs copy " + q95(copy));
+  assert.ok(Math.abs(mean(ind) - mean(copy)) / mean(copy) < 0.15, "on average the count does not change the cost: " + mean(ind).toFixed(0) + " vs " + mean(copy).toFixed(0));
+});
+
+test("batch: staggered copy-trades sit between together and independent, and the last one starts later", () => {
+  evalSetup();
+  const N = 6, risk = 1.2, stag = 15, tog = [], stg = [];
+  for (let s = 1; s <= 300; s++) {
+    tog.push(E.batchFund(risk, N, s, false, 0).cost);
+    const b = E.batchFund(risk, N, s, false, stag);
+    stg.push(b.cost);
+    assert.ok(b.days >= (N - 1) * stag, "the last account is bought " + (N - 1) * stag + " days in: " + b.days);
+  }
+  assert.ok(q95(stg) <= q95(tog), "staggering should not raise the bad-case budget: " + q95(stg) + " vs " + q95(tog));
+  // a batch of one is one account, staggered or not
+  assert.deepEqual(E.batchFund(risk, 1, 7, false, 30), E.batchFund(risk, 1, 7, false, 0));
+});
+
+test("batch picks: lowest bad-case budget, then the fastest inside a cap", () => {
+  const P = (risk, cost95, days95) => ({ risk, pass: 0.9, cost50: cost95 / 2, cost80: cost95 * 0.8, cost95, days50: days95 / 2, days80: days95 * 0.8, days95, unfunded: 0 });
+  const pts = [P(0.1, 300, 60), P(0.3, 305, 30), P(0.5, 450, 15), P(0.8, 900, 9), P(1.2, 2000, 12)];
+  // 0.1% and 0.3% are the same money within 3%; 0.3% gets there in half the time
+  assert.equal(E.pickBatchBudget(pts), 1);
+  assert.equal(E.pickBatchFastest(pts, 1.5 * 300), 2, "inside 1.5x the lowest budget the fastest is 0.5%");
+  assert.equal(E.pickBatchFastest(pts, 1000), 3);
+  assert.equal(E.pickBatchFastest(pts, 100), -1, "nothing fits a $100 budget");
+  assert.equal(E.EVAL_CAP_AUTO, 1.5);
+  const qq = E.batchQuantiles(0.5, 0.8, [5, 1, 4, 2, 3, 6, 7, 8, 9, 10], [10, 20, 30, 40, 50, 60, 70, 80, 90, 100], 0);
+  assert.equal(qq.cost50, 6); assert.equal(qq.cost95, 10); assert.equal(qq.days80, 90);
+});
+
+test("the eval budget cap is a setting: 0 = auto, clamped, reset with the rest", () => {
+  resetOpt();
+  assert.equal(optSettings().evalCap, 0);
+  setOpt({ evalCap: 2500 }); assert.equal(optSettings().evalCap, 2500);
+  setOpt({ evalCap: -5 }); assert.equal(optSettings().evalCap, 0);
+  resetOpt(); assert.equal(optSettings().evalCap, OPT_DEFAULTS.evalCap);
+});

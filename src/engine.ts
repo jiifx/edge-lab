@@ -294,6 +294,83 @@ export function challengeCurve(risks: number[], N: number): EvalPoint[] {
   });
 }
 
+// ---- SEVERAL EVALUATIONS AT ONCE (2.24.0) ----
+//
+// Getting N accounts funded is not N times getting one funded, except on
+// average. The mean cost per funded account is the same whatever the count -
+// which is why the eval-size curve above is a per-account curve - but the BAD
+// case is not. Copy-traded evaluations take the same trades: bought together,
+// they pass or fail together, so a size that washes out one account in five
+// washes out the whole batch one time in five. Independent ones fail on their
+// own, so their bad runs offset. Staggered copy-trades sit in between. Those
+// tails, and the time until the LAST account is funded, are what a trader
+// sizing a batch is buying, and only a path-level simulation of the batch
+// measures them.
+//
+// A Tape is a stream of uniforms read by trade index, grown on demand, so
+// several accounts can read the SAME trades at different offsets. sampleR takes
+// exactly one uniform per trade, so index i is trade i for every reader.
+export class Tape {
+  private a = new Float64Array(1024);
+  private n = 0;
+  private r: () => number;
+  constructor(seed: number) { this.r = mulberry(seed); }
+  at(i: number): number {
+    while (i >= this.n) {
+      if (this.n >= this.a.length) { const b = new Float64Array(this.a.length * 2); b.set(this.a); this.a = b; }
+      this.a[this.n++] = this.r();
+    }
+    return this.a[i];
+  }
+}
+// One account's evaluations, bought one after another until one passes (the
+// 200-attempt cap is costToFund's), reading `tape` from trade `start`. Each
+// re-attempt starts on the next trading day. Days are trading days of
+// evaluation actually run; cost is the firm's fee model over those attempts
+// (continuous billing on a subscription, resets on a one-time fee).
+export interface SlotFund { cost: number; days: number; attempts: number; funded: boolean }
+export function fundSlot(risk: number, tape: Tape, start: number): SlotFund {
+  const tpd = tpdOf();
+  let pos = start, a = 0, days = 0, funded = false;
+  const rnd = () => tape.at(pos++);
+  while (a < 200) {
+    a++;
+    const r1 = phaseWalk(F.p1, risk, rnd, false);
+    let d = r1.days, ok = r1.res === "pass";
+    if (ok && F.type === "2step" && F.p2 > 0) { const r2 = phaseWalk(F.p2, risk, rnd, false); d += r2.days; ok = r2.res === "pass"; }
+    days += d;
+    if (ok) { funded = true; break; }
+    pos = Math.ceil(pos / tpd) * tpd;
+  }
+  return { cost: costOfAttempts(a, a ? days / a : 0).cost, days, attempts: a, funded };
+}
+// One account on a tape of its own - what an independent account is.
+export function slotFund(risk: number, seed: number): SlotFund { return fundSlot(risk, new Tape(seed), 0); }
+// N accounts, each re-buying until funded. Copy-trade: every account reads one
+// tape, account k starting `staggerDays * k` trading days after the first (0 =
+// all bought the same day, which is one account's run, N times over).
+// Independent: a tape each, on the same purchase schedule. Returns the batch's
+// total cash and the trading days until the LAST account is funded, counted
+// from the first purchase.
+export interface BatchFund { cost: number; days: number; funded: number }
+export function batchFund(risk: number, n: number, seed: number, independent: boolean, staggerDays: number): BatchFund {
+  const N = Math.max(1, n | 0), stag = Math.max(0, staggerDays | 0), tpd = tpdOf();
+  if (!independent && (stag === 0 || N === 1)) {
+    const s = fundSlot(risk, new Tape(seed), 0);
+    return { cost: s.cost * N, days: s.days, funded: s.funded ? N : 0 };
+  }
+  const shared = independent ? null : new Tape(seed);
+  let cost = 0, days = 0, funded = 0;
+  for (let k = 0; k < N; k++) {
+    const tape = shared || new Tape((seed + (k + 1) * 0x9e3779b1) | 0);
+    const s = fundSlot(risk, tape, shared ? k * stag * tpd : 0);
+    cost += s.cost;
+    days = Math.max(days, k * stag + s.days);
+    if (s.funded) funded++;
+  }
+  return { cost, days, funded };
+}
+
 // How often the trader sweeps profit out, in trading days. 5 = weekly. This is a
 // uniform modelling assumption applied to EVERY firm; it is deliberately NOT
 // modified by the firm's own payout cadence. See the note on fundedSim.

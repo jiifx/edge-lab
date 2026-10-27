@@ -93,8 +93,10 @@ To update, install the new version over the old one. Your journal is not touched
 - **Several accounts** (up to 50): copy-traded or independent, bought the same day or staggered, ended
   accounts replaced - per account count, the size, income, fees, fee budget and the chance every
   account is down at once
-- **Decision** net expected value of buying in, the budget to get all your accounts funded, and a
-  plan per suggestion for your account count (eval + funded size, income, $ per $1, all-down risk)
+- **Decision** net expected value of buying in, the budget to get all your accounts funded, the
+  eval size for your accounts (lowest bad-case budget, or fastest to all funded within a cap -
+  copy-traded, independent or staggered), and a plan per suggestion for your account count (eval +
+  funded size, income, $ per $1, all-down risk)
 - **Rule guard**: live distance to a bound account's drawdown floor, daily limit and target
 
 The explanations live in the **user manual** (the **?** button in the app, or

@@ -28,10 +28,11 @@ export interface OptSettings {
   copy: boolean;        // several accounts: the same trades on every account
   staggerDays: number;  // several accounts: trading days between buying each one (0 = same day)
   rebuy: boolean;       // several accounts: replace a blown account
+  evalCap: number;      // Decision: the most a batch of evaluations may cost in a bad run, $ (0 = auto) - 2.24.0
 }
 export const OPT_DEFAULTS: OptSettings = {
   payMax: true, cushion: false, survTarget: 0.9, conf: ROBUST_CONF,
-  maxAccounts: 1, maxLifeMonths: 24, copy: true, staggerDays: 0, rebuy: true,
+  maxAccounts: 1, maxLifeMonths: 24, copy: true, staggerDays: 0, rebuy: true, evalCap: 0,
 };
 const clampN = (v: unknown, lo: number, hi: number, d: number) => {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
@@ -54,6 +55,7 @@ export function optSettings(): OptSettings {
     copy: bool(s.copy, OPT_DEFAULTS.copy),
     staggerDays: Math.round(clampN(s.staggerDays, 0, 120, OPT_DEFAULTS.staggerDays)),
     rebuy: bool(s.rebuy, OPT_DEFAULTS.rebuy),
+    evalCap: Math.round(clampN(s.evalCap, 0, 10000000, OPT_DEFAULTS.evalCap)),
   };
 }
 // The payout and sizing model is read by the ENGINE for every funded number in
@@ -179,3 +181,54 @@ export function pickPerCount(stats: PortfolioStat[], allDownMax: number): { stat
   const i = plateauLo(pool.map((s) => s.roi));
   return { stat: pool[i >= 0 ? i : 0], ok: true };
 }
+
+// ---------------------------------------------------------------------------
+// several EVALUATIONS (2.24.0)
+// ---------------------------------------------------------------------------
+// One eval size, measured for a batch of N accounts each re-buying until it is
+// funded (batchFund in the engine), across plausible versions of the edge: the
+// cash and the trading days until the last account is funded, at the median,
+// 80% and 95% of runs. `pass` is one attempt's end-to-end pass rate at the
+// measured edge, for display.
+export interface BatchPoint {
+  risk: number; pass: number;
+  cost50: number; cost80: number; cost95: number;
+  days50: number; days80: number; days95: number;
+  unfunded: number;     // share of runs where some account never funded inside the 200-attempt cap
+}
+export function batchQuantiles(risk: number, pass: number, costs: number[], days: number[], unfunded: number): BatchPoint {
+  const c = costs.slice().sort((a, b) => a - b), d = days.slice().sort((a, b) => a - b);
+  const q = (s: number[], p: number) => (s.length ? s[Math.min(s.length - 1, Math.floor(p * s.length))] : 0);
+  return { risk, pass, cost50: q(c, 0.5), cost80: q(c, 0.8), cost95: q(c, 0.95), days50: q(d, 0.5), days80: q(d, 0.8), days95: q(d, 0.95), unfunded };
+}
+// Lowest bad-case budget: the size that needs the least cash set aside to be 95%
+// sure every account gets funded. Sizes whose 95% budget is within `tol` of the
+// least are the same money to sampling noise; of those, the one that is 95% sure
+// to have them all funded soonest.
+export function pickBatchBudget(pts: BatchPoint[], tol = 0.03): number {
+  if (!pts.length) return -1;
+  let lo = 0;
+  for (let i = 1; i < pts.length; i++) if (pts[i].cost95 < pts[lo].cost95) lo = i;
+  const cut = pts[lo].cost95 * (1 + tol);
+  let pick = lo;
+  for (let i = 0; i < pts.length; i++) {
+    if (pts[i].cost95 > cut) continue;
+    if (pts[i].days95 < pts[pick].days95 || (pts[i].days95 === pts[pick].days95 && pts[i].cost95 < pts[pick].cost95)) pick = i;
+  }
+  return pick;
+}
+// Fastest to all funded: the size that is 95% sure to have every account funded
+// soonest, among those whose 95% budget fits `cap`. Equal days go to the cheaper.
+// -1 when nothing fits.
+export function pickBatchFastest(pts: BatchPoint[], cap: number): number {
+  let pick = -1;
+  for (let i = 0; i < pts.length; i++) {
+    if (!(pts[i].cost95 <= cap + 1e-9)) continue;
+    if (pick < 0 || pts[i].days95 < pts[pick].days95 || (pts[i].days95 === pts[pick].days95 && pts[i].cost95 < pts[pick].cost95)) pick = i;
+  }
+  return pick;
+}
+// With no cap set, the fastest pick may spend up to this multiple of the lowest
+// bad-case budget: past it, buying speed with evaluation fees is the trade this
+// app should not make on the trader's behalf.
+export const EVAL_CAP_AUTO = 1.5;

@@ -160,6 +160,30 @@ const ok = (m) => console.log('ok: ' + m);
   if (bestN) ok('independent: Best for 5 accounts runs ' + bestN.f + '% funded each');
   const budInd = await page.evaluate(() => document.getElementById('dBudget').innerText);
   if (!/independent accounts/.test(budInd)) fail('independent accounts should be budgeted as separate streaks: ' + budInd);
+  // ---------- 7. the eval size for YOUR accounts (2.24.0) ----------
+  try { await page.waitForFunction(() => !document.querySelector('#dEvalBatch .skel') && document.querySelector('#dEvalBatch tr[data-batch]'), { timeout: 240000, polling: 500 }); } catch { fail('the eval size table never finished'); }
+  const batch = await page.evaluate(() => ({ head: document.getElementById('dEvalBatchHead').textContent,
+    rows: [...document.querySelectorAll('#dEvalBatch tr[data-batch]')].map((r) => ({ name: r.getAttribute('data-batch'), size: parseFloat(r.children[1].textContent), b95: r.children[4].textContent, d95: r.children[6].textContent })),
+    note: document.getElementById('dEvalBatchNote').textContent, plans: [...document.querySelectorAll('#dPlans tr[data-plan]')].map((r) => parseFloat(r.children[1].textContent)) }));
+  const low = batch.rows.find((r) => /Lowest bad-case budget/.test(r.name)), fast = batch.rows.find((r) => /Fastest to funded/.test(r.name));
+  if (!/your 5 accounts/.test(batch.head) || !low || !fast) fail('the eval size table should name both picks for 5 accounts: ' + JSON.stringify(batch));
+  else ok('eval size for 5 independent accounts: lowest budget ' + low.size + '% (' + low.b95 + ', ' + low.d95 + ') · fastest ' + fast.size + '% (' + fast.b95 + ', ' + fast.d95 + ')');
+  if (!/fail on their own/.test(batch.note)) fail('the note should explain independent evaluations: ' + batch.note);
+  if (low && !batch.plans.every((e) => Math.abs(e - low.size) < 1e-9)) fail('every plan should use the lowest bad-case eval size ' + low.size + ': ' + batch.plans.join(','));
+  else ok('every plan uses the batch eval size');
+  if (fast) {
+    await page.evaluate((n) => document.querySelector('#dEvalBatch tr[data-batch="' + n + '"] button[data-evaluse]').click(), fast.name);
+    await wait(800);
+    const se = await page.evaluate(() => Number(document.getElementById('srde').value));
+    if (Math.abs(se - fast.size) > 0.001) fail('Use should set the eval slider to ' + fast.size + ', got ' + se); else ok('Use set the eval slider to ' + se + '%');
+  }
+  // a cap nothing fits: the fastest row says so instead of naming a size
+  await page.evaluate(() => { const i = document.getElementById('nEvalCap'); i.value = '1'; i.dispatchEvent(new Event('change', { bubbles: true })); });
+  await wait(1200);
+  const capped = await page.evaluate(() => document.getElementById('dEvalBatch').innerText);
+  if (!/no size fits/.test(capped)) fail('a $1 cap should leave no fastest size: ' + capped.slice(0, 200)); else ok('a cap nothing fits: no fastest size named');
+  await page.evaluate(() => { const i = document.getElementById('nEvalCap'); i.value = ''; i.dispatchEvent(new Event('change', { bubbles: true })); });
+  await wait(600);
   await page.evaluate(() => { document.querySelector('button[data-acm="copy"]').click(); const i = document.getElementById('nAccD'); i.value = '1'; i.dispatchEvent(new Event('change', { bubbles: true })); });
 
 
