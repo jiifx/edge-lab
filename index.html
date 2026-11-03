@@ -730,10 +730,10 @@
         <div class="bar-head"><span class="t">Your edge</span><span class="jtag">from journal</span></div>
         <div class="bar-sum" id="sbSum"><span class="skel"></span></div>
         <div class="sb-ctrl"><div class="row"><span>Win rate %</span><input type="number" class="numin" id="nwr" min="0" max="100" step="1" value="55" aria-label="Win rate value"></div><input type="range" id="swr" min="0" max="100" step="1" value="55" aria-label="Win rate"></div>
-        <div class="sb-ctrl"><div class="row"><span id="lpaylbl">Reward to risk (R)</span><input type="number" class="numin" id="npay" min="0.5" max="6" step="0.05" value="1" aria-label="Payoff value"></div><input type="range" id="spay" min="0.5" max="6" step="0.05" value="1" aria-label="Payoff">
+        <div class="sb-ctrl"><div class="row"><span id="lpaylbl">Reward to risk (R)</span><input type="number" class="numin" id="npay" min="0.5" max="6" step="0.01" value="1" aria-label="Payoff value"></div><input type="range" id="spay" min="0.5" max="6" step="0.05" value="1" aria-label="Payoff">
           <div style="margin-top:8px"><div class="seg" role="group" aria-label="payoff type"><button data-pm="rr" aria-pressed="true">R:R</button><button data-pm="pf" aria-pressed="false">Profit factor</button></div></div></div>
         <div class="sb-ctrl"><div class="row"><span title="Share of ALL your trades that scratch at 0R - neither a win nor a loss. Win rate above is of DECIDED trades, matching the journal. Scratches slow the clock: they burn trading days without moving the account, which matters for time limits, subscription months and payout windows.">Scratch rate %</span><input type="number" class="numin" id="nsc" min="0" max="60" step="1" value="0" aria-label="Scratch rate value"></div><input type="range" id="ssc" min="0" max="60" step="1" value="0" aria-label="Scratch rate"></div>
-        <div class="sb-ctrl"><div class="row"><span>Trades in record</span><input type="number" class="numin" id="nn" min="10" max="1500" step="10" value="120" aria-label="Trades value"></div><input type="range" id="sn" min="10" max="1500" step="10" value="120" aria-label="Trades in record"></div>
+        <div class="sb-ctrl"><div class="row"><span>Trades in record</span><input type="number" class="numin" id="nn" min="10" max="1500" step="1" value="120" aria-label="Trades value"></div><input type="range" id="sn" min="10" max="1500" step="10" value="120" aria-label="Trades in record"></div>
       </div>
 
       <div class="jedge">

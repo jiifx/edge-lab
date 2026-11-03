@@ -60,6 +60,65 @@ export const PASS_BAR = 0.85;
 // and still prints every interval it has. The Funded tab blanks ONE TILE. The bar
 // is on the instruction, not on the screen.
 export const PLAN_MIN_N = 30;
+
+// ---------------------------------------------------------------------------
+// The Validate verdict. The INTERVAL decides; the point estimate never does.
+// ---------------------------------------------------------------------------
+// The old tiers led with the average: a +0.04R record whose 95% range ran from
+// -0.15R to +0.22R was headlined "Promising, unproven" - a word chosen by the
+// sign of a number the same screen said could not be told from zero. The user
+// then rejected the first rewrite ("Can't tell from break-even") as undecided:
+// a verdict should RULE, like a critique, not describe its own doubt. So the
+// headline is the ruling and the read line is the reason, in the record's own
+// numbers. Nothing warmer than the interval allows, nothing vaguer either.
+//
+//   tone   headline          when
+//   wait   Too few trades    n < PLAN_MIN_N - the bar, before anything
+//   go     Edge holds up     the whole range is above zero
+//   stop   Losing strategy   the whole range is below zero
+//   wait   No proven edge    the range spans zero, average above it
+//   stop   No edge           the range spans zero, average at/below it
+//
+// `need` is how many trades it would take for the range to clear zero IF the
+// measured average and spread held - conditional on purpose, and only quoted
+// when the average is positive. A thin edge takes thousands of trades to show,
+// and saying so is the honest version of "log more trades".
+export type VerdictTone = "go" | "wait" | "stop";
+export interface Verdict { tone: VerdictTone; headline: string; chip: string; read: string; need: number }
+export function edgeVerdict(a: { mu: number; seE: number; z: number; n: number; nEff: number; conf: number }): Verdict {
+  const lo = a.mu - a.z * a.seE, hi = a.mu + a.z * a.seE;
+  const pct = Math.round(a.conf * 1000) / 10 + "%";
+  const sg = (v: number) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2) + "R";
+  const range = sg(lo) + " to " + sg(hi);
+  if (a.n < PLAN_MIN_N) {
+    return { tone: "wait", headline: "Too few trades", chip: "Under " + PLAN_MIN_N + " trades", read: "Too few trades to judge. Aim for 100+.", need: 0 };
+  }
+  if (lo > 0) {
+    return { tone: "go", headline: "Edge holds up", chip: "Range above zero", read: "Even the bottom of the " + pct + " range makes " + sg(lo) + " a trade.", need: 0 };
+  }
+  if (hi < 0) {
+    return { tone: "stop", headline: "Losing strategy", chip: "Range below zero", read: "Even the top of the " + pct + " range loses (" + sg(hi) + " a trade).", need: 0 };
+  }
+  if (a.mu > 0.001) {
+    // trades for z*sd/sqrt(nEff) < mu, scaled back from effective to logged trades
+    const sdEff = a.seE * Math.sqrt(Math.max(1, a.nEff));
+    const needEff = Math.pow((a.z * sdEff) / a.mu, 2);
+    const need = Math.ceil(needEff * (a.n / Math.max(1, a.nEff)));
+    const needTxt = need > 100000 ? "over 100,000" : "~" + roundSig(need).toLocaleString("en-US");
+    return {
+      tone: "wait", headline: "No proven edge", chip: "Could be luck",
+      read: sg(a.mu) + " a trade is inside the noise: the range (" + range + ") includes losing. Proving it would take " + needTxt + " trades, if it held.",
+      need,
+    };
+  }
+  return { tone: "stop", headline: "No edge", chip: "Average not above zero", read: "The average is " + sg(a.mu) + " a trade (range " + range + "). Nothing here makes money.", need: 0 };
+}
+// 2 significant figures - a projection is not precise to the trade
+function roundSig(v: number): number {
+  if (v < 100) return Math.ceil(v);
+  const m = Math.pow(10, Math.floor(Math.log10(v)) - 1);
+  return Math.ceil(v / m) * m;
+}
 // ...and below THIS, not even a range. Matches the journal's Prop odds panel,
 // which has bootstrapped this same record end to end from 10 since it shipped.
 // Between the two the app names a RANGE and never a point inside it.

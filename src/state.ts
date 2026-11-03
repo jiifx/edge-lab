@@ -108,6 +108,52 @@ export interface EdgeState {
 
 export const S: EdgeState = { p: 0.55, b: 1.0, s: 0, payMode: "rr", n: 120, trades: null, meta: null };
 
+// ---------------------------------------------------------------------------
+// The slider edge: what the four "Your edge" boxes mean, at full precision
+// ---------------------------------------------------------------------------
+// The number BOX is the input of record; the slider beside it is a coarse
+// pointer. A range input snaps to its step, and the model used to read the
+// slider, so a typed 92 trades became 90 and a typed 0.84 R:R became 0.85 -
+// the edge being modelled was not the one the user wrote. Nothing here rounds
+// except the trade count, which is a count.
+//
+// The domain lives HERE, not on the input element (Trap #22): `n` sizes the
+// profit-factor bootstrap on Validate, so it is a loop bound.
+export const EDGE_BOUNDS = {
+  wr: [0, 100] as [number, number],    // win rate % of decided trades
+  sc: [0, 60] as [number, number],     // scratch rate % of all trades
+  n: [10, 1500] as [number, number],   // trades in record - THE loop bound
+  rr: [0.5, 6] as [number, number],    // reward to risk, in R
+  pf: [0.5, 8] as [number, number],    // profit factor
+};
+// NaN carries no intent and falls to the bottom; Infinity clamps to the end it
+// came from - the same rule clampFirm uses.
+export function clampTo(v: number, [lo, hi]: [number, number]): number {
+  if (Number.isNaN(v)) return lo;
+  if (!isFinite(v)) return v > 0 ? hi : lo;
+  return Math.max(lo, Math.min(hi, v));
+}
+export interface EdgeInputs { wr: number; pay: number; payMode: "rr" | "pf"; sc: number; n: number }
+export function edgeFromInputs(i: EdgeInputs): { p: number; b: number; s: number; n: number } {
+  const p = clampTo(i.wr, EDGE_BOUNDS.wr) / 100;
+  const s = clampTo(i.sc, EDGE_BOUNDS.sc) / 100;
+  const n = Math.round(clampTo(i.n, EDGE_BOUNDS.n));
+  let b: number;
+  if (i.payMode === "pf") {
+    // profit factor -> payoff: PF = p*b/(1-p). Scratches pay 0R and leave it unchanged.
+    const pf = clampTo(i.pay, EDGE_BOUNDS.pf);
+    b = p > 0.001 && p < 0.999 ? (pf * (1 - p)) / p : 1;
+  } else {
+    b = clampTo(i.pay, EDGE_BOUNDS.rr);
+  }
+  return { p, b: Math.max(0.05, b), s, n };
+}
+// A converted payoff (R:R <-> profit factor) printed back into the box: 4 dp is
+// enough that switching units and back returns the number that was typed.
+export function fmtPay(v: number): string {
+  return String(Math.round(v * 10000) / 10000);
+}
+
 // preset account values are only the fallback for a fresh install; selecting a
 // preset applies the RULES and keeps the user's account size (see sim.ts)
 export const PRESETS: Record<string, Firm> = {

@@ -5396,18 +5396,22 @@ export function clearJournalEdge() {
   // could hold the record exactly. These are the values index.html ships; the
   // payoff pair is owned by the R:R / Profit-factor toggle, so it is restored to
   // whichever mode is in force rather than to a fixed guess.
-  const restore = (rangeId: string, numId: string, min: string, max: string, step: string) => {
+  // The BOX keeps its value at full precision (it is the input of record - see
+  // edgeFromInputs); only the slider snaps to its coarse step.
+  const restore = (rangeId: string, numId: string, min: string, max: string, step: string, boxStep: string) => {
     const r = $i(rangeId), b = $i(numId);
     r.min = min; r.max = max; r.step = step;
-    b.min = min; b.max = max; b.step = step;
-    const v = String(Math.max(Number(min), Math.min(Number(max), Number(r.value))));
-    r.value = v; b.value = r.value;   // read back: the range re-snaps to its step
+    b.min = min; b.max = max; b.step = boxStep;
+    let v = Math.max(Number(min), Math.min(Number(max), Number(b.value)));
+    if (!isFinite(v)) v = Number(r.value);
+    if (numId === "nn") v = Math.round(v);
+    b.value = String(v); r.value = String(v);
   };
-  restore("swr", "nwr", "0", "100", "1");
-  restore("sn", "nn", "10", "1500", "10");
-  restore("ssc", "nsc", "0", "60", "1");
-  if (S.payMode === "pf") restore("spay", "npay", "0.5", "8", "0.02");
-  else restore("spay", "npay", "0.5", "6", "0.05");
+  restore("swr", "nwr", "0", "100", "1", "1");
+  restore("sn", "nn", "10", "1500", "10", "1");
+  restore("ssc", "nsc", "0", "60", "1", "1");
+  if (S.payMode === "pf") restore("spay", "npay", "0.5", "8", "0.02", "0.01");
+  else restore("spay", "npay", "0.5", "6", "0.05", "0.01");
   hooks.syncSliders();
   $("jedgeDesc").innerHTML = "Off &mdash; using the sliders.";
   renderEdgeCut();

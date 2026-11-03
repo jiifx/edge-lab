@@ -1,6 +1,6 @@
 // Simulator: edge bar, firm bar, five tabs, theme, persistence, mode switch.
 import { $, $i, $s, $c, css, fit, mulberry, LS, hooks, ask, toast, esc, chartTip, pctEst, mixHex, runJob } from "./util";
-import { S, F, PRESETS, setFirm, clampFirm, withEdge, view, money, amt, ddLabel, gateLabel } from "./state";
+import { S, F, PRESETS, setFirm, clampFirm, withEdge, view, money, amt, ddLabel, gateLabel, edgeFromInputs, clampTo, fmtPay, EDGE_BOUNDS } from "./state";
 import { portfolioPrefix, payModel, evalBuyer, Tape, fundSlot } from "./engine";
 import { sampleR, expectancy, sigmaR, profitFactor, phaseWalk, challengeStats, challengeCurve, evalPass, evalDays, fundedStats, fundedCurve, profitPlateau, costToFund, payoutOdds, firstPayoutPct, PAID_SIMS, PAY_CHUNK, SWEEP_HABIT_DAYS, TRADING_DAYS_PER_MONTH, TRADING_DAYS_PER_YEAR, yearSteps, tpdOf, TPD_MAX, WalkOut, ChallengeOut, EvalPoint } from "./engine";
 // The forward-drawdown engine and the uncertainty machinery the Validate tab
@@ -14,7 +14,7 @@ import { ddJob, effectiveN, fitBlock, overshootProfile, maxRiskForLimit, zFor, w
 // previously ended up quoting one firm two different numbers on two tabs. One
 // implementation, both callers. See the header of plan.ts.
 import { sharesAt, floorAt, optSettings, setOpt, resetOpt, isDefault, applyPayModel, econCurve, slotEcon, SlotEcon, plateauLo, pickMaxEv, pickMaxPayout, pickBalancedAt, pickPerCount, PortfolioStat, SURV_PRESETS, BatchPoint, batchQuantiles, pickBatchBudget, pickBatchFastest, EVAL_CAP_AUTO } from "./optimize";
-import { riskGrid, pickFundedSize, pickEvalSize, PLATEAU_TOL, SAFE_SURV, PASS_BAR, PLAN_MIN_N, Band, bandOf, bandText, resampleRecord, plausibleRecord, pickBalanced, ROBUST_CONF, ROBUST_DRAWS, ROBUST_SIMS, ROBUST_EVAL_SIMS } from "./plan";
+import { riskGrid, pickFundedSize, pickEvalSize, PLATEAU_TOL, SAFE_SURV, PASS_BAR, PLAN_MIN_N, edgeVerdict, Band, bandOf, bandText, resampleRecord, plausibleRecord, pickBalanced, ROBUST_CONF, ROBUST_DRAWS, ROBUST_SIMS, ROBUST_EVAL_SIMS } from "./plan";
 
 // the panel ids are "p-" + tab; kept in one place so adding a tab cannot
 // half-register it (the list used to be spelled out twice)
@@ -51,28 +51,35 @@ export function setNum(id: string, v: string) {
   if (document.activeElement !== el) el.value = v;
 }
 
-export function syncSliders() {
-  S.p = Number(swr().value) / 100;
-  S.s = Math.max(0, Math.min(0.9, Number($i("ssc").value) / 100));
-  S.n = Number(sn().value);
-  if (S.payMode === "pf") {
-    const pf = Number(spay().value);
-    S.b = S.p > 0.001 && S.p < 0.999 ? (pf * (1 - S.p)) / S.p : 1;
-    S.b = Math.max(0.05, S.b);
-  } else {
-    S.b = Number(spay().value);
-  }
-  setNum("nwr", swr().value);
-  setNum("npay", spay().value);
-  setNum("nn", sn().value);
-  setNum("nsc", $i("ssc").value);
+// The four "Your edge" pairs, box -> slider. The BOX is the input of record (see
+// edgeFromInputs in state.ts): a range input snaps to its step, so reading the
+// slider turned a typed 92 into 90 and 0.84 into 0.85. The slider only points.
+const EDGE_PAIRS: [string, string][] = [["nwr", "swr"], ["npay", "spay"], ["nn", "sn"], ["nsc", "ssc"]];
+// a box mid-edit can be empty or "-"; fall back to the slider rather than to NaN
+function boxVal(numId: string, rangeId: string): number {
+  const t = $i(numId).value;
+  return t !== "" && isFinite(Number(t)) ? Number(t) : Number($i(rangeId).value);
 }
+// one value to both halves of a pair: the box keeps it exactly, the slider snaps
+function setEdgePair(numId: string, rangeId: string, v: string) {
+  $i(numId).value = v;
+  $i(rangeId).value = v;
+}
+export function syncSliders() {
+  const e = edgeFromInputs({
+    wr: boxVal("nwr", "swr"), pay: boxVal("npay", "spay"), payMode: S.payMode,
+    sc: boxVal("nsc", "ssc"), n: boxVal("nn", "sn"),
+  });
+  S.p = e.p; S.s = e.s; S.n = e.n; S.b = e.b;
+}
+// a typed 55.5% must not be summarised as 56%
+const pctTxt = (x: number) => String(Math.round(x * 1000) / 10);
 export function sumStrat() {
   const pf = profitFactor(), ev = expectancy();
   $("sbSum").innerHTML =
     (S.trades ? "<b>" + S.trades.length + "</b> journal trades" : "sliders") +
-    " &middot; win " + Math.round(S.p * 100) + "%" +
-    (S.trades || S.s <= 0 ? "" : " &middot; " + Math.round(S.s * 100) + "% scratch") +
+    " &middot; win " + (S.trades ? Math.round(S.p * 100) : pctTxt(S.p)) + "%" +
+    (S.trades || S.s <= 0 ? "" : " &middot; " + pctTxt(S.s) + "% scratch") +
     " &middot; PF " + (pf >= 99 ? "high" : pf.toFixed(2)) +
     " &middot; exp " + (ev >= 0 ? "+" : "") + ev.toFixed(2) + "R";
 }
@@ -89,6 +96,37 @@ function wireNum(numId: string, rangeId: string) {
     rangeEl().dispatchEvent(new Event("input", { bubbles: true }));
   });
   numEl.addEventListener("change", function () { this.value = rangeEl().value; }); // clamp to slider range on blur
+}
+// The edge pairs are wired differently from wireNum on purpose: typing must NOT
+// round-trip through the slider, because the slider snaps. The box drives the
+// model directly; the slider follows it, and a drag writes the slider's value
+// into the box (a drag is coarse by nature, a typed number is not).
+function wireEdgePairs(onEdit: () => void) {
+  const domain = (numId: string): [number, number] =>
+    numId === "nwr" ? EDGE_BOUNDS.wr : numId === "nsc" ? EDGE_BOUNDS.sc : numId === "nn" ? EDGE_BOUNDS.n
+      : S.payMode === "pf" ? EDGE_BOUNDS.pf : EDGE_BOUNDS.rr;
+  EDGE_PAIRS.forEach(([numId, rangeId]) => {
+    const box = $i(numId), rng = $i(rangeId);
+    rng.addEventListener("input", () => {
+      if (S.trades) return;
+      box.value = rng.value;
+      onEdit();
+    });
+    box.addEventListener("input", () => {
+      if (S.trades || box.value === "" || !isFinite(Number(box.value))) return;
+      rng.value = box.value;   // the thumb moves; the box keeps what was typed
+      onEdit();
+    });
+    // On blur, an out-of-domain entry is shown as the value actually used - at
+    // full precision, never snapped. An empty box gets back the slider's value.
+    box.addEventListener("change", () => {
+      if (S.trades) return;
+      const raw = box.value === "" || !isFinite(Number(box.value)) ? Number(rng.value) : Number(box.value);
+      let v = clampTo(raw, domain(numId));
+      if (numId === "nn") v = Math.round(v);
+      if (String(v) !== box.value) { setEdgePair(numId, rangeId, String(v)); onEdit(); }
+    });
+  });
 }
 
 const fFields = ["fAccount", "fType", "fInstant", "fP1", "fP2", "fMaxdd", "fDdType", "fDdLock", "fDaily", "fMinDays", "fCons", "fTpd", "fSplit", "fFee", "fTimeLimit", "fFeeMode", "fActivation", "fResetFee", "fPayEvery", "fPayFirst", "fPayMin", "fPayBuffer", "fPayCap", "fPayCapAmt", "fPayCons", "fWinDays", "fWinAmt", "fLivePays", "fLivePaid", "fLiveTotal", "fLiveChance"];
@@ -686,21 +724,13 @@ function renderValidate() {
   }
 
   // ---- verdict ----
-  const real = evLo > 0, promising = mu > 0 && !real;
-  let col: string, chip: string, vt: string, rt: string;
-  if (mu <= 0.001) { col = css("--stop"); chip = "No edge shown"; vt = "No edge"; rt = "Expectancy is not above zero."; }
-  // The VERDICT changes below the bar; nothing on this screen goes blank. Every
-  // interval, chart and drawdown reading below still prints, and the panels that
-  // cite this bar (My firm, the Funded tab's best size) must describe it that
-  // way - "will not call an edge real", never "refuses to show you anything".
-  else if (n < PLAN_MIN_N) { col = css("--stop"); chip = "Too few trades"; vt = "Not enough data"; rt = "Too few trades to judge. Aim for 100+."; }
-  else if (real) {
-    col = css("--go"); chip = "Statistically real"; vt = "Likely real";
-    rt = "The " + (Math.round(conf * 1000) / 10) + "% range stays above zero.";
-  } else if (promising) {
-    col = css("--caution"); chip = "Unproven"; vt = "Promising, unproven";
-    rt = "Positive average, but the range still crosses zero. Log more trades.";
-  } else { col = css("--stop"); chip = "Too few"; vt = "Not enough data"; rt = "Keep logging."; }
+  // The interval decides - see edgeVerdict in plan.ts. Below PLAN_MIN_N only the
+  // VERDICT holds back; every interval, chart and drawdown reading still prints,
+  // and the panels that cite this bar (My firm, the Funded tab's best size) must
+  // describe it that way - "will not call an edge real", never "shows nothing".
+  const vd = edgeVerdict({ mu, seE, z, n, nEff, conf });
+  const col = css(vd.tone === "go" ? "--go" : vd.tone === "stop" ? "--stop" : "--caution");
+  const chip = vd.chip, vt = vd.headline, rt = vd.read;
   $("vVerdict").textContent = vt; $("vVerdict").style.color = col;
   $("vChip").textContent = chip; $("vChip").style.background = col;
   $("vRead").textContent = rt;
@@ -2547,10 +2577,11 @@ interface SimSave {
 }
 export function saveSim() {
   LS.set("pel_sim", {
-    p: swr().value, pay: spay().value, payMode: S.payMode, paylbl: $("lpaylbl").textContent || "",
-    sc: $i("ssc").value,
+    // the BOXES, not the sliders: a slider holds only the snapped value
+    p: $i("nwr").value, pay: $i("npay").value, payMode: S.payMode, paylbl: $("lpaylbl").textContent || "",
+    sc: $i("nsc").value,
     paymin: spay().min, paymax: spay().max, paystep: spay().step,
-    n: sn().value, disp: view.DISP, F: { ...F }, tab: TAB,
+    n: $i("nn").value, disp: view.DISP, F: { ...F }, tab: TAB,
     src: $i("src").value, srf: $i("srf").value, srde: $i("srde").value, srdf: $i("srdf").value,
 
     useJ: $i("useJournal").checked,
@@ -2564,12 +2595,12 @@ export function restoreSim(): boolean {
   const d = LS.get<SimSave | null>("pel_sim", null);
   if (!d) return false;
   try {
-    swr().value = d.p; sn().value = d.n; S.payMode = d.payMode || "rr";
-    $i("ssc").value = d.sc || "0";   // pre-2.4.2 saves carry no scratch rate = 0
+    setEdgePair("nwr", "swr", d.p); setEdgePair("nn", "sn", d.n); S.payMode = d.payMode || "rr";
+    setEdgePair("nsc", "ssc", d.sc || "0");   // pre-2.4.2 saves carry no scratch rate = 0
     if (d.paymin) { spay().min = d.paymin; $i("npay").min = d.paymin; }
     if (d.paymax) { spay().max = d.paymax; $i("npay").max = d.paymax; }
-    if (d.paystep) { spay().step = d.paystep; $i("npay").step = d.paystep; }
-    spay().value = d.pay;
+    if (d.paystep) spay().step = d.paystep;   // the slider's step only; the box types to 0.01
+    setEdgePair("npay", "spay", d.pay);
     if (d.paylbl) $("lpaylbl").textContent = d.paylbl;
     document.querySelectorAll<HTMLButtonElement>(".seg button[data-pm]").forEach((x) =>
       x.setAttribute("aria-pressed", x.getAttribute("data-pm") === S.payMode ? "true" : "false"));
@@ -2658,13 +2689,12 @@ export function getMode() { return MODE; }
 
 // ---------------- wiring ----------------
 export function wireSim() {
-  [swr(), spay(), sn(), $i("ssc")].forEach((el) =>
-    el.addEventListener("input", () => { if (S.trades) return; syncSliders(); sumStrat(); scheduleRender(); saveSim(); }));
+  wireEdgePairs(() => { syncSliders(); sumStrat(); scheduleRender(); saveSim(); });
   document.querySelectorAll<HTMLButtonElement>(".seg button[data-pm]").forEach((btn) =>
     btn.addEventListener("click", () => {
       const nm = btn.getAttribute("data-pm") as "rr" | "pf";
       if (nm === S.payMode) return;
-      const p = Number(swr().value) / 100;
+      const p = S.p;
       const np = $i("npay");
       // R:R and profit factor are two parameterisations of ONE quantity, so this
       // control is meant to change the units and nothing else. It used to CLAMP
@@ -2678,7 +2708,7 @@ export function wireSim() {
       // actually reach at ordinary win rates, so the conversion is lossless
       // almost everywhere; and where it still would not be, the switch is
       // REFUSED with the reason rather than performed with a different number.
-      const cur = Number(spay().value);
+      const cur = boxVal("npay", "spay");   // the typed value, not the snapped slider
       const conv = p > 0.001 && p < 0.999
         ? (nm === "pf" ? (p / (1 - p)) * cur : (cur * (1 - p)) / p)
         : (nm === "pf" ? 1.4 : 1);
@@ -2691,14 +2721,16 @@ export function wireSim() {
       }
       if (nm === "pf") {
         spay().min = "0.5"; spay().max = "8"; spay().step = "0.02";
-        np.min = "0.5"; np.max = "8"; np.step = "0.02";
+        np.min = "0.5"; np.max = "8";
         $("lpaylbl").textContent = "Profit factor";
       } else {
         spay().min = "0.5"; spay().max = "6"; spay().step = "0.05";
-        np.min = "0.5"; np.max = "6"; np.step = "0.05";
+        np.min = "0.5"; np.max = "6";
         $("lpaylbl").textContent = "Reward to risk (R)";
       }
-      spay().value = String(conv);
+      // the edge does not move: 4 dp is enough for the switch back to return
+      // the number that was typed (0.84 R:R -> PF 1.0691 -> 0.84)
+      setEdgePair("npay", "spay", fmtPay(conv));
       S.payMode = nm;
       document.querySelectorAll<HTMLButtonElement>(".seg button[data-pm]").forEach((x) =>
         x.setAttribute("aria-pressed", x === btn ? "true" : "false"));
@@ -2846,7 +2878,6 @@ export function wireSim() {
     render();
   });
 
-  wireNum("nwr", "swr"); wireNum("npay", "spay"); wireNum("nn", "sn"); wireNum("nsc", "ssc");
   wireNum("nrc", "src"); wireNum("nrf", "srf"); wireNum("nrde", "srde"); wireNum("nrdf", "srdf");
 
 

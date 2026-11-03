@@ -250,7 +250,7 @@ footer{margin-top:44px;padding-top:18px;border-top:1.5px solid var(--line);
         how much you should trust it.</p>
       </div>
       <p class="honest"><b>Use your real numbers.</b> Nothing here can check them. Round your win
-      rate up a few points and the verdict will flip to &ldquo;statistically real&rdquo; without
+      rate up a few points and the verdict will flip to &ldquo;edge holds up&rdquo; without
       complaint, and you'll have talked yourself into a strategy you don't have.</p>
     </div>
   </section>
@@ -555,23 +555,28 @@ function validate(){
   el("rHun").className = "v "+(mu>0.001?"go":mu<-0.001?"stop":"");
 
   const chip = el("vChip"), why = el("vWhy");
-  if(mu <= 0.001){
-    chip.textContent="No edge shown"; chip.className="chip stop";
-    why.innerHTML = "At "+Math.round(p*100)+"% you need better than <b>"+
-      (( (1-p)/p )).toFixed(2)+"R</b> per winner just to break even, and you're under it. "+
-      "No amount of position sizing or firm-shopping fixes that.";
-  } else if(n < 30){
-    chip.textContent="Too few trades"; chip.className="chip stop";
+  // The RANGE decides, never the average (the app's edgeVerdict, same tiers).
+  if(n < 30){
+    chip.textContent="Too few trades"; chip.className="chip caution";
     why.innerHTML = "<b>"+n+" trades</b> can't tell an edge from a hot streak. Your expectancy "+
       "range runs "+sgn(lo)+" to "+sgn(hi)+"R, which covers a real edge and nothing at all. Keep logging.";
   } else if(lo > 0){
-    chip.textContent="Statistically real"; chip.className="chip go";
+    chip.textContent="Edge holds up"; chip.className="chip go";
     why.innerHTML = "Even the bottom of the 95% range ("+sgn(lo)+"R) still makes money. On "+n+
       " trades that's an edge, not a streak.";
+  } else if(hi < 0){
+    chip.textContent="Losing strategy"; chip.className="chip stop";
+    why.innerHTML = "Even the top of the 95% range ("+sgn(hi)+"R) loses money. At "+Math.round(p*100)+
+      "% you need better than <b>"+((1-p)/p).toFixed(2)+"R</b> per winner just to break even. "+
+      "No amount of position sizing or firm-shopping fixes that.";
+  } else if(mu > 0.001){
+    chip.textContent="No proven edge"; chip.className="chip caution";
+    why.innerHTML = "<b>"+sgn(mu)+"R</b> a trade is inside the noise: the range runs "+sgn(lo)+" to "+sgn(hi)+
+      "R, so these "+n+" trades fit a losing strategy as well as a winning one. Until the bottom of that range clears zero, treat it as luck.";
   } else {
-    chip.textContent="Promising, not proven"; chip.className="chip caution";
-    why.innerHTML = "You're making <b>"+sgn(mu)+"R</b> a trade, but the range still dips to "+sgn(lo)+
-      "R, so luck isn't ruled out. Only more trades narrow that.";
+    chip.textContent="No edge"; chip.className="chip stop";
+    why.innerHTML = "The average is not above zero, and the range ("+sgn(lo)+" to "+sgn(hi)+
+      "R) cannot rule out a small edge either way. Nothing here says this makes money.";
   }
   return mu;
 }

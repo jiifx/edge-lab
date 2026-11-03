@@ -414,6 +414,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">Scratch rate %</td><td>Share of <b>all</b> trades that close at 0R. Scratches burn days without moving the account, which matters for time limits, subscriptions and payout windows.</td></tr>
   <tr><td class="k">Trades in record</td><td>How big a sample the numbers stand for. Controls how wide the ranges on Validate are.</td></tr>
 </table>
+<p>The number boxes are exact: type 92 trades, 0.84 R or a 1.09 profit factor and that is the edge modelled. The sliders move in coarser steps and are for quick exploring; dragging one writes its value into the box. Ranges: win rate 0–100%, R 0.5–6, profit factor 0.5–8, scratch 0–60%, trades 10–1,500 (whole trades). Switching between R:R and Profit factor converts the number without changing the edge.</p>
 <h4>Use my journal</h4>
 <figure><img src="shots/03-journal-switch.png" class="small" alt="Use my journal"><figcaption>Use my journal.</figcaption></figure>
 <ol class="steps">
@@ -484,17 +485,21 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
 <h4>Steps</h4>
 <ol class="steps">
   <li>Set your edge (sliders or journal).</li>
-  <li>Read the verdict: <b>Likely real</b>, <b>Promising, unproven</b>, <b>Not enough data</b> or <b>No edge</b>.</li>
+  <li>Read the verdict: <b>Edge holds up</b>, <b>No proven edge</b>, <b>No edge</b>, <b>Losing strategy</b> or <b>Too few trades</b>.</li>
   <li>Set the drawdown <b>Horizon</b> (how many trades ahead you plan for) and, optionally, your own <b>Account drawdown limit %</b> (0 = the firm's).</li>
   <li>Read the <b>largest risk per trade</b> box at the bottom.</li>
   <li>To share the result, click <span class="ui">Save as image</span>: the verdict, its numbers and both charts on one PNG. The desktop app saves it in <code>exports\</code>; the browser version downloads it.</li>
 </ol>
 <h4>Reading the verdict</h4>
+<p>The verdict is decided by the 95% range for expectancy, never by the average on its own. A positive average with a range that crosses zero is not a weaker kind of edge. It is a record that fits a losing strategy as well as a winning one, and the verdict says so.</p>
 <ul>
-  <li><b>Likely real</b>: the 95% range for expectancy stays above zero.</li>
-  <li><b>Promising, unproven</b>: the average is positive, but the range still crosses zero. More trades will settle it.</li>
-  <li><b>Not enough data</b>: under 30 trades. Aim for 100+. Everything below still prints; only the verdict holds back.</li>
+  <li><b>Edge holds up</b>: even the bottom of the range is above zero.</li>
+  <li><b>No proven edge</b> (could be luck): the average is above zero, but the range includes losing. The line under it says how many trades it would take for the range to clear zero <i>if</i> the average and the spread stayed exactly as measured. Averages usually drift down as trades are added, so read it as a minimum, not a promise. A small edge (a few hundredths of an R) takes thousands of trades to prove.</li>
+  <li><b>No edge</b>: the average is at or below zero. Nothing in the record makes money.</li>
+  <li><b>Losing strategy</b>: even the top of the range is below zero.</li>
+  <li><b>Too few trades</b>: under 30 trades. Aim for 100+. Everything below still prints; only the verdict holds back.</li>
 </ul>
+<p>Colours: green only for <b>Edge holds up</b>; red for <b>No edge</b> and <b>Losing strategy</b>; amber for <b>No proven edge</b> and <b>Too few trades</b>.</p>
 <p>Each figure (win rate, expectancy, profit factor) has its range underneath. <b>Sample</b> shows the trade count and how many <b>independent</b> observations they amount to. Trades that cluster by day, setup or account are not separate draws, so every range is computed from the effective count.</p>
 <p>The <b>curve</b> is where your true average trade could sit. The shaded band is the 95% range, with its edges marked by dashed lines in the band's colour; the red dashed line is break-even. If the band crosses break-even, you cannot yet rule out having no edge.</p>
 <h4>Drawdown to plan for</h4>
@@ -638,6 +643,7 @@ Dollars come in at the end: set what 1R is worth (Journal) or your risk per trad
   <tr><td class="k">n excluded for having no Risk $ or stop (or an R past &plusmn;1000)</td><td>Those trades have no measurable R. An R beyond &plusmn;1000 is treated as a typo (an extra zero in Risk $, or a stop almost on the entry) and left out of every R statistic. Fix the trade to bring it back.</td></tr>
   <tr><td class="k">Replace cancelled: a copy of your current journal could not be saved first</td><td>Nothing was changed. Check that the data folder (or the browser's downloads) can be written to, then try again.</td></tr>
   <tr><td class="k">Too few trades to judge. Aim for 100+.</td><td>Validate won't call an edge real under 30 trades.</td></tr>
+  <tr><td class="k">+…R a trade is inside the noise … Proving it would take ~… trades, if it held.</td><td>Validate, <b>No proven edge</b>: the range includes losing. The trade count assumes the average holds, which it usually does not; treat it as a floor.</td></tr>
   <tr><td class="k">Multiple looks</td><td>You've tested several Leave-out subsets; ranges are widened for it.</td></tr>
   <tr><td class="k">Pooled accounts / mirrored</td><td>Same signal in several accounts. Pick one account as Edge source.</td></tr>
   <tr><td class="k">No proven edge. Check Validate first.</td><td>Decision: expectancy ≤ 0, so the fee funds the firm, not you.</td></tr>
